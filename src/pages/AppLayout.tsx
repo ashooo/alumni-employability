@@ -27,7 +27,7 @@ export default function AppLayout() {
             <Outlet />
           </main>
           <footer className="border-t px-6 py-3 text-xs text-muted-foreground flex items-center justify-between">
-            <span>AlumniTracer v1.0</span>
+            <span>Alumni Tracer v1.0</span>
             <span>support@university.edu</span>
           </footer>
         </div>

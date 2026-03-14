@@ -55,7 +55,7 @@ export default function LoginPage() {
             <div className="p-2 rounded-xl bg-primary/10">
               <GraduationCap className="h-7 w-7 text-primary" />
             </div>
-            <span className="font-display font-bold text-lg">AlumniTracer</span>
+            <span className="font-display font-bold text-lg">Alumni Tracer</span>
           </div>
 
           <h2 className="text-2xl font-display font-bold mb-1">Welcome back</h2>
@@ -78,7 +78,7 @@ export default function LoginPage() {
 
             <div className="flex items-center gap-2">
               <Checkbox id="remember" checked={remember} onCheckedChange={(c) => setRemember(!!c)} />
-              <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">Remember session</Label>
+              <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">Remember me</Label>
             </div>
 
             {error && (

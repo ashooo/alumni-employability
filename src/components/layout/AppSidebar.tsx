@@ -56,7 +56,7 @@ export function AppSidebar() {
           <div className="p-2 rounded-xl bg-sidebar-primary/20 shrink-0">
             <GraduationCap className="h-5 w-5 text-sidebar-primary" />
           </div>
-          {!collapsed && <span className="font-display font-bold text-sm text-sidebar-foreground">AlumniTracer</span>}
+          {!collapsed && <span className="font-display font-bold text-sm text-sidebar-foreground">Alumni Tracer</span>}
         </div>
       </SidebarHeader>
 

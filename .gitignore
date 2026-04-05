@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Python
+ml/venv/
+ml/__pycache__/
+ml/**/*.pyc
+
+# Build output
+dist/
+
+# Environment files
+.env
+server/.env
+client/.env.local
+
+# Editor
+.DS_Store
+.vscode/*

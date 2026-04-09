@@ -30,8 +30,8 @@ function MetricsTable({ metrics, model }: { metrics: { mae: number; rmse: number
 
 function ForecastChart({ data }: { data: typeof predictionData.arima }) {
   const combined = [
-    ...data.historical.map(d => ({ ...d, year: String(d.year), type: 'historical' })),
-    ...data.forecast.map(d => ({ ...d, year: String(d.year), type: 'forecast' })),
+    ...data.historical.map(d => ({ ...d, year: String(d.year), actual: d.value, predicted: (d as any).predicted, type: 'historical' })),
+    ...data.forecast.map(d => ({ ...d, year: String(d.year), predicted: d.value, type: 'forecast' })),
   ];
 
   return (
@@ -44,7 +44,8 @@ function ForecastChart({ data }: { data: typeof predictionData.arima }) {
         <Legend />
         <Area type="monotone" dataKey="upper" stroke="none" fill="hsl(var(--primary) / 0.1)" name="Upper Bound" />
         <Area type="monotone" dataKey="lower" stroke="none" fill="hsl(var(--background))" name="Lower Bound" />
-        <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 5 }} name="Employment Rate %" />
+        <Line type="monotone" dataKey="actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 5 }} name="Actual Rate %" />
+        <Line type="monotone" dataKey="predicted" stroke="hsl(var(--primary))" strokeDasharray="5 5" strokeWidth={3} dot={{ r: 5 }} name="Predicted Rate %" connectNulls={true} />
       </ComposedChart>
     </ResponsiveContainer>
   );

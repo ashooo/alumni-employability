@@ -14,7 +14,7 @@ const getArimaPrediction = async (req, res) => {
           COUNT(er.id) as total
       FROM alumni_records ar
       JOIN employment_records er ON ar.student_id = er.student_id
-      WHERE er.status IS NOT NULL
+      WHERE er.status IS NOT NULL AND ar.batch_year <= YEAR(CURDATE())
       GROUP BY ar.batch_year
       ORDER BY ar.batch_year ASC
     `);

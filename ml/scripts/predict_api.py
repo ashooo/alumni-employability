@@ -46,25 +46,19 @@ def main():
             "metrics": {}
         }
         
-        # Add actual historical to response
-        for year, rate in actual_rates.items():
-            response["historical"].append({
-                "year": int(year),
-                "value": round(float(rate), 2)
-            })
-
         # Calculate metrics using in-sample prediction if possible
+        eval_df = pd.DataFrame()
         try:
             predictions_hist = model_fit.get_prediction()
             pred_hist_df = predictions_hist.summary_frame()
             
             # Align evaluated actual data and predictions 
-            eval_df = pd.DataFrame({'Actual': actual_rates})
+            eval_df_temp = pd.DataFrame({'Actual': actual_rates})
             pred_index = pred_hist_df.index
             if hasattr(pred_index, 'year'):
                 pred_hist_df.index = pred_index.year
                 
-            eval_df = eval_df.join(pred_hist_df['mean'].rename('Predicted'), how='inner')
+            eval_df = eval_df_temp.join(pred_hist_df['mean'].rename('Predicted'), how='inner')
             
             if not eval_df.empty:
                 mae = mean_absolute_error(eval_df['Actual'], eval_df['Predicted'])
@@ -79,6 +73,16 @@ def main():
              # Default fallback if alignment fails
              response["metrics"]["mae"] = 0
              response["metrics"]["rmse"] = 0
+
+        # Add actual and predicted historical to response
+        for year, rate in actual_rates.items():
+            item = {
+                "year": int(year),
+                "value": round(float(rate), 2)
+            }
+            if not eval_df.empty and year in eval_df.index and not pd.isna(eval_df.loc[year, 'Predicted']):
+                item["predicted"] = round(float(eval_df.loc[year, 'Predicted']), 2)
+            response["historical"].append(item)
 
         # Predict future 3 years
         try:

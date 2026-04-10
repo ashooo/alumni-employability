@@ -1,18 +1,24 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart, BarChart, Bar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart, BarChart, Bar, ComposedChart } from 'recharts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { predictionData } from '@/data/mockData';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-function MetricsTable({ metrics }: { metrics: { mae: number; rmse: number; mape: number; r2: number } }) {
+function MetricsTable({ metrics, model }: { metrics: { mae: number; rmse: number; mape?: number; r2?: number }, model: string }) {
+  const metricsList = [
+    { label: 'MAE', value: metrics.mae },
+    { label: 'RMSE', value: metrics.rmse },
+    { label: 'MAPE', value: `${metrics.mape}%` },
+    { label: 'R²', value: metrics.r2 },
+  ];
+
+  const displayMetrics = model === 'arima'
+    ? metricsList.filter(m => m.label === 'MAE' || m.label === 'RMSE')
+    : metricsList;
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-      {[
-        { label: 'MAE', value: metrics.mae },
-        { label: 'RMSE', value: metrics.rmse },
-        { label: 'MAPE', value: `${metrics.mape}%` },
-        { label: 'R²', value: metrics.r2 },
-      ].map(m => (
+    <div className={`grid grid-cols-2 ${displayMetrics.length > 2 ? 'md:grid-cols-4' : ''} gap-4 mt-4`}>
+      {displayMetrics.map(m => (
         <div key={m.label} className="p-3 rounded-lg bg-muted/50 text-center">
           <p className="text-xs text-muted-foreground">{m.label}</p>
           <p className="text-lg font-bold font-display">{m.value}</p>
@@ -24,13 +30,13 @@ function MetricsTable({ metrics }: { metrics: { mae: number; rmse: number; mape:
 
 function ForecastChart({ data }: { data: typeof predictionData.arima }) {
   const combined = [
-    ...data.historical.map(d => ({ ...d, type: 'historical' })),
-    ...data.forecast.map(d => ({ ...d, type: 'forecast' })),
+    ...data.historical.map(d => ({ ...d, year: String(d.year), actual: d.value, predicted: (d as any).predicted, type: 'historical' })),
+    ...data.forecast.map(d => ({ ...d, year: String(d.year), predicted: d.value, type: 'forecast' })),
   ];
 
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <AreaChart data={combined}>
+      <ComposedChart data={combined}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="year" tick={{ fontSize: 12 }} />
         <YAxis domain={[50, 100]} tick={{ fontSize: 12 }} />
@@ -38,13 +44,42 @@ function ForecastChart({ data }: { data: typeof predictionData.arima }) {
         <Legend />
         <Area type="monotone" dataKey="upper" stroke="none" fill="hsl(var(--primary) / 0.1)" name="Upper Bound" />
         <Area type="monotone" dataKey="lower" stroke="none" fill="hsl(var(--background))" name="Lower Bound" />
-        <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 5 }} name="Employment Rate %" />
-      </AreaChart>
+        <Line type="monotone" dataKey="actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 5 }} name="Actual Rate %" />
+        <Line type="monotone" dataKey="predicted" stroke="hsl(var(--primary))" strokeDasharray="5 5" strokeWidth={3} dot={{ r: 5 }} name="Predicted Rate %" connectNulls={true} />
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }
 
 export default function AdminPredictions() {
+  const [arimaData, setArimaData] = useState<typeof predictionData.arima | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchPrediction = async () => {
+      try {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const res = await fetch('http://localhost:5000/api/admin/predictions/arima', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok && !data.error) {
+          setArimaData(data);
+        } else {
+          setFetchError(data.error || 'Server returned an error status: ' + res.status);
+        }
+      } catch (err: any) {
+        setFetchError(err.message || 'Network fetch failed');
+        console.error('Failed to fetch ARIMA predictions:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchPrediction();
+  }, []);
+
   return (
     <div className="space-y-6">
       <div>
@@ -61,13 +96,32 @@ export default function AdminPredictions() {
 
         {(['arima', 'linear', 'rf'] as const).map(tab => {
           const key = tab === 'rf' ? 'randomForest' : tab;
-          const d = predictionData[key as keyof typeof predictionData];
+          let d = predictionData[key as keyof typeof predictionData];
+          
+          if (tab === 'arima' && arimaData) {
+            d = arimaData as any;
+          }
+
           return (
             <TabsContent key={tab} value={tab}>
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card p-6">
                 <h3 className="font-display font-semibold mb-4">Forecast Visualization</h3>
-                <ForecastChart data={d as typeof predictionData.arima} />
-                <MetricsTable metrics={(d as typeof predictionData.arima).metrics} />
+                {tab === 'arima' && loading ? (
+                  <div className="flex h-[300px] items-center justify-center">
+                    <p className="text-muted-foreground animate-pulse">Running ARIMA Model Generator...</p>
+                  </div>
+                ) : (
+                  <>
+                    {tab === 'arima' && fetchError && (
+                      <div className="mb-4 p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
+                        <p className="font-bold">Model Fetch Failed</p>
+                        <p>{fetchError}</p>
+                      </div>
+                    )}
+                    <ForecastChart data={d as typeof predictionData.arima} />
+                    <MetricsTable metrics={(d as typeof predictionData.arima).metrics} model={tab} />
+                  </>
+                )}
 
                 {tab === 'rf' && predictionData.randomForest.featureImportance && (
                   <div className="mt-6">

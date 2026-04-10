@@ -11,6 +11,7 @@ const programRoutes = require('./routes/programRoutes');
 const alumniRoutes = require('./routes/alumniRoutes'); 
 const notificationRoutes = require('./routes/notificationRoutes');
 const superAdminRoutes = require('./routes/superAdminRoutes');
+const predictionRoutes = require('./routes/predictionRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -55,6 +56,7 @@ app.use('/api/admin/programs', programRoutes);
 app.use('/api/alumni', alumniRoutes); 
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/superadmin', superAdminRoutes);
+app.use('/api/admin/predictions', predictionRoutes);
 
 // Test route
 app.get('/', (req, res) => {

@@ -74,19 +74,19 @@ export const yearlyEmployment = [
 export const predictionData = {
   arima: {
     historical: [
-      { year: '2019', value: 72 },
-      { year: '2020', value: 65 },
-      { year: '2021', value: 71 },
-      { year: '2022', value: 78 },
-      { year: '2023', value: 82 },
-      { year: '2024', value: 85 },
+      { year: '2019', value: 70 },
+      { year: '2020', value: 70 },
+      { year: '2021', value: 70 },
+      { year: '2022', value: 70 },
+      { year: '2023', value: 70 },
+      { year: '2024', value: 70 },
     ],
     forecast: [
-      { year: '2025', value: 87, lower: 83, upper: 91 },
-      { year: '2026', value: 89, lower: 84, upper: 94 },
-      { year: '2027', value: 90, lower: 84, upper: 96 },
+      { year: '2025', value: 70, lower: 70, upper: 70 },
+      { year: '2026', value: 70, lower: 70, upper: 70 },
+      { year: '2027', value: 70, lower: 70, upper: 70 },
     ],
-    metrics: { mae: 2.3, rmse: 3.1, mape: 3.2, r2: 0.91 },
+    metrics: { mae: 0, rmse: 0 },
   },
   linear: {
     historical: [

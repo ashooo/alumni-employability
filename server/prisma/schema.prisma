@@ -1,0 +1,358 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// --- LEGACY TABLES (Lower-case mapping for raw SQL Compatibility) ---
+
+model User {
+  id            Int       @id @default(autoincrement())
+  username      String    @unique @db.VarChar(50)
+  email         String?   @unique @db.VarChar(50)
+  password_hash String    @db.VarChar(255)
+  role          String    @db.VarChar(20) // admin, alumni
+  first_name    String    @db.VarChar(50)
+  last_name     String    @db.VarChar(50)
+  middle_name   String?   @db.VarChar(50)
+  suffix        String?   @db.VarChar(10)
+  last_login    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  phone         String?   @db.VarChar(20)
+  address       String?   @db.Text
+
+  academics          StudentAcademic[]
+  user_notifications UserNotification[]
+
+  @@map("user")
+}
+
+model AlumniRecord {
+  id            Int      @id @default(autoincrement())
+  student_id    String   @db.VarChar(20)
+  first_name    String   @db.VarChar(50)
+  last_name     String   @db.VarChar(50)
+  middle_name   String?  @db.VarChar(50)
+  suffix        String?  @db.VarChar(10)
+  email         String?  @db.VarChar(100)
+  program       String   @db.VarChar(100)
+  batch_year    Int
+  status        String   @default("active")
+  survey_status String   @default("pending")
+  imported_by   Int?
+  imported_at   DateTime @default(now())
+  program_id    Int?
+
+  @@map("alumni_records")
+}
+
+model EmploymentRecord {
+  id             Int      @id @default(autoincrement())
+  student_id     String   @db.VarChar(20)
+  status         String   @db.VarChar(50)
+  company        String?  @db.VarChar(100)
+  position       String?  @db.VarChar(100)
+  industry       String?  @db.VarChar(50)
+  start_date     DateTime? @db.Date
+  monthly_income Decimal? @db.Decimal(10, 2)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@map("employment_records")
+}
+
+model College {
+  id             Int      @id @default(autoincrement())
+  name           String   @db.VarChar(100)
+  code           String   @db.VarChar(20)
+  description    String?  @db.Text
+  program_prefix String?  @db.VarChar(20)
+  is_active      Int      @default(1) @db.TinyInt
+  created_at     DateTime @default(now())
+  
+  degrees           Degree[]
+  published_surveys PublishedSurvey[]
+
+  @@map("colleges")
+}
+
+model Degree {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100)
+  code        String   @db.VarChar(20)
+  college_id  Int
+  description String?  @db.Text
+  is_active   Int      @default(1) @db.TinyInt
+  created_at  DateTime @default(now())
+  
+  college     College  @relation(fields: [college_id], references: [id])
+  academics   StudentAcademic[]
+
+  @@map("programs")
+}
+
+// --- CORE SURVEY TABLES (Legacy) ---
+
+model SurveyCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  order_index Int
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  questions   SurveyQuestion[]
+
+  @@map("survey_categories")
+}
+
+model SurveyQuestion {
+  id            Int      @id @default(autoincrement())
+  category_id   Int
+  text          String   @db.Text
+  type          String   @db.VarChar(20)
+  required      Int?     @default(1) @db.TinyInt
+  options       Json?    @db.Json
+  scale_min     Int?
+  scale_max     Int?
+  version       Int      @default(1)
+  order_index   Int
+  colleges      Json?    @db.Json
+  programs      Json?    @db.Json
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  category      SurveyCategory @relation(fields: [category_id], references: [id])
+  answers       SurveyAnswer[]
+
+  @@map("survey_questions")
+}
+
+model SurveyVersion {
+  id             Int       @id @default(autoincrement())
+  version_number Int       @unique
+  published      Int?      @default(0) @db.TinyInt
+  published_at   DateTime?
+  created_at     DateTime  @default(now())
+
+  @@map("survey_versions")
+}
+
+model PublishedSurvey {
+  id           Int      @id @default(autoincrement())
+  college_id   Int
+  version      Int
+  published_at DateTime @default(now())
+  published_by Int
+  status       String   @default("active")
+
+  college      College  @relation(fields: [college_id], references: [id])
+
+  @@map("published_surveys")
+}
+
+model SurveyAnswer {
+  id             Int      @id @default(autoincrement())
+  response_id    Int
+  question_id    Int
+  answer_text    String?  @db.Text
+  answer_options Json?    @db.Json
+  answer_number  Decimal? @db.Decimal(10, 2)
+  created_at     DateTime @default(now())
+
+  response       SurveyResponse @relation(fields: [response_id], references: [id])
+  question       SurveyQuestion @relation(fields: [question_id], references: [id])
+
+  @@map("survey_answers")
+}
+
+// --- NEW EMPLOYABILITY PIPELINE TABLES ---
+
+model Skill {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100)
+  type        String   @db.VarChar(20) // hard, soft
+  description String?  @db.Text
+  created_at  DateTime @default(now())
+
+  responses   ResponseSkill[]
+
+  @@map("skills")
+}
+
+model SurveyTemplate {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  type        String   @db.VarChar(20) // initial, followup
+  is_active   Int      @default(1) @db.TinyInt
+  created_at  DateTime @default(now())
+
+  responses   SurveyResponse[]
+  schedules   FollowupSchedule[]
+
+  @@map("survey_templates")
+}
+
+model SurveyResponse {
+  id                  Int       @id @default(autoincrement())
+  student_academic_id Int
+  template_id          Int
+  hard_skills_ave     Decimal?  @db.Decimal(5, 2)
+  soft_skills_ave     Decimal?  @db.Decimal(5, 2)
+  additional_data     Json?     @db.Json
+  survey_version      Int       @default(1)
+  started_at          DateTime?
+  completed_at        DateTime?
+  status              String    @default("in_progress")
+  created_at          DateTime  @default(now())
+
+  academic            StudentAcademic @relation(fields: [student_academic_id], references: [id])
+  template            SurveyTemplate  @relation(fields: [template_id], references: [id])
+  skills              ResponseSkill[]
+  answers             SurveyAnswer[]
+  predictions         EmployabilityPrediction[]
+
+  @@map("survey_responses")
+}
+
+model ResponseSkill {
+  id                 Int      @id @default(autoincrement())
+  survey_response_id Int
+  skill_id           Int
+  score              Int
+
+  response           SurveyResponse @relation(fields: [survey_response_id], references: [id])
+  skill              Skill          @relation(fields: [skill_id], references: [id])
+
+  @@map("response_skills")
+}
+
+model FollowupSchedule {
+  id                  Int      @id @default(autoincrement())
+  student_academic_id Int
+  template_id         Int
+  due_date            DateTime
+  status              String   @default("pending") // pending, sent, completed, overdue
+  created_at          DateTime @default(now())
+
+  academic            StudentAcademic @relation(fields: [student_academic_id], references: [id])
+  template            SurveyTemplate  @relation(fields: [template_id], references: [id])
+
+  @@map("followup_schedules")
+}
+
+model StudentAcademic {
+  id             Int      @id @default(autoincrement())
+  student_id     String   @db.VarChar(20)
+  user_id        Int
+  degree_id      Int
+  gender         String?  @db.VarChar(10)
+  age            Int?
+  year_graduated Int
+  cgpa           Decimal? @db.Decimal(5, 2)
+  prof_grade     Decimal? @db.Decimal(5, 2)
+  elec_grade     Decimal? @db.Decimal(5, 2)
+  ojt_grade      Decimal? @db.Decimal(5, 2)
+  leader_pos     Int?     @default(0) @db.TinyInt
+  act_member_pos Int?     @default(0) @db.TinyInt
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  user           User     @relation(fields: [user_id], references: [id])
+  degree         Degree   @relation(fields: [degree_id], references: [id])
+  
+  responses      SurveyResponse[]
+  predictions    EmployabilityPrediction[]
+  schedules      FollowupSchedule[]
+
+  @@map("student_academic")
+}
+
+model EmployabilityPrediction {
+  id                  Int             @id @default(autoincrement())
+  student_academic_id Int
+  survey_response_id  Int
+  model_version       String          @db.VarChar(100)
+  employable          Int             @db.TinyInt
+  probability         Float
+  input_snapshot      Json?           @db.Json
+  prediction_date     DateTime        @default(now())
+
+  academic           StudentAcademic @relation(fields: [student_academic_id], references: [id])
+  response           SurveyResponse  @relation(fields: [survey_response_id], references: [id])
+
+  @@map("employability_predictions")
+}
+
+// --- SYSTEM UTILS ---
+
+model SystemSetting {
+  key        String   @id @db.VarChar(100)
+  value      String   @db.LongText
+  updated_by Int?
+  updated_at DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  title      String   @db.VarChar(255)
+  body       String   @db.Text
+  type       String   @db.VarChar(50)
+  created_at DateTime @default(now())
+
+  users      UserNotification[]
+
+  @@map("notifications")
+}
+
+model UserNotification {
+  id              Int       @id @default(autoincrement())
+  user_id         Int
+  notification_id Int
+  read_at         DateTime?
+
+  user            User         @relation(fields: [user_id], references: [id])
+  notification    Notification @relation(fields: [notification_id], references: [id])
+
+  @@map("user_notifications")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  user_id    Int?
+  action     String   @db.VarChar(100)
+  metadata   Json?    @db.Json
+  created_at DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+model ImportHistory {
+  id            Int      @id @default(autoincrement())
+  filename      String   @db.VarChar(255)
+  uploaded_at   DateTime @default(now())
+  uploaded_by   Int?
+  total_records Int
+  success_count Int
+  failed_count  Int
+  status        String   @default("completed")
+
+  @@map("import_history")
+}
+
+model ImportError {
+  id          Int    @id @default(autoincrement())
+  import_id   Int
+  row_number  Int
+  error       String @db.Text
+  raw_data    String? @db.Text
+
+  @@map("import_errors")
+}

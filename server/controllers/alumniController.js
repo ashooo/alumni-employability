@@ -325,11 +325,31 @@ const getCollegeSurvey = async (req, res) => {
       );
 
       // Parse options JSON for each question
-      const parsedQuestions = questions.map(q => ({
-        ...q,
-        options: q.options ? JSON.parse(q.options) : null,
-        colleges: q.colleges ? JSON.parse(q.colleges) : []
-      }));
+      const parsedQuestions = questions.map(q => {
+        let options = q.options;
+        if (typeof options === 'string' && options.trim() !== '') {
+          try {
+            options = JSON.parse(options);
+          } catch (e) {
+            console.error('Failed to parse options for question', q.id, e);
+          }
+        }
+        
+        let colleges = q.colleges;
+        if (typeof colleges === 'string' && colleges.trim() !== '') {
+          try {
+            colleges = JSON.parse(colleges);
+          } catch (e) {
+            colleges = [];
+          }
+        }
+
+        return {
+          ...q,
+          options,
+          colleges: colleges || []
+        };
+      });
 
       result.push({
         id: cat.id,
@@ -435,9 +455,10 @@ const getSurveyResponses = async (req, res) => {
         sq.text as question_text,
         sq.type as question_type
        FROM survey_responses sr
+       INNER JOIN student_academic sa_acad ON sr.student_academic_id = sa_acad.id
        LEFT JOIN survey_answers sa ON sr.id = sa.response_id
        LEFT JOIN survey_questions sq ON sa.question_id = sq.id
-       WHERE sr.student_id = ?
+       WHERE sa_acad.student_id = ?
        ORDER BY sr.completed_at DESC, sa.id ASC`,
       [studentId]
     );

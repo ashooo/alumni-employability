@@ -79,8 +79,12 @@ print(f"Label encoding mapping: {dict(zip(le.classes_, le.transform(le.classes_)
 
 # Encode categorical features
 categorical_cols = ['Gender', 'Degree', 'Leadership POS', 'Act Member POS']
+categorical_encoders = {}
 for col in categorical_cols:
-    X[col] = LabelEncoder().fit_transform(X[col])
+    le_cat = LabelEncoder()
+    X[col] = le_cat.fit_transform(X[col])
+    categorical_encoders[col] = le_cat
+
 
 # Train/Test Split (stratified to preserve class ratio)
 X_train, X_test, y_train, y_test = train_test_split(
@@ -151,6 +155,7 @@ if importances is not None:
 joblib.dump(model, MODEL_DIR / f"{model_name}.pkl")
 joblib.dump(scaler, MODEL_DIR / "scaler.pkl")
 joblib.dump(le, MODEL_DIR / "label_encoder.pkl")
+joblib.dump(categorical_encoders, MODEL_DIR / "categorical_encoders.pkl")
 joblib.dump(feature_cols, MODEL_DIR / "feature_names.pkl")
 
 print(f"\n✅ Model and artifacts saved to {MODEL_DIR}")

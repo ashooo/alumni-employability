@@ -59,6 +59,34 @@ interface PreviousSubmission {
   }[];
 }
 
+interface Skill {
+  id: number;
+  name: string;
+  type: 'hard' | 'soft';
+}
+
+interface Skill {
+  id: number;
+  name: string;
+  type: 'hard' | 'soft';
+}
+
+interface Degree {
+  id: number;
+  name: string;
+  college_id: number;
+}
+
+interface Prediction {
+  employable: boolean;
+  probability: number;
+  label: string;
+  confidence: number;
+  model_type?: string;
+}
+
+
+
 export default function AlumniSurvey() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -66,7 +94,7 @@ export default function AlumniSurvey() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [currentSection, setCurrentSection] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [answers, setAnswers] = useState<Record<string, string | string[] | number>>({});
   const [showReview, setShowReview] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -78,6 +106,30 @@ export default function AlumniSurvey() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [surveyVersion, setSurveyVersion] = useState<number>(1);
   const [collegeId, setCollegeId] = useState<number | null>(null);
+
+  // ASSESSMENT WIZARD STATES
+  const [assessmentStage, setAssessmentStage] = useState<'survey' | 'wizard' | 'finished'>('survey');
+  const [wizardStep, setWizardStep] = useState(1);
+  const [availableSkills, setAvailableSkills] = useState<Skill[]>([]);
+  const [availableDegrees, setAvailableDegrees] = useState<Degree[]>([]);
+  const [academicData, setAcademicData] = useState({
+    cgpa: '',
+    prof_grade: '',
+    elec_grade: '',
+    ojt_grade: '',
+    gender: '',
+    age: '',
+    year_graduated: new Date().getFullYear().toString(),
+    leader_pos: false,
+    act_member_pos: false,
+    degree_id: ''
+  });
+  const [selectedHardSkills, setSelectedHardSkills] = useState<number[]>([]);
+  const [selectedSoftSkills, setSelectedSoftSkills] = useState<number[]>([]);
+  const [skillRatings, setSkillRatings] = useState<Record<number, number>>({});
+  const [predictionResult, setPredictionResult] = useState<Prediction | null>(null);
+
+
 
   // Get token from storage
   const getToken = () => {
@@ -205,7 +257,24 @@ export default function AlumniSurvey() {
     };
 
     fetchUserCollege();
+
+    const fetchWizardData = async () => {
+      try {
+        const token = getToken();
+        const [skillsRes, degreesRes] = await Promise.all([
+          fetch(`${API_URL}/prediction/skills`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${API_URL}/prediction/degrees`, { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+
+        if (skillsRes.ok) setAvailableSkills(await skillsRes.json());
+        if (degreesRes.ok) setAvailableDegrees(await degreesRes.json());
+      } catch (error) {
+        console.error('Error fetching wizard data:', error);
+      }
+    };
+    fetchWizardData();
   }, [user]);
+
 
   useEffect(() => {
     const key = getNotifyStorageKey();
@@ -219,86 +288,88 @@ export default function AlumniSurvey() {
 
 const handleSubmit = async () => {
   if (!user?.username) return;
-  
   setSubmitting(true);
+  
   try {
-    const token = getToken();
+    // Note: We bypass sending this prematurely because the true model pipeline
+    // expects all of this data to be bundled together alongside the ML inputs 
+    // to strictly enforce the creation of the StudentAcademic snapshot.
+    // The actual submission will happen in handleWizardSubmit.
     
-    // Format answers for submission
-    const formattedAnswers: SurveyResponse[] = [];
+    // Quick artificial delay for UX
+    await new Promise(r => setTimeout(r, 600));
+
+    setShowReview(false);
+    setEditMode(false);
     
-    categories.forEach(category => {
-      category.questions.forEach(question => {
-        const answer = answers[String(question.id)];
-        if (answer !== undefined && answer !== '') {
-          const response: SurveyResponse = {
-            question_id: question.id
-          };
-          
-          if (question.type === 'number' || question.type === 'scale') {
-            response.answer_number = Number(answer);
-          } else if (question.type === 'checkbox' && Array.isArray(answer)) {
-            response.answer_options = answer;
-          } else {
-            response.answer_text = String(answer);
-          }
-          
-          formattedAnswers.push(response);
-        }
-      });
+    // Transition to Assessment Wizard Stage
+    setAssessmentStage('wizard');
+    setWizardStep(1);
+    
+    toast({ 
+      title: 'Survey Answers Recorded', 
+      description: 'Now, let\'s complete your Employability Assessment.' 
     });
-
-    const response = await fetch(`${API_URL}/alumni/survey/submit/${user.username}`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        version: surveyVersion,
-        answers: formattedAnswers,
-        notify: notifyOnNewVersion
-      })
-    });
-
-    if (response.ok) {
-      setShowReview(false);
-      setEditMode(false); // Turn off edit mode
-      setSubmitted(true);
-      
-      // Immediately fetch the updated submission details
-      const submissionsResponse = await fetch(`${API_URL}/alumni/survey/responses/${user.username}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (submissionsResponse.ok) {
-        const submissions = await submissionsResponse.json();
-        if (submissions.length > 0) {
-          setPreviousSubmission(submissions[0]);
-        }
-      }
-      
-      toast({ 
-        title: 'Survey Submitted!', 
-        description: 'Thank you for completing the tracer survey.' 
-      });
-    } else {
-      throw new Error('Failed to submit survey');
-    }
   } catch (error) {
-    console.error('Error submitting survey:', error);
+    console.error('Error proceeding to assessment:', error);
     toast({
       title: 'Error',
-      description: 'Failed to submit survey',
+      description: 'Failed to proceed to the next step',
       variant: 'destructive'
     });
   } finally {
     setSubmitting(false);
   }
 };
+
+const handleWizardSubmit = async () => {
+  setSubmitting(true);
+  try {
+    const token = getToken();
+    
+    const skillRatingsFormatted = [
+      ...selectedHardSkills.map(id => ({ id, score: skillRatings[id] || 3, type: 'hard' })),
+      ...selectedSoftSkills.map(id => ({ id, score: skillRatings[id] || 3, type: 'soft' }))
+    ];
+
+    const response = await fetch(`${API_URL}/prediction/employability/submit`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        studentId: user?.username,
+        academicData,
+        skillRatings: skillRatingsFormatted,
+        additionalAnswers: answers // Pass general survey answers for storage
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      setPredictionResult(result.prediction);
+      setAssessmentStage('finished');
+      setSubmitted(true);
+      toast({
+        title: 'Assessment Complete!',
+        description: 'Your employability prediction has been generated.'
+      });
+    } else {
+      throw new Error('Failed to submit assessment');
+    }
+  } catch (error) {
+    console.error('Wizard submission error:', error);
+    toast({
+      title: 'Submission Error',
+      description: 'Failed to generate prediction. Please try again.',
+      variant: 'destructive'
+    });
+  } finally {
+    setSubmitting(false);
+  }
+};
+
 
   const loadPreviousAnswers = (focusQuestionId?: number) => {
     if (!previousSubmission) return;
@@ -445,7 +516,7 @@ const handleSubmit = async () => {
     );
   }
 
-  if (submitted && !editMode) {
+  if (submitted && !editMode && assessmentStage === 'survey') {
     return (
       <div className="max-w-2xl mx-auto text-center py-8">
         <motion.div 
@@ -487,18 +558,330 @@ const handleSubmit = async () => {
           )}
         </div>
 
-        <div className="flex gap-3 justify-center">
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Button variant="outline" onClick={openPreviousResponses}>
-            <Edit2 className="h-4 w-4 mr-2" /> View / Edit My Responses
+            <Edit2 className="h-4 w-4 mr-2" /> View / Edit Responses
           </Button>
-          <Button onClick={() => window.location.href = '/app/alumni/dashboard'}>
-            Go to Dashboard
+          <Button onClick={() => setAssessmentStage('wizard')} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md">
+            Complete Employability Assessment
           </Button>
         </div>
         {previousResponsesDialog}
       </div>
     );
   }
+
+  if (assessmentStage === 'wizard') {
+    const hardSkills = availableSkills.filter(s => s.type === 'hard');
+    const softSkills = availableSkills.filter(s => s.type === 'soft');
+
+    return (
+      <div className="max-w-4xl mx-auto space-y-6 pb-12">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold text-primary">Employability Assessment</h1>
+            <p className="text-muted-foreground">Step {wizardStep} of 4: {
+              wizardStep === 1 ? 'Academic Performance' : 
+              wizardStep === 2 ? 'Hard Skills Selection' : 
+              wizardStep === 3 ? 'Soft Skills Selection' : 'Skill Proficiency'
+            }</p>
+          </div>
+          <div className="flex gap-2">
+            {[1, 2, 3, 4].map(s => (
+              <div 
+                key={s} 
+                className={`h-2 w-12 rounded-full transition-colors ${s <= wizardStep ? 'bg-primary' : 'bg-muted'}`}
+              />
+            ))}
+          </div>
+        </div>
+
+        <motion.div 
+          key={wizardStep}
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="glass-card p-8 min-h-[500px] flex flex-col"
+        >
+          {/* Step 1: Academic Data */}
+          {wizardStep === 1 && (
+            <div className="space-y-6 flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label>Gender</Label>
+                  <Select value={academicData.gender} onValueChange={v => setAcademicData(p => ({...p, gender: v}))}>
+                    <SelectTrigger><SelectValue placeholder="Select Gender" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Male">Male</SelectItem>
+                      <SelectItem value="Female">Female</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Age</Label>
+                  <Input type="number" placeholder="e.g. 22" value={academicData.age} onChange={e => setAcademicData(p => ({...p, age: e.target.value}))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Degree Program</Label>
+                  <Select value={academicData.degree_id} onValueChange={v => setAcademicData(p => ({...p, degree_id: v}))}>
+                    <SelectTrigger><SelectValue placeholder="Select Degree" /></SelectTrigger>
+                    <SelectContent>
+                      {availableDegrees.map(d => (
+                        <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Overall CGPA</Label>
+                  <Input type="number" step="0.01" placeholder="e.g. 1.25" value={academicData.cgpa} onChange={e => setAcademicData(p => ({...p, cgpa: e.target.value}))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Average Prof Grade</Label>
+                  <Input type="number" step="0.01" value={academicData.prof_grade} onChange={e => setAcademicData(p => ({...p, prof_grade: e.target.value}))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>OJT Grade</Label>
+                  <Input type="number" step="0.01" value={academicData.ojt_grade} onChange={e => setAcademicData(p => ({...p, ojt_grade: e.target.value}))} />
+                </div>
+              </div>
+              <div className="flex flex-col gap-4 pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Leadership Position</Label>
+                    <p className="text-sm text-muted-foreground">Did you hold a leadership role in any student organization?</p>
+                  </div>
+                  <Switch checked={academicData.leader_pos} onCheckedChange={v => setAcademicData(p => ({...p, leader_pos: v}))} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Active Membership</Label>
+                    <p className="text-sm text-muted-foreground">Were you an active member of organization(s)?</p>
+                  </div>
+                  <Switch checked={academicData.act_member_pos} onCheckedChange={v => setAcademicData(p => ({...p, act_member_pos: v}))} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Hard Skills Selection */}
+          {wizardStep === 2 && (
+            <div className="space-y-6 flex-1">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-semibold">Select 6–8 Hard Skills</h3>
+                <span className={`text-sm font-bold ${selectedHardSkills.length >= 6 && selectedHardSkills.length <= 8 ? 'text-success' : 'text-destructive'}`}>
+                  {selectedHardSkills.length} selected
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {hardSkills.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      if (selectedHardSkills.includes(s.id)) {
+                        setSelectedHardSkills(p => p.filter(id => id !== s.id));
+                      } else if (selectedHardSkills.length < 8) {
+                        setSelectedHardSkills(p => [...p, s.id]);
+                      }
+                    }}
+                    className={`p-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                      selectedHardSkills.includes(s.id) 
+                        ? 'bg-primary/10 border-primary text-primary shadow-sm ring-1 ring-primary/20' 
+                        : 'hover:bg-muted border-transparent bg-muted/50'
+                    }`}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Soft Skills Selection */}
+          {wizardStep === 3 && (
+            <div className="space-y-6 flex-1">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-semibold">Select 4–5 Soft Skills</h3>
+                <span className={`text-sm font-bold ${selectedSoftSkills.length >= 4 && selectedSoftSkills.length <= 5 ? 'text-success' : 'text-destructive'}`}>
+                  {selectedSoftSkills.length} selected
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {softSkills.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      if (selectedSoftSkills.includes(s.id)) {
+                        setSelectedSoftSkills(p => p.filter(id => id !== s.id));
+                      } else if (selectedSoftSkills.length < 5) {
+                        setSelectedSoftSkills(p => [...p, s.id]);
+                      }
+                    }}
+                    className={`p-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                      selectedSoftSkills.includes(s.id) 
+                        ? 'bg-primary/10 border-primary text-primary shadow-sm ring-1 ring-primary/20' 
+                        : 'hover:bg-muted border-transparent bg-muted/50'
+                    }`}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Proficiency Rating */}
+          {wizardStep === 4 && (
+            <div className="space-y-6 flex-1">
+              <h3 className="text-xl font-semibold">Rate your Proficiency (1–10)</h3>
+              <div className="space-y-8 max-w-2xl mx-auto">
+                {[...selectedHardSkills, ...selectedSoftSkills].map(id => {
+                  const skill = availableSkills.find(s => s.id === id);
+                  if (!skill) return null;
+                  return (
+                    <div key={id} className="space-y-3">
+                      <div className="flex justify-between">
+                        <Label className="text-base font-medium">{skill.name}</Label>
+                        <span className="font-bold text-primary">{skillRatings[id] || 5}</span>
+                      </div>
+                      <Slider 
+                        min={1} max={10} step={1}
+                        value={[skillRatings[id] || 5]}
+                        onValueChange={v => setSkillRatings(p => ({...p, [id]: v[0]}))}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-between pt-8 mt-auto border-t">
+            <Button variant="outline" size="lg" onClick={() => {
+              if (wizardStep === 1) setAssessmentStage('survey');
+              else setWizardStep(p => p - 1);
+            }}>
+              <ArrowLeft className="h-4 w-4 mr-2" /> Back
+            </Button>
+            
+            {wizardStep < 4 ? (
+              <Button size="lg" onClick={() => {
+                // Basic validation
+                if (wizardStep === 1 && (!academicData.cgpa || !academicData.age || !academicData.degree_id)) {
+                  toast({ title: 'Validation Error', description: 'Please fill in all academic details.' });
+                  return;
+                }
+                if (wizardStep === 2 && selectedHardSkills.length < 6) {
+                  toast({ title: 'Validation Error', description: 'Please select at least 6 hard skills.' });
+                  return;
+                }
+                if (wizardStep === 3 && selectedSoftSkills.length < 4) {
+                  toast({ title: 'Validation Error', description: 'Please select at least 4 soft skills.' });
+                  return;
+                }
+                setWizardStep(p => p + 1);
+              }}>
+                Next Step <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            ) : (
+              <Button size="lg" onClick={handleWizardSubmit} disabled={submitting}>
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                {submitting ? 'Analyzing...' : 'Generate Prediction'}
+              </Button>
+            )}
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (assessmentStage === 'finished' && predictionResult) {
+    const isEmployable = predictionResult.employable;
+    const confidence = Math.round(predictionResult.confidence * 100);
+    const prob = Math.round(predictionResult.probability * 100);
+
+    return (
+      <div className="max-w-3xl mx-auto space-y-8 pb-12">
+        <motion.div 
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-10 text-center space-y-6"
+        >
+          <div className="relative inline-flex items-center justify-center w-32 h-32">
+             <svg className="w-32 h-32 -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="45" fill="none" stroke="hsl(var(--muted))" strokeWidth="8" />
+                <circle 
+                  cx="50" cy="50" r="45" 
+                  fill="none" 
+                  stroke={isEmployable ? "hsl(var(--success))" : "hsl(var(--destructive))"} 
+                  strokeWidth="8" 
+                  strokeLinecap="round" 
+                  strokeDasharray={`${prob * 2.82} 282`} 
+                />
+              </svg>
+              <div className="absolute flex flex-col items-center">
+                <span className="text-3xl font-bold font-display">{prob}%</span>
+              </div>
+          </div>
+
+          <div className="space-y-2">
+            <h2 className={`text-4xl font-display font-bold ${isEmployable ? 'text-success' : 'text-destructive'}`}>
+              {isEmployable ? 'Employable' : 'Not Yet Employable'}
+            </h2>
+            <p className="text-muted-foreground max-w-md mx-auto">
+              Our AI model has analyzed your profile with <strong>{confidence}% confidence</strong>. 
+              {isEmployable 
+                ? ' You show strong indicators of employment readiness within 6 months of graduation.' 
+                : ' We recommend focusing on improving your professional profile and core skills.'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 text-sm">
+             <div className="p-4 rounded-xl border bg-muted/20">
+                <p className="text-muted-foreground mb-1">Status</p>
+                <p className="font-bold">{isEmployable ? 'Ready' : 'Developing'}</p>
+             </div>
+             <div className="p-4 rounded-xl border bg-muted/20">
+                <p className="text-muted-foreground mb-1">Model Version</p>
+                <p className="font-bold">v1.0.0-PROD</p>
+             </div>
+             <div className="p-4 rounded-xl border bg-muted/20">
+                <p className="text-muted-foreground mb-1">Retraining Status</p>
+                <p className="font-bold text-success">Continuous</p>
+             </div>
+          </div>
+
+          <div className="flex gap-4 justify-center pt-6 border-t font-display">
+            <Button variant="outline" size="lg" onClick={() => navigate('/app/alumni/dashboard')}>
+              Go to Dashboard
+            </Button>
+            <Button size="lg" onClick={() => navigate('/app/alumni/results')}>
+              View Detailed Breakdown
+            </Button>
+          </div>
+        </motion.div>
+
+        <div className="glass-card p-6 border-l-4 border-l-primary">
+          <h4 className="font-bold mb-2 flex items-center gap-2">
+            <Bell className="h-4 w-4" /> Next Step: Ground Truth Verification
+          </h4>
+          <p className="text-sm text-muted-foreground">
+            To improve our model, we've scheduled a follow-up survey for you in <strong>2 months</strong>. 
+            Confirming your employment status then helps us provide more accurate predictions for future graduates.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+
 
   if (categories.length === 0) {
     return (
@@ -520,9 +903,9 @@ const handleSubmit = async () => {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-display font-bold">Tracer Survey</h1>
+        <h1 className="text-2xl font-display font-bold">Tracer Survey (Part 1)</h1>
         <p className="text-muted-foreground text-sm">
-          {editMode ? 'Editing your previous responses' : 'Complete all sections to submit your survey'} • Version {surveyVersion}
+          {editMode ? 'Editing your previous responses' : 'General information and feedback storage'} • Version {surveyVersion}
         </p>
       </div>
 
@@ -729,29 +1112,6 @@ const handleSubmit = async () => {
                 </div>
               );
             })}
-            
-            {Object.keys(answers).length === 0 && (
-              <p className="text-center text-muted-foreground py-4">
-                No answers provided yet.
-              </p>
-            )}
-          </div>
-
-          <div className="bg-muted/30 p-3 rounded-lg mb-2">
-            <div className="flex items-center gap-2 mb-2">
-              <Bell className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Get notified about new surveys</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch 
-                id="notify-review"
-                checked={notifyOnNewVersion}
-                onCheckedChange={updateNotifyPreference}
-              />
-              <Label htmlFor="notify-review" className="text-xs text-muted-foreground">
-                Send me an email when a new survey version is available
-              </Label>
-            </div>
           </div>
 
           <DialogFooter className="pt-4">
@@ -760,7 +1120,7 @@ const handleSubmit = async () => {
             </Button>
             <Button onClick={handleSubmit} disabled={submitting}>
               {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-              {submitting ? 'Submitting...' : 'Submit Survey'}
+              {submitting ? 'Submitting...' : 'Submit to Assessment'}
             </Button>
           </DialogFooter>
         </DialogContent>

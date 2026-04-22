@@ -9,8 +9,7 @@
   },
   "dependencies": {
     "alumni-employability": "file:..",
-    "bcrypt": "^5.1.1",
-    "clsx": "^2.1.1",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "dotenv": "^16.3.1",
@@ -22,6 +21,8 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "@prisma/client": "^6.19.3",
+    "nodemon": "^3.0.1",
+    "prisma": "^6.19.3"
   }
 }

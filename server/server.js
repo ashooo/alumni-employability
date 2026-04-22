@@ -56,7 +56,7 @@ app.use('/api/admin/programs', programRoutes);
 app.use('/api/alumni', alumniRoutes); 
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/superadmin', superAdminRoutes);
-app.use('/api/admin/predictions', predictionRoutes);
+app.use('/api/prediction', predictionRoutes);
 
 // Test route
 app.get('/', (req, res) => {

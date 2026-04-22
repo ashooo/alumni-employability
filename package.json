@@ -14,5 +14,9 @@
   "description": "",
   "devDependencies": {
     "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "papaparse": "^5.5.3",
+    "xlsx": "^0.18.5"
   }
 }

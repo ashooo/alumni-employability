@@ -27,3 +27,19 @@ This folder is split into two responsibilities:
 
 - `models/` stores trained model artifacts used by runtime scripts.
 - `data/` stores raw and processed datasets used by training scripts.
+
+## Job Matcher ONNX Rebuild
+
+When using ONNX at runtime, always rebuild index + metadata using the ONNX-first builder so embedding dimensions and vector space stay aligned.
+
+Run from repo root:
+
+1. `python ml/training/job-matcher/merge_dataset.py`
+2. `python ml/training/job-matcher/index_builder.py`
+
+This regenerates:
+
+- `ml/models/onet_embeddings.faiss`
+- `ml/models/occupation_metadata.json`
+- `ml/models/job_matcher_config.json`
+- `ml/models/jobbert_v2_onnx/`

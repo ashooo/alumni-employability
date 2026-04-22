@@ -1,202 +1,206 @@
 """
-build_index.py - FIXED VERSION
+Offline preprocessing for Job Matcher.
 
-One-time offline preprocessing:
-- Embeds all O*NET occupations using JobBERT-v2
-- Builds and saves a FAISS index (cosine similarity)
-- Exports the model to ONNX for optimized deployment
-- Saves occupation metadata for overlap calculation
+This version is ONNX-first to ensure runtime parity:
+- Builds occupation embeddings using the same ONNX encoder + mean pooling logic
+  used by deployment runtime.
+- Writes FAISS index + rich metadata for domain-aware reranking.
+- Exports ONNX model files for deployment.
 """
 
 import json
-import numpy as np
-import faiss
 from pathlib import Path
-from sentence_transformers import SentenceTransformer
+from typing import Dict, List
 
-# ----------------------------------------------------------------------
-# Configuration
-# ----------------------------------------------------------------------
-BASE_DIR = Path(__file__).parent.parent.parent
+import faiss
+import numpy as np
+
+
+BASE_DIR = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
 MODELS_DIR = BASE_DIR / "models"
-
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 INPUT_JSON = PROCESSED_DIR / "occupation_profiles.json"
 INDEX_PATH = MODELS_DIR / "onet_embeddings.faiss"
 META_PATH = MODELS_DIR / "occupation_metadata.json"
 ONNX_MODEL_DIR = MODELS_DIR / "jobbert_v2_onnx"
+RUNTIME_CONFIG_PATH = MODELS_DIR / "job_matcher_config.json"
 
-# ----------------------------------------------------------------------
-# Helper function - matches the one in merge_dataset.py
-# ----------------------------------------------------------------------
-def flatten_occupation_for_embedding(occ: dict) -> str:
-    """
-    Convert an occupation profile into a deduplicated natural-language string
-    suitable for JobBERT-v2 embedding.
-    
-    Excludes interests (they are personality signals, not competencies).
-    """
-    title = occ.get("Title", "")
-    
-    # Extract competency names (safe access)
-    skill_names = [s["name"] for s in occ.get("skills", []) if isinstance(s, dict) and "name" in s]
-    knowledge_names = [k["name"] for k in occ.get("knowledge", []) if isinstance(k, dict) and "name" in k]
-    ability_names = occ.get("abilities", []) if isinstance(occ.get("abilities", []), list) else []
-    tech_names = occ.get("technology_skills", []) if isinstance(occ.get("technology_skills", []), list) else []
-    
-    # Combine and deduplicate
-    all_competencies = skill_names + knowledge_names + ability_names + tech_names
-    all_competencies = sorted(set(all_competencies))  # deduplication + stable order
-    
-    comp_text = ", ".join(all_competencies) if all_competencies else "None specified"
-    return f"{title}. Skills include {comp_text}."
+MODEL_NAME = "TechWolf/JobBERT-v2"
+BATCH_SIZE = 32
+MAX_LEN_CAP = 256
 
-# ----------------------------------------------------------------------
-# Step 1: Load occupations and create text profiles
-# ----------------------------------------------------------------------
-print("Loading occupation profiles...")
-with open(INPUT_JSON, "r", encoding="utf-8") as f:
-    occupations = json.load(f)
 
-texts = [flatten_occupation_for_embedding(occ) for occ in occupations]
-print(f"Loaded {len(texts)} occupations.")
+def _extract_names(items: List[Dict]) -> List[str]:
+    return [str(x.get("name")).strip() for x in items if isinstance(x, dict) and str(x.get("name", "")).strip()]
 
-# Print first example to verify
-print("\nExample flattened text:")
-print(texts[0][:200] + "...")
 
-# ----------------------------------------------------------------------
-# Step 2: Load JobBERT-v2 and generate embeddings
-# ----------------------------------------------------------------------
-print("\nLoading JobBERT-v2 model...")
-model = SentenceTransformer("TechWolf/JobBERT-v2")
+def _safe_list(value) -> List[str]:
+    if isinstance(value, list):
+        return value
+    return []
 
-print("Generating embeddings...")
-embeddings = model.encode(texts, batch_size=32, show_progress_bar=True)
 
-print(f"Generated embeddings with shape: {embeddings.shape}")
+def _build_sections(occ: Dict) -> Dict[str, List[str]]:
+    skills = sorted(set(_extract_names(_safe_list(occ.get("skills")))))
+    knowledge = sorted(set(_extract_names(_safe_list(occ.get("knowledge")))))
+    abilities = sorted(set(str(x).strip() for x in _safe_list(occ.get("abilities")) if str(x).strip()))
+    tech = sorted(set(str(x).strip() for x in _safe_list(occ.get("technology_skills")) if str(x).strip()))
 
-# ----------------------------------------------------------------------
-# Step 3: Build FAISS index
-# ----------------------------------------------------------------------
-vectors = embeddings.astype(np.float32)
-faiss.normalize_L2(vectors)
+    core = sorted(set(skills + knowledge + tech))
+    all_comp = sorted(set(core + abilities))
 
-dim = vectors.shape[1]  # should be 1024
-index = faiss.IndexFlatIP(dim)
-index.add(vectors)
-
-faiss.write_index(index, str(INDEX_PATH))
-print(f"\n✓ FAISS index saved to {INDEX_PATH} (dimension = {dim})")
-
-# ----------------------------------------------------------------------
-# Step 4: Save occupation metadata
-# ----------------------------------------------------------------------
-metadata = []
-for occ in occupations:
-    # Extract competency names
-    skill_names = [s["name"] for s in occ.get("skills", []) if isinstance(s, dict) and "name" in s]
-    knowledge_names = [k["name"] for k in occ.get("knowledge", []) if isinstance(k, dict) and "name" in k]
-    ability_names = occ.get("abilities", []) if isinstance(occ.get("abilities", []), list) else []
-    tech_names = occ.get("technology_skills", []) if isinstance(occ.get("technology_skills", []), list) else []
-    
-    all_comp = skill_names + knowledge_names + ability_names + tech_names
-    all_comp = sorted(set(all_comp))
-    
-    metadata.append({
-        "title": occ.get("Title", "Unknown"),
+    return {
+        "skills": skills,
+        "knowledge": knowledge,
+        "abilities": abilities,
+        "technology_skills": tech,
+        "core_competencies": core,
         "competencies": all_comp,
-        # Note: Your JSON doesn't have SOC codes at the top level
-        # You may need to add this field or use a different identifier
-    })
+    }
 
-with open(META_PATH, "w", encoding="utf-8") as f:
-    json.dump(metadata, f, indent=2, ensure_ascii=False)
-print(f"✓ Metadata saved to {META_PATH}")
 
-# ----------------------------------------------------------------------
-# Step 5: Export model to ONNX for optimized deployment
-# ----------------------------------------------------------------------
-print("\nExporting JobBERT-v2 to ONNX...")
+def flatten_occupation_for_embedding(occ: Dict) -> str:
+    title = str(occ.get("Title", "")).strip()
+    sections = _build_sections(occ)
 
-try:
-    # Method 1: Use optimum library (recommended for deployment)
-    # This requires: pip install optimum[exporters]
-    try:
-        from optimum.onnxruntime import ORTModelForFeatureExtraction
-        from transformers import AutoTokenizer
-        
-        # Load tokenizer
-        tokenizer = AutoTokenizer.from_pretrained("TechWolf/JobBERT-v2")
-        
-        # Export to ONNX
-        ort_model = ORTModelForFeatureExtraction.from_pretrained(
-            "TechWolf/JobBERT-v2",
-            export=True,
+    core = ", ".join(sections["core_competencies"][:80]) or "None specified"
+    knowledge = ", ".join(sections["knowledge"][:50]) or "None specified"
+    tech = ", ".join(sections["technology_skills"][:40]) or "None specified"
+    abilities = ", ".join(sections["abilities"][:40]) or "None specified"
+
+    # Weighted template: emphasize core/domain signal; keep abilities as secondary.
+    return (
+        f"Occupation: {title}. "
+        f"Core domain competencies: {core}. "
+        f"Primary knowledge areas: {knowledge}. "
+        f"Tools and technologies: {tech}. "
+        f"Transferable abilities (secondary): {abilities}."
+    )
+
+
+def _mean_pool_numpy(last_hidden_state: np.ndarray, attention_mask: np.ndarray) -> np.ndarray:
+    expanded_mask = np.expand_dims(attention_mask.astype(np.float32), axis=-1)
+    summed = (last_hidden_state * expanded_mask).sum(axis=1)
+    denom = np.clip(expanded_mask.sum(axis=1), a_min=1e-9, a_max=None)
+    return summed / denom
+
+
+def build_embeddings_with_onnx(texts: List[str], batch_size: int = BATCH_SIZE) -> np.ndarray:
+    from optimum.onnxruntime import ORTModelForFeatureExtraction
+    from transformers import AutoTokenizer
+
+    print("Loading ONNX encoder for embedding generation...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = ORTModelForFeatureExtraction.from_pretrained(MODEL_NAME, export=True)
+
+    model_max_len = getattr(tokenizer, "model_max_length", 128)
+    if not isinstance(model_max_len, int) or model_max_len <= 0 or model_max_len > 2048:
+        model_max_len = 128
+
+    all_embeddings = []
+    total = len(texts)
+    print(f"Generating ONNX embeddings for {total} occupations...")
+
+    for start in range(0, total, batch_size):
+        batch_texts = texts[start:start + batch_size]
+        inputs = tokenizer(
+            batch_texts,
+            return_tensors="np",
+            padding=True,
+            truncation=True,
+            max_length=min(model_max_len, MAX_LEN_CAP)
         )
-        
-        # Save ONNX model and tokenizer
-        ONNX_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        ort_model.save_pretrained(str(ONNX_MODEL_DIR))
-        tokenizer.save_pretrained(str(ONNX_MODEL_DIR))
-        
-        print(f"✓ ONNX model (optimum) saved to {ONNX_MODEL_DIR}")
-        
-    except ImportError:
-        print("⚠ optimum library not installed, trying alternative method...")
-        
-        # Method 2: Manual export using torch
-        import torch
-        from transformers import AutoModel, AutoTokenizer
-        
-        # Load the base transformer
-        base_model = AutoModel.from_pretrained("TechWolf/JobBERT-v2")
-        tokenizer = AutoTokenizer.from_pretrained("TechWolf/JobBERT-v2")
-        
-        # Create dummy input
-        dummy_text = "Sample text for ONNX export"
-        inputs = tokenizer(dummy_text, return_tensors="pt")
-        
-        # Export to ONNX
-        ONNX_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        onnx_path = ONNX_MODEL_DIR / "model.onnx"
-        
-        torch.onnx.export(
-            base_model,
-            (inputs["input_ids"], inputs["attention_mask"]),
-            str(onnx_path),
-            input_names=["input_ids", "attention_mask"],
-            output_names=["last_hidden_state"],
-            dynamic_axes={
-                "input_ids": {0: "batch", 1: "sequence"},
-                "attention_mask": {0: "batch", 1: "sequence"},
-                "last_hidden_state": {0: "batch", 1: "sequence"},
-            },
-            opset_version=14,
-        )
-        
-        # Save tokenizer
-        tokenizer.save_pretrained(str(ONNX_MODEL_DIR))
-        
-        print(f"✓ ONNX model (torch) saved to {onnx_path}")
-        print("⚠ Note: This export only includes the base model, not the pooling layer")
-        print("   For production, consider using optimum library: pip install optimum[exporters]")
-        
-except Exception as e:
-    print(f"✗ ONNX export failed: {e}")
-    print("\nFor deployment optimization, you have two options:")
-    print("1. Install optimum: pip install optimum[exporters] optimum[onnxruntime]")
-    print("2. Use the standard model with CPU optimization (still fast for inference)")
-    print("\nThe FAISS index and metadata are ready for deployment even without ONNX.")
+        outputs = model(**inputs)
+        token_embeddings = np.asarray(outputs.last_hidden_state, dtype=np.float32)
+        attention_mask = np.asarray(inputs["attention_mask"])
+        pooled = _mean_pool_numpy(token_embeddings, attention_mask)
+        all_embeddings.append(pooled.astype(np.float32))
 
-print("\n" + "="*70)
-print("✅ Offline build complete!")
-print("="*70)
-print(f"\nGenerated files:")
-print(f"  - {INDEX_PATH} (FAISS index)")
-print(f"  - {META_PATH} (occupation metadata)")
-if ONNX_MODEL_DIR.exists():
-    print(f"  - {ONNX_MODEL_DIR}/ (ONNX model)")
-print(f"\nYou can now deploy these files for optimized runtime matching.")
+        done = min(start + batch_size, total)
+        if done % (batch_size * 10) == 0 or done == total:
+            print(f"  processed {done}/{total}")
+
+    return np.vstack(all_embeddings)
+
+
+def export_runtime_onnx():
+    from optimum.onnxruntime import ORTModelForFeatureExtraction
+    from transformers import AutoTokenizer
+
+    print("Exporting deployment ONNX artifacts...")
+    ONNX_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    ort_model = ORTModelForFeatureExtraction.from_pretrained(MODEL_NAME, export=True)
+
+    tokenizer.save_pretrained(str(ONNX_MODEL_DIR))
+    ort_model.save_pretrained(str(ONNX_MODEL_DIR))
+
+    print(f"ONNX artifacts saved to {ONNX_MODEL_DIR}")
+
+
+def main():
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("Loading occupation profiles...")
+    with open(INPUT_JSON, "r", encoding="utf-8") as f:
+        occupations = json.load(f)
+
+    texts = [flatten_occupation_for_embedding(occ) for occ in occupations]
+    print(f"Loaded {len(texts)} occupations.")
+
+    embeddings = build_embeddings_with_onnx(texts)
+    print(f"Embeddings shape: {embeddings.shape}")
+
+    vectors = embeddings.astype(np.float32)
+    faiss.normalize_L2(vectors)
+
+    dim = int(vectors.shape[1])
+    index = faiss.IndexFlatIP(dim)
+    index.add(vectors)
+    faiss.write_index(index, str(INDEX_PATH))
+    print(f"FAISS index saved to {INDEX_PATH} (dim={dim})")
+
+    metadata = []
+    for occ in occupations:
+        sections = _build_sections(occ)
+        metadata.append({
+            "title": str(occ.get("Title", "Unknown")),
+            "skills": sections["skills"],
+            "knowledge": sections["knowledge"],
+            "abilities": sections["abilities"],
+            "technology_skills": sections["technology_skills"],
+            "core_competencies": sections["core_competencies"],
+            "competencies": sections["competencies"],
+            "interests": _safe_list(occ.get("interests")),
+            "interest_high_points": _safe_list(occ.get("interest_high_points")),
+        })
+
+    with open(META_PATH, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
+    print(f"Metadata saved to {META_PATH}")
+
+    runtime_config = {
+        "model_name": MODEL_NAME,
+        "embedding_backend": "onnx_mean_pool",
+        "embedding_dim": dim,
+        "max_length_cap": MAX_LEN_CAP,
+    }
+    with open(RUNTIME_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(runtime_config, f, indent=2)
+    print(f"Runtime config saved to {RUNTIME_CONFIG_PATH}")
+
+    export_runtime_onnx()
+
+    print("\nBuild complete.")
+    print("Generated files:")
+    print(f"  - {INDEX_PATH}")
+    print(f"  - {META_PATH}")
+    print(f"  - {RUNTIME_CONFIG_PATH}")
+    print(f"  - {ONNX_MODEL_DIR}")
+
+
+if __name__ == "__main__":
+    main()
+

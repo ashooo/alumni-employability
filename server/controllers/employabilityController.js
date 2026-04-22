@@ -1,7 +1,7 @@
 const { prisma } = require('../config/db');
-const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { runMlScript, resolvePythonExecutable } = require('../utils/mlRunner');
 
 /**
  * Handles the submission of the Initial Alumni Tracer Survey.
@@ -154,87 +154,70 @@ const submitEmployabilitySurvey = async (req, res) => {
       "Hard Skills Ave": parseFloat(hardAve.toFixed(2))
     };
 
-    const pyScriptPath = path.join(__dirname, '../../ml/scripts/predict_employability.py');
-    const venvPythonPath = path.join(__dirname, '../../ml/venv/Scripts/python.exe');
-    const pythonExecutable = fs.existsSync(venvPythonPath) ? venvPythonPath : 'python';
-    
-    const pythonProcess = spawn(pythonExecutable, [pyScriptPath]);
-    
-    pythonProcess.on('error', (err) => {
-      console.error('[ML] Failed to start Python process in submit:', err);
-      if (!res.headersSent) {
-        return res.status(500).json({ error: 'Failed to start ML pipeline' });
-      }
-    });
-
     let outputData = '';
-    let errorData = '';
-    
-    pythonProcess.stdin.write(JSON.stringify(modelInput));
-    pythonProcess.stdin.end();
+    try {
+      const mlResult = await runMlScript({
+        scriptPath: 'scripts/predict_employability.py',
+        input: modelInput
+      });
 
-    pythonProcess.stdout.on('data', (data) => {
-      outputData += data.toString();
-    });
-
-    pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-    });
-
-    pythonProcess.on('close', async (code) => {
-      if (code !== 0) {
-        console.error('ML Prediction Process Error:', errorData);
+      outputData = mlResult.stdout;
+      if (mlResult.code !== 0) {
+        console.error('ML Prediction Process Error:', mlResult.stderr);
         return res.status(500).json({ error: 'ML Prediction service failed' });
       }
+    } catch (err) {
+      console.error('[ML] Failed to start Python process in submit:', err);
+      return res.status(500).json({ error: 'Failed to start ML pipeline' });
+    }
 
-      try {
-        const predictionResult = JSON.parse(outputData);
+    try {
+      const predictionResult = JSON.parse(outputData);
+      
+      if (predictionResult.status === 'success') {
+        // 7. SAVE PREDICTION RECORD
+        await prisma.employabilityPrediction.create({
+          data: {
+            student_academic_id: academicSnapshot.id,
+            survey_response_id: surveyResponseData.id,
+            model_version: predictionResult.model_type || '1.0.0',
+            employable: predictionResult.employable ? 1 : 0,
+            probability: predictionResult.probability,
+            input_snapshot: modelInput
+          }
+        });
         
-        if (predictionResult.status === 'success') {
-          // 7. SAVE PREDICTION RECORD
-          await prisma.employabilityPrediction.create({
-            data: {
-              student_academic_id: academicSnapshot.id,
-              survey_response_id: surveyResponseData.id,
-              model_version: predictionResult.model_type || '1.0.0',
-              employable: predictionResult.employable ? 1 : 0,
-              probability: predictionResult.probability,
-              input_snapshot: modelInput
-            }
-          });
-          
-          // 8. SCHEDULE FOLLOW-UP (Standard 2 months later as ground truth collector)
-          const dueDate = new Date();
-          dueDate.setMonth(dueDate.getMonth() + 2);
-          
-          await prisma.followupSchedule.create({
-            data: {
-              student_academic_id: academicSnapshot.id,
-              template_id: 2, // Follow-up Template
-              due_date: dueDate
-            }
-          });
+        // 8. SCHEDULE FOLLOW-UP (Standard 2 months later as ground truth collector)
+        const dueDate = new Date();
+        dueDate.setMonth(dueDate.getMonth() + 2);
+        
+        await prisma.followupSchedule.create({
+          data: {
+            student_academic_id: academicSnapshot.id,
+            template_id: 2, // Follow-up Template
+            due_date: dueDate
+          }
+        });
 
-          return res.json({ 
-            success: true, 
-            message: 'Survey processed and prediction generated',
-            prediction: {
-              employable: predictionResult.employable,
-              probability: predictionResult.probability,
-              label: predictionResult.label,
-              confidence: predictionResult.confidence
-            }
-          });
-        } else {
-          console.error('ML Script Error Message:', predictionResult.message);
-          return res.status(500).json({ error: 'Prediction script returned error' });
-        }
-      } catch (e) {
-        fs.writeFileSync(path.join(__dirname, 'err-python.txt'), outputData);
-        console.error('Error securely recording prediction result:', e, 'Raw output:', outputData);
-        return res.status(500).json({ error: 'Failed to record prediction result' });
+        return res.json({ 
+          success: true, 
+          message: 'Survey processed and prediction generated',
+          prediction: {
+            employable: predictionResult.employable,
+            probability: predictionResult.probability,
+            label: predictionResult.label,
+            confidence: predictionResult.confidence
+          }
+        });
       }
-    });
+
+      console.error('ML Script Error Message:', predictionResult.message);
+      return res.status(500).json({ error: 'Prediction script returned error' });
+    } catch (e) {
+      fs.writeFileSync(path.join(__dirname, 'err-python.txt'), outputData);
+      console.error('Error securely recording prediction result:', e, 'Raw output:', outputData);
+      return res.status(500).json({ error: 'Failed to record prediction result' });
+    }
 
   } catch (error) {
     fs.writeFileSync(path.join(__dirname, 'err-fatal.txt'), String(error.stack || error));
@@ -287,50 +270,31 @@ const testPrediction = async (req, res) => {
       return res.status(400).json({ error: 'Missing model input data' });
     }
 
-    const pyScriptPath = path.join(__dirname, '../../ml/scripts/predict_employability.py');
-    const venvPythonPath = path.join(__dirname, '../../ml/venv/Scripts/python.exe');
-    
-    // Strictly prefer venv, fallback to 'python' only if venv is missing
-    const pythonExecutable = fs.existsSync(venvPythonPath) ? venvPythonPath : 'python';
-    
-    console.log(`[ML] Executing prediction with: ${pythonExecutable}`);
+    console.log(`[ML] Executing prediction with: ${resolvePythonExecutable()}`);
 
-    const pythonProcess = spawn(pythonExecutable, [pyScriptPath]);
-    let outputData = '';
-    let errorData = '';
-    
-    pythonProcess.stdin.write(JSON.stringify(modelInput));
-    pythonProcess.stdin.end();
-
-    pythonProcess.stdout.on('data', (data) => {
-      outputData += data.toString();
+    const mlResult = await runMlScript({
+      scriptPath: 'scripts/predict_employability.py',
+      input: modelInput
     });
 
-    pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-    });
+    if (mlResult.code !== 0) {
+      console.error('ML Prediction Process Error:', mlResult.stderr);
+      return res.status(500).json({ error: 'ML Prediction service failed', details: mlResult.stderr });
+    }
 
-    pythonProcess.on('close', (code) => {
-      if (code !== 0) {
-        console.error('ML Prediction Process Error:', errorData);
-        return res.status(500).json({ error: 'ML Prediction service failed', details: errorData });
+    try {
+      const predictionResult = JSON.parse(mlResult.stdout);
+      if (predictionResult.status === 'success') {
+        return res.json({ 
+          success: true, 
+          prediction: predictionResult 
+        });
       }
-
-      try {
-        const predictionResult = JSON.parse(outputData);
-        if (predictionResult.status === 'success') {
-          return res.json({ 
-            success: true, 
-            prediction: predictionResult 
-          });
-        } else {
-          return res.status(500).json({ error: predictionResult.message });
-        }
-      } catch (e) {
-        console.error('Parsing error:', e, outputData);
-        return res.status(500).json({ error: 'Failed to parse prediction result' });
-      }
-    });
+      return res.status(500).json({ error: predictionResult.message });
+    } catch (e) {
+      console.error('Parsing error:', e, mlResult.stdout);
+      return res.status(500).json({ error: 'Failed to parse prediction result' });
+    }
 
   } catch (error) {
     console.error('Fatal Test Prediction Error:', error);

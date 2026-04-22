@@ -1,7 +1,5 @@
 const db = require('../config/db');
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
+const { runMlScript } = require('../utils/mlRunner');
 
 const getArimaPrediction = async (req, res) => {
   try {
@@ -29,41 +27,23 @@ const getArimaPrediction = async (req, res) => {
       employment_rate: r.total > 0 ? (r.employed / r.total) * 100 : 0
     }));
 
-    // 3. Spawn Python script
-    const pyScriptPath = path.join(__dirname, '../../ml/scripts/predict_api.py');
-    const venvPythonPath = path.join(__dirname, '../../ml/venv/Scripts/python.exe');
-    const pythonExecutable = fs.existsSync(venvPythonPath) ? venvPythonPath : 'python';
-    const pythonProcess = spawn(pythonExecutable, [pyScriptPath]);
-
-    let outputData = '';
-    let errorData = '';
-
-    // Send data to python via stdin
-    pythonProcess.stdin.write(JSON.stringify(historicalData));
-    pythonProcess.stdin.end();
-
-    pythonProcess.stdout.on('data', (data) => {
-      outputData += data.toString();
+    // 3. Run Python script
+    const result = await runMlScript({
+      scriptPath: 'scripts/predict_api.py',
+      input: historicalData
     });
 
-    pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-    });
+    if (result.code !== 0) {
+      console.error('Python script error output:', result.stderr);
+      return res.status(500).json({ error: 'Failed to generate prediction with model.', details: result.stderr });
+    }
 
-    pythonProcess.on('close', (code) => {
-      if (code !== 0) {
-        console.error('Python script error output:', errorData);
-        return res.status(500).json({ error: 'Failed to generate prediction with model.', details: errorData });
-      }
-
-      try {
-        const result = JSON.parse(outputData);
-        return res.json(result);
-      } catch (e) {
-        console.error('Error parsing Python script output:', outputData);
-        return res.status(500).json({ error: 'Failed to parse model output.', details: outputData });
-      }
-    });
+    try {
+      return res.json(JSON.parse(result.stdout));
+    } catch (e) {
+      console.error('Error parsing Python script output:', result.stdout);
+      return res.status(500).json({ error: 'Failed to parse model output.', details: result.stdout });
+    }
 
   } catch (error) {
     console.error('Get ARIMA prediction error:', error);

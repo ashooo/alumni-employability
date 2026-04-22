@@ -4,7 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const adminController = require('../controllers/adminController');
-const programController = require('../controllers/programController'); // Add this
+const programController = require('../controllers/programController'); 
 const { authenticateToken } = require('../middleware/auth');
 
 // Public route (for activation page - no token needed)
@@ -14,6 +14,10 @@ router.get('/alumni/check/:studentId', adminController.checkAlumniRecord);
 router.get('/alumni', authenticateToken, adminController.getAlumniRecords);
 router.get('/programs', authenticateToken, adminController.getPrograms);
 router.get('/batch-years', authenticateToken, adminController.getBatchYears);
+
+// Analytics and Reports Routes
+router.get('/analytics', authenticateToken, adminController.getAnalytics);
+router.get('/reports', authenticateToken, adminController.getReports);
 
 // Program management routes
 router.get('/programs/list', authenticateToken, programController.getAllPrograms);

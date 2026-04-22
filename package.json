@@ -13,6 +13,11 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "@types/file-saver": "^2.0.7",
     "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "file-saver": "^2.0.5"
   }
 }

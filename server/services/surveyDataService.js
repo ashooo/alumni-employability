@@ -1,4 +1,5 @@
 const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getJobMatchingRuntimeStatus } = require('./jobMatchingDataService');
 
 const DEFAULT_SURVEY_VERSION = 1;
 const DEFAULT_TEMPLATE_KEY = 'default_tracer_survey_v1';
@@ -622,6 +623,7 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
     };
   }
 
+  const jobMatchingRuntime = getJobMatchingRuntimeStatus();
   const alumniProfile = user.alumni_profile;
   if (!alumniProfile) {
     return {
@@ -634,6 +636,7 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
       hasInitialSurvey: false,
       hasEmployabilityAssessment: false,
       hasEmployabilityPrediction: false,
+      hasJobMatchingPrediction: false,
       employmentStatus: null,
       resolvedPath: null,
       nextPath: 'INITIAL',
@@ -647,14 +650,21 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
         surveyStatus: `/api/alumni/survey/status/${normalizedStudentId}`,
         initialSurvey: null,
         employabilitySubmit: '/api/prediction/employability/submit',
-        latestPrediction: `/api/prediction/employability/latest/${normalizedStudentId}`
+        latestPrediction: `/api/prediction/employability/latest/${normalizedStudentId}`,
+        jobMatchingGenerate: null,
+        latestJobMatching: null
       },
       readiness: {
         initialSurvey: true,
         unemployedAssessment: true,
         employedAssessment: false,
         arimaForecast: true,
-        jobMatching: false
+        jobMatching: jobMatchingRuntime.ready,
+        jobMatchingEligible: false
+      },
+      jobMatchingRuntime: {
+        ready: jobMatchingRuntime.ready,
+        missingPaths: jobMatchingRuntime.missingPaths
       }
     };
   }
@@ -703,6 +713,21 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
     where: {
       alumni_profile_id: alumniProfile.id,
       prediction_type: 'EMPLOYABILITY'
+    },
+    orderBy: {
+      created_at: 'desc'
+    },
+    select: {
+      id: true,
+      created_at: true,
+      submission_id: true
+    }
+  });
+
+  const latestJobMatchingPrediction = await refactorPrisma.mlPrediction.findFirst({
+    where: {
+      alumni_profile_id: alumniProfile.id,
+      prediction_type: 'JOB_MATCHING'
     },
     orderBy: {
       created_at: 'desc'
@@ -779,6 +804,7 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
   const competencyCounts = includeCatalogSummary
     ? await getActiveCompetencyCounts(refactorPrisma)
     : null;
+  const jobMatchingEligible = Boolean(employabilitySubmission);
 
   return {
     applicable: true,
@@ -792,6 +818,7 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
     hasInitialSurvey,
     hasEmployabilityAssessment,
     hasEmployabilityPrediction: Boolean(latestPrediction),
+    hasJobMatchingPrediction: Boolean(latestJobMatchingPrediction),
     employmentStatus,
     resolvedPath,
     nextPath,
@@ -809,14 +836,17 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
         ? `/api/alumni/survey/college/${alumniProfile.current_program.college.id}`
         : null,
       employabilitySubmit: '/api/prediction/employability/submit',
-      latestPrediction: `/api/prediction/employability/latest/${normalizedStudentId}`
+      latestPrediction: `/api/prediction/employability/latest/${normalizedStudentId}`,
+      jobMatchingGenerate: `/api/prediction/job-matching/generate/${normalizedStudentId}`,
+      latestJobMatching: `/api/prediction/job-matching/latest/${normalizedStudentId}`
     },
     readiness: {
       initialSurvey: true,
       unemployedAssessment: true,
       employedAssessment: false,
       arimaForecast: true,
-      jobMatching: false,
+      jobMatching: jobMatchingRuntime.ready,
+      jobMatchingEligible,
       extendedCompetenciesCatalog: competencyCounts
         ? competencyCounts.KNOWLEDGE +
             competencyCounts.ABILITY +
@@ -824,6 +854,10 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
             competencyCounts.TECHNOLOGY >
           0
         : null
+    },
+    jobMatchingRuntime: {
+      ready: jobMatchingRuntime.ready,
+      missingPaths: jobMatchingRuntime.missingPaths
     },
     competencyCatalog: competencyCounts
       ? {
@@ -842,6 +876,7 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
       initialSurveyId: initialSubmission?.id || null,
       employabilitySubmissionId: employabilitySubmission?.id || null,
       latestPredictionId: latestPrediction?.id || null,
+      latestJobMatchingPredictionId: latestJobMatchingPrediction?.id || null,
       pendingFollowupId: pendingFollowup?.id || null
     },
     pendingFollowup: pendingFollowup

@@ -2,6 +2,10 @@ const { prisma } = require('../config/db');
 const path = require('path');
 const fs = require('fs');
 const { runMlScript, resolvePythonExecutable } = require('../utils/mlRunner');
+const {
+  getLatestRefactorPrediction,
+  writeRefactorSurveyMirror
+} = require('../services/refactorEmployabilityService');
 
 /**
  * Handles the submission of the Initial Alumni Tracer Survey.
@@ -199,9 +203,34 @@ const submitEmployabilitySurvey = async (req, res) => {
           }
         });
 
+        let refactorMirror = null;
+        try {
+          refactorMirror = await writeRefactorSurveyMirror({
+            legacyPrisma: prisma,
+            user,
+            studentId: String(studentId),
+            academicData,
+            skillRatings,
+            additionalAnswers: additionalAnswers || {},
+            legacyAcademicSnapshotId: academicSnapshot.id,
+            legacySurveyResponseId: surveyResponseData.id,
+            modelInput,
+            predictionResult,
+            followupDueDate: dueDate
+          });
+        } catch (refactorError) {
+          fs.writeFileSync(path.join(__dirname, 'err-refactor.txt'), String(refactorError.stack || refactorError));
+          console.error('Refactor dual-write warning:', refactorError);
+        }
+
         return res.json({ 
           success: true, 
           message: 'Survey processed and prediction generated',
+          storage: {
+            legacy: true,
+            refactor: Boolean(refactorMirror?.ready),
+            refactor_submission_id: refactorMirror?.surveySubmissionId || null
+          },
           prediction: {
             employable: predictionResult.employable,
             probability: predictionResult.probability,
@@ -248,7 +277,12 @@ const getLatestPrediction = async (req, res) => {
     });
 
     if (!prediction) {
-      return res.status(404).json({ error: 'No prediction found for this alumni' });
+      const refactorPrediction = await getLatestRefactorPrediction(studentId);
+      if (!refactorPrediction) {
+        return res.status(404).json({ error: 'No prediction found for this alumni' });
+      }
+
+      return res.json(refactorPrediction);
     }
 
     res.json(prediction);

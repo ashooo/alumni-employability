@@ -17,8 +17,9 @@ router.put('/employment/:id', authenticateToken, alumniController.updateEmployme
 
 // Survey routes - FIXED PATHS
 router.get('/survey/college/:collegeId', alumniController.getCollegeSurvey);
-router.post('/survey/submit/:studentId', alumniController.submitSurveyResponse);
+router.post('/survey/submit/:studentId', authenticateToken, alumniController.submitSurveyResponse);
 router.get('/survey/responses/:studentId', authenticateToken, alumniController.getSurveyResponses);
 router.get('/survey/status/:studentId', authenticateToken, alumniController.checkSurveyStatus);
+router.get('/survey/flow/:studentId', authenticateToken, alumniController.checkSurveyStatus);
 
 module.exports = router;

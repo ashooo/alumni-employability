@@ -20,8 +20,9 @@ router.post('/clone/:id', authenticateToken, surveyController.cloneSurvey);
 router.get('/responses/:studentId', authenticateToken, surveyController.getSurveyResponses);
 router.put('/published/:id/activate', authenticateToken, surveyController.activateSurvey);
 
-// Alumni-facing routes (public - no auth needed for taking survey)
-router.get('/college/:collegeId', surveyController.getCollegeSurvey);
-router.post('/submit/:studentId', surveyController.submitSurveyResponse);
+// Compatibility routes mounted under /api/admin/survey.
+// Keep these protected so the admin namespace is never publicly writable.
+router.get('/college/:collegeId', authenticateToken, surveyController.getCollegeSurvey);
+router.post('/submit/:studentId', authenticateToken, surveyController.submitSurveyResponse);
 
 module.exports = router;

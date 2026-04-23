@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const adminController = require('../controllers/adminController');
 const programController = require('../controllers/programController');
+const predictionController = require('../controllers/predictionController');
 const { authenticateToken } = require('../middleware/auth');
 
 // Public route
@@ -26,6 +27,7 @@ router.get('/colleges', authenticateToken, adminController.getColleges);
 // Analytics and reports
 router.get('/analytics', authenticateToken, adminController.getAnalytics);
 router.get('/reports', authenticateToken, adminController.getReports);
+router.get('/predictions/arima', authenticateToken, predictionController.getArimaPrediction);
 
 // Program management
 router.get('/programs/list', authenticateToken, programController.getAllPrograms);

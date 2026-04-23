@@ -2,10 +2,39 @@ const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
 
 const DEFAULT_SURVEY_VERSION = 1;
 const DEFAULT_TEMPLATE_KEY = 'default_tracer_survey_v1';
+const EMPLOYABILITY_TEMPLATE_KEY = 'employability_assessment';
+const ACTIVE_FOLLOWUP_STATUSES = ['PENDING', 'SENT', 'OVERDUE'];
+const COMPETENCY_KINDS = [
+  'SOFT_SKILL',
+  'HARD_SKILL',
+  'KNOWLEDGE',
+  'ABILITY',
+  'INTEREST',
+  'TECHNOLOGY'
+];
 
 const DEFAULT_SURVEY_SECTIONS = [
   {
     id: 1,
+    key: 'employment_details',
+    name: 'Employment Gateway',
+    description: 'This first section determines which survey path applies to the alumni.',
+    questions: [
+      {
+        key: 'current_employment_status',
+        text: 'Are you currently employed?',
+        type: 'SINGLE_SELECT',
+        options: ['Employed', 'Unemployed', 'Self-Employed', 'Freelancer']
+      },
+      {
+        key: 'current_job_title',
+        text: 'What is your current job title?',
+        type: 'TEXT'
+      }
+    ]
+  },
+  {
+    id: 2,
     key: 'personal_information',
     name: 'Personal Information',
     description: 'Basic contact and personal details',
@@ -18,25 +47,6 @@ const DEFAULT_SURVEY_SECTIONS = [
       {
         key: 'mobile_number',
         text: 'What is your current mobile number?',
-        type: 'TEXT'
-      }
-    ]
-  },
-  {
-    id: 2,
-    key: 'employment_details',
-    name: 'Employment Details',
-    description: 'Current employment status and history',
-    questions: [
-      {
-        key: 'current_employment_status',
-        text: 'Are you currently employed?',
-        type: 'SINGLE_SELECT',
-        options: ['Employed', 'Unemployed', 'Self-Employed', 'Freelancer']
-      },
-      {
-        key: 'current_job_title',
-        text: 'What is your current job title?',
         type: 'TEXT'
       }
     ]
@@ -90,6 +100,58 @@ const requireRefactorPrisma = () => {
   }
 
   return getRefactorPrisma();
+};
+
+const buildEmptyCompetencyCounts = () =>
+  COMPETENCY_KINDS.reduce((accumulator, kind) => {
+    accumulator[kind] = 0;
+    return accumulator;
+  }, {});
+
+const normalizeEmploymentStatusAnswer = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  switch (normalized) {
+    case 'employed':
+      return 'EMPLOYED';
+    case 'unemployed':
+      return 'UNEMPLOYED';
+    case 'self-employed':
+    case 'self employed':
+    case 'self_employed':
+      return 'SELF_EMPLOYED';
+    case 'freelancer':
+      return 'FREELANCER';
+    case 'further studies':
+    case 'further studying':
+      return 'FURTHER_STUDYING';
+    case 'other':
+      return 'OTHER';
+    default:
+      return null;
+  }
+};
+
+const isEmployedLikeStatus = (status) =>
+  ['EMPLOYED', 'SELF_EMPLOYED', 'FREELANCER'].includes(String(status || '').toUpperCase());
+
+const getActiveCompetencyCounts = async (refactorPrisma) => {
+  const rows = await refactorPrisma.competency.groupBy({
+    by: ['kind'],
+    where: {
+      is_active: true
+    },
+    _count: {
+      _all: true
+    }
+  });
+
+  const counts = buildEmptyCompetencyCounts();
+  for (const row of rows) {
+    counts[row.kind] = row._count._all;
+  }
+
+  return counts;
 };
 
 const mapRefactorQuestionType = (questionType) => {
@@ -230,6 +292,36 @@ const ensureDefaultSurveyTemplate = async () => {
   return template;
 };
 
+const findEmploymentGatewayAnswer = (submissions) => {
+  for (const submission of submissions) {
+    const answer = submission.survey_answers.find(
+      (surveyAnswer) => surveyAnswer.question?.question_key === 'current_employment_status'
+    );
+
+    if (!answer) {
+      continue;
+    }
+
+    const answerText =
+      answer.answer_text ||
+      (Array.isArray(answer.answer_json) ? answer.answer_json[0] : null) ||
+      null;
+    const employmentStatus = normalizeEmploymentStatusAnswer(answerText);
+
+    if (!employmentStatus) {
+      continue;
+    }
+
+    return {
+      submission,
+      employmentStatus,
+      answerText
+    };
+  }
+
+  return null;
+};
+
 const getSurveyDefinition = async () => {
   const refactorPrisma = requireRefactorPrisma();
   const template = await ensureDefaultSurveyTemplate();
@@ -302,7 +394,15 @@ const getSurveyDefinition = async () => {
     template: templateWithQuestions,
     categories: Array.from(categoryMap.values()).sort((left, right) => left.order_index - right.order_index),
     version: DEFAULT_SURVEY_VERSION,
-    published_at: templateWithQuestions.updated_at || templateWithQuestions.created_at
+    published_at: templateWithQuestions.updated_at || templateWithQuestions.created_at,
+    template_key: templateWithQuestions.template_key,
+    kind: templateWithQuestions.kind,
+    path_key: templateWithQuestions.path_key,
+    branching: {
+      decision_question_key: 'current_employment_status',
+      employed_values: ['Employed', 'Self-Employed', 'Freelancer'],
+      unemployed_values: ['Unemployed']
+    }
   };
 };
 
@@ -451,10 +551,14 @@ const getSurveyResponses = async (studentId) => {
     id: submission.id,
     student_id: profile.student_id,
     survey_version: DEFAULT_SURVEY_VERSION,
+    template_key: submission.template?.template_key || null,
+    template_kind: submission.template?.kind || null,
+    branch_path: submission.branch_path || null,
     completed_at: submission.submitted_at || submission.created_at,
     status: String(submission.status || '').toLowerCase(),
     answers: submission.survey_answers.map((answer) => ({
       question_id: answer.question_id,
+      question_key: answer.question.question_key,
       question_text: answer.question.question_text,
       question_type: mapRefactorQuestionType(answer.question.question_type),
       ...mapAnswerValue(answer)
@@ -462,17 +566,302 @@ const getSurveyResponses = async (studentId) => {
   }));
 };
 
-const getSurveyStatus = async (studentId) => {
-  const submissions = await getSurveyResponses(studentId);
+const getSurveyFlowStatus = async (studentId, options = {}) => {
+  const { isFirstLogin = false, includeCatalogSummary = true } = options;
+  const refactorPrisma = requireRefactorPrisma();
+  const normalizedStudentId = String(studentId);
+
+  const user = await refactorPrisma.user.findUnique({
+    where: { username: normalizedStudentId },
+    select: {
+      id: true,
+      username: true,
+      role: true,
+      last_login: true,
+      alumni_profile: {
+        select: {
+          id: true,
+          student_id: true,
+          batch_year: true,
+          current_program: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              college: {
+                select: {
+                  id: true,
+                  name: true,
+                  code: true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  if (!user) {
+    const error = new Error('User not found in refactor schema');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (String(user.role || '').toUpperCase() !== 'ALUMNI') {
+    return {
+      applicable: false,
+      isFirstLogin: Boolean(isFirstLogin),
+      shouldPromptSurvey: false,
+      completed: true,
+      requiresSurvey: false,
+      status: 'not_applicable',
+      nextPath: null,
+      nextStep: null
+    };
+  }
+
+  const alumniProfile = user.alumni_profile;
+  if (!alumniProfile) {
+    return {
+      applicable: true,
+      isFirstLogin: Boolean(isFirstLogin),
+      shouldPromptSurvey: true,
+      completed: false,
+      requiresSurvey: true,
+      status: 'profile_missing',
+      hasInitialSurvey: false,
+      hasEmployabilityAssessment: false,
+      hasEmployabilityPrediction: false,
+      employmentStatus: null,
+      resolvedPath: null,
+      nextPath: 'INITIAL',
+      nextStep: 'take_initial_survey',
+      surveyVersion: DEFAULT_SURVEY_VERSION,
+      collegeId: null,
+      collegeName: null,
+      programId: null,
+      programName: null,
+      routeHints: {
+        surveyStatus: `/api/alumni/survey/status/${normalizedStudentId}`,
+        initialSurvey: null,
+        employabilitySubmit: '/api/prediction/employability/submit',
+        latestPrediction: `/api/prediction/employability/latest/${normalizedStudentId}`
+      },
+      readiness: {
+        initialSurvey: true,
+        unemployedAssessment: true,
+        employedAssessment: false,
+        arimaForecast: true,
+        jobMatching: false
+      }
+    };
+  }
+
+  const submissions = await refactorPrisma.surveySubmission.findMany({
+    where: {
+      alumni_profile_id: alumniProfile.id,
+      status: 'COMPLETED'
+    },
+    orderBy: [
+      { submitted_at: 'desc' },
+      { created_at: 'desc' }
+    ],
+    include: {
+      template: true,
+      survey_answers: {
+        include: {
+          question: true
+        }
+      }
+    }
+  });
+
+  const initialSubmission =
+    submissions.find(
+      (submission) =>
+        submission.template?.template_key === DEFAULT_TEMPLATE_KEY ||
+        submission.template?.path_key === 'INITIAL' ||
+        submission.branch_path === 'INITIAL'
+    ) || null;
+
+  const employabilitySubmission =
+    submissions.find(
+      (submission) =>
+        submission.template?.template_key === EMPLOYABILITY_TEMPLATE_KEY ||
+        submission.template?.path_key === 'UNEMPLOYED' ||
+        submission.branch_path === 'UNEMPLOYED'
+    ) || null;
+
+  const employmentGateway = findEmploymentGatewayAnswer(submissions);
+  const employmentStatus = employmentGateway?.employmentStatus || null;
+  const hasInitialSurvey = Boolean(initialSubmission || employmentGateway);
+  const hasEmployabilityAssessment = Boolean(employabilitySubmission);
+
+  const latestPrediction = await refactorPrisma.mlPrediction.findFirst({
+    where: {
+      alumni_profile_id: alumniProfile.id,
+      prediction_type: 'EMPLOYABILITY'
+    },
+    orderBy: {
+      created_at: 'desc'
+    },
+    select: {
+      id: true,
+      created_at: true,
+      submission_id: true
+    }
+  });
+
+  const pendingFollowup = await refactorPrisma.followupSchedule.findFirst({
+    where: {
+      alumni_profile_id: alumniProfile.id,
+      status: {
+        in: ACTIVE_FOLLOWUP_STATUSES
+      }
+    },
+    orderBy: {
+      due_at: 'asc'
+    },
+    include: {
+      target_template: {
+        select: {
+          id: true,
+          template_key: true,
+          name: true,
+          path_key: true
+        }
+      }
+    }
+  });
+
+  let status = 'pending_initial_survey';
+  let resolvedPath = null;
+  let nextPath = 'INITIAL';
+  let nextStep = 'take_initial_survey';
+  let requiresSurvey = true;
+
+  if (!hasInitialSurvey) {
+    status = 'pending_initial_survey';
+  } else if (!employmentStatus) {
+    status = 'pending_initial_path_answer';
+  } else if (employmentStatus === 'UNEMPLOYED') {
+    resolvedPath = 'UNEMPLOYED';
+
+    if (!hasEmployabilityAssessment) {
+      status = 'pending_unemployed_assessment';
+      nextPath = 'UNEMPLOYED';
+      nextStep = 'take_unemployed_assessment';
+    } else if (!latestPrediction) {
+      status = 'assessment_submitted_prediction_missing';
+      nextPath = 'UNEMPLOYED';
+      nextStep = 'prediction_pending';
+      requiresSurvey = false;
+    } else if (pendingFollowup) {
+      status = 'completed_awaiting_followup';
+      nextPath = 'FOLLOWUP';
+      nextStep = 'await_followup';
+      requiresSurvey = false;
+    } else {
+      status = 'completed';
+      nextPath = null;
+      nextStep = 'view_results';
+      requiresSurvey = false;
+    }
+  } else {
+    resolvedPath = 'EMPLOYED';
+    status = 'pending_employed_survey';
+    nextPath = 'EMPLOYED';
+    nextStep = 'employed_survey_pending_implementation';
+  }
+
+  const competencyCounts = includeCatalogSummary
+    ? await getActiveCompetencyCounts(refactorPrisma)
+    : null;
+
   return {
-    completed: submissions.length > 0,
-    status: submissions.length > 0 ? submissions[0].status : 'pending'
+    applicable: true,
+    isFirstLogin: Boolean(isFirstLogin),
+    shouldPromptSurvey: Boolean(isFirstLogin) || requiresSurvey,
+    completed:
+      !requiresSurvey &&
+      status !== 'assessment_submitted_prediction_missing',
+    requiresSurvey,
+    status,
+    hasInitialSurvey,
+    hasEmployabilityAssessment,
+    hasEmployabilityPrediction: Boolean(latestPrediction),
+    employmentStatus,
+    resolvedPath,
+    nextPath,
+    nextStep,
+    surveyVersion: DEFAULT_SURVEY_VERSION,
+    collegeId: alumniProfile.current_program?.college?.id || null,
+    collegeName: alumniProfile.current_program?.college?.name || null,
+    collegeCode: alumniProfile.current_program?.college?.code || null,
+    programId: alumniProfile.current_program?.id || null,
+    programName: alumniProfile.current_program?.name || null,
+    programCode: alumniProfile.current_program?.code || null,
+    routeHints: {
+      surveyStatus: `/api/alumni/survey/status/${normalizedStudentId}`,
+      initialSurvey: alumniProfile.current_program?.college?.id
+        ? `/api/alumni/survey/college/${alumniProfile.current_program.college.id}`
+        : null,
+      employabilitySubmit: '/api/prediction/employability/submit',
+      latestPrediction: `/api/prediction/employability/latest/${normalizedStudentId}`
+    },
+    readiness: {
+      initialSurvey: true,
+      unemployedAssessment: true,
+      employedAssessment: false,
+      arimaForecast: true,
+      jobMatching: false,
+      extendedCompetenciesCatalog: competencyCounts
+        ? competencyCounts.KNOWLEDGE +
+            competencyCounts.ABILITY +
+            competencyCounts.INTEREST +
+            competencyCounts.TECHNOLOGY >
+          0
+        : null
+    },
+    competencyCatalog: competencyCounts
+      ? {
+          counts: competencyCounts,
+          hasEmployabilitySkills:
+            competencyCounts.HARD_SKILL + competencyCounts.SOFT_SKILL > 0,
+          hasExtendedProfileCatalog:
+            competencyCounts.KNOWLEDGE +
+              competencyCounts.ABILITY +
+              competencyCounts.INTEREST +
+              competencyCounts.TECHNOLOGY >
+            0
+        }
+      : null,
+    submissions: {
+      initialSurveyId: initialSubmission?.id || null,
+      employabilitySubmissionId: employabilitySubmission?.id || null,
+      latestPredictionId: latestPrediction?.id || null,
+      pendingFollowupId: pendingFollowup?.id || null
+    },
+    pendingFollowup: pendingFollowup
+      ? {
+          id: pendingFollowup.id,
+          due_at: pendingFollowup.due_at,
+          status: pendingFollowup.status,
+          target_template: pendingFollowup.target_template
+        }
+      : null
   };
+};
+
+const getSurveyStatus = async (studentId, options = {}) => {
+  return getSurveyFlowStatus(studentId, options);
 };
 
 module.exports = {
   getSurveyDefinition,
   getSurveyResponses,
+  getSurveyFlowStatus,
   getSurveyStatus,
   submitSurveyResponse
 };

@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { generateOTP, sendOTPEmail } = require('../config/email');
 const dns = require('node:dns').promises;
 const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getSurveyFlowStatus } = require('../services/surveyDataService');
 const {
   normalizeUserRole,
   isPlaceholderPasswordHash
@@ -234,6 +235,24 @@ const login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
+    let survey = {
+      applicable: false,
+      isFirstLogin: false,
+      shouldPromptSurvey: false,
+      completed: true,
+      requiresSurvey: false,
+      status: 'not_applicable',
+      nextPath: null,
+      nextStep: null
+    };
+
+    if (normalizeUserRole(user.role) === 'alumni') {
+      survey = await getSurveyFlowStatus(user.username, {
+        isFirstLogin: !user.last_login,
+        includeCatalogSummary: false
+      });
+    }
+
     await refactorPrisma.user.update({
       where: { id: user.id },
       data: {
@@ -250,7 +269,8 @@ const login = async (req, res) => {
     res.json({
       success: true,
       token,
-      user: buildUserResponse(user)
+      user: buildUserResponse(user),
+      survey
     });
 
   } catch (error) {

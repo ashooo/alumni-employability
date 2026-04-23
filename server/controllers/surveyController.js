@@ -1,5 +1,6 @@
 const {
   getSurveyDefinition,
+  getSurveyStatus,
   getSurveyResponses,
   submitSurveyResponse
 } = require('../services/surveyDataService');
@@ -34,7 +35,11 @@ const getCollegeSurvey = async (req, res) => {
     return res.json({
       survey: survey.categories,
       version: survey.version,
-      published_at: survey.published_at
+      published_at: survey.published_at,
+      template_key: survey.template_key,
+      kind: survey.kind,
+      path_key: survey.path_key,
+      branching: survey.branching
     });
   } catch (error) {
     console.error('Get college survey error:', error);
@@ -84,6 +89,19 @@ const getSurveyResponsesHandler = async (req, res) => {
   }
 };
 
+const checkSurveyStatusHandler = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const status = await getSurveyStatus(studentId);
+    return res.json(status);
+  } catch (error) {
+    console.error('Check survey status error:', error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || 'Failed to fetch survey status'
+    });
+  }
+};
+
 module.exports = {
   getSurvey,
   getVersions,
@@ -101,6 +119,6 @@ module.exports = {
   getCollegeSurvey,
   submitSurveyResponse: submitSurveyResponseHandler,
   getSurveyResponses: getSurveyResponsesHandler,
-  checkSurveyStatus: notImplemented('Survey status lookup'),
+  checkSurveyStatus: checkSurveyStatusHandler,
   activateSurvey: notImplemented('Activating surveys')
 };

@@ -173,6 +173,7 @@ const getProfile = async (req, res) => {
 
     const refactorPrisma = requireRefactorPrisma();
     const profile = await ensureProfile(refactorPrisma, studentId);
+    const surveyStatus = await getSurveyStatus(studentId);
 
     return res.json({
       student_id: profile.student_id,
@@ -182,7 +183,7 @@ const getProfile = async (req, res) => {
       suffix: profile.user.suffix,
       batch_year: profile.batch_year,
       status: profile.lifecycle_status || 'ACTIVE',
-      survey_status: 'completed',
+      survey_status: surveyStatus.completed ? 'completed' : 'pending',
       email: profile.user.email || '',
       phone: profile.user.phone || '',
       address: profile.user.address || '',
@@ -497,7 +498,11 @@ const getCollegeSurvey = async (req, res) => {
     res.json({
       survey: survey.categories,
       version: survey.version,
-      published_at: survey.published_at
+      published_at: survey.published_at,
+      template_key: survey.template_key,
+      kind: survey.kind,
+      path_key: survey.path_key,
+      branching: survey.branching
     });
   } catch (error) {
     console.error('Get college survey error:', error);

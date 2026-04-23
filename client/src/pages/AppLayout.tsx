@@ -31,7 +31,9 @@ export default function AppLayout() {
           </footer>
         </div>
       </div>
-      {user.role === 'alumni' && user.firstLogin && <FirstLoginDialog />}
+      {user.role === 'alumni' && user.firstLogin && (user.survey?.shouldPromptSurvey ?? true) && (
+        <FirstLoginDialog />
+      )}
     </SidebarProvider>
   );
 }

@@ -376,6 +376,7 @@ const getSurveyDefinition = async () => {
 
     categoryMap.get(sectionKey).questions.push({
       id: question.id,
+      question_key: question.question_key,
       category_id: categoryMap.get(sectionKey).id,
       text: question.question_text,
       type: mapRefactorQuestionType(question.question_type),

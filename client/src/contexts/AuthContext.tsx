@@ -1,5 +1,40 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
+export interface SurveyFlowStatus {
+  applicable: boolean;
+  isFirstLogin: boolean;
+  shouldPromptSurvey: boolean;
+  completed: boolean;
+  requiresSurvey: boolean;
+  status: string;
+  hasInitialSurvey?: boolean;
+  hasEmployabilityAssessment?: boolean;
+  hasEmployabilityPrediction?: boolean;
+  employmentStatus?: string | null;
+  resolvedPath?: string | null;
+  nextPath?: string | null;
+  nextStep?: string | null;
+  surveyVersion?: number;
+  collegeId?: number | null;
+  collegeName?: string | null;
+  programId?: number | null;
+  programName?: string | null;
+  routeHints?: {
+    surveyStatus?: string;
+    initialSurvey?: string | null;
+    employabilitySubmit?: string;
+    latestPrediction?: string;
+  };
+  readiness?: {
+    initialSurvey?: boolean;
+    unemployedAssessment?: boolean;
+    employedAssessment?: boolean;
+    arimaForecast?: boolean;
+    jobMatching?: boolean;
+    extendedCompetenciesCatalog?: boolean | null;
+  };
+}
+
 // Define the User type (matching your database schema)
 interface User {
   id: number;
@@ -13,6 +48,7 @@ interface User {
   firstLogin?: boolean;
   surveyCompleted?: boolean;
   lastLogin?: string;
+  survey?: SurveyFlowStatus | null;
 }
 
 interface AuthContextType {
@@ -29,7 +65,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // API URL - make sure this matches your backend
-const API_URL = 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
@@ -69,6 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (data.success) {
+        const surveyData: SurveyFlowStatus | null = data.survey || null;
+
         // Convert backend user format to frontend User type
         const userData: User = {
           id: data.user.id,
@@ -80,8 +118,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           middleName: data.user.middleName,
           suffix: data.user.suffix,
           lastLogin: data.user.lastLogin,
-          firstLogin: !data.user.lastLogin, // If lastLogin is null, it's first login
-          surveyCompleted: false, // You can fetch this from a surveys table later
+          firstLogin: surveyData?.isFirstLogin ?? !data.user.lastLogin,
+          surveyCompleted: surveyData?.completed ?? false,
+          survey: surveyData
         };
 
         setUser(userData);
@@ -118,7 +157,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const completeFirstLogin = useCallback(() => {
     setUser(prev => {
       if (!prev) return prev;
-      const updated = { ...prev, firstLogin: false };
+      const updated = {
+        ...prev,
+        firstLogin: false,
+        survey: prev.survey
+          ? {
+              ...prev.survey,
+              isFirstLogin: false
+            }
+          : prev.survey
+      };
       const storage = localStorage.getItem('user') ? localStorage : sessionStorage;
       storage.setItem('user', JSON.stringify(updated));
       return updated;
@@ -128,7 +176,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const completeSurvey = useCallback(() => {
     setUser(prev => {
       if (!prev) return prev;
-      const updated = { ...prev, surveyCompleted: true };
+      const updated = {
+        ...prev,
+        surveyCompleted: true,
+        survey: prev.survey
+          ? {
+              ...prev.survey,
+              completed: true,
+              requiresSurvey: false,
+              shouldPromptSurvey: false,
+              hasEmployabilityPrediction: true,
+              nextPath: null,
+              nextStep: 'view_results'
+            }
+          : prev.survey
+      };
       const storage = localStorage.getItem('user') ? localStorage : sessionStorage;
       storage.setItem('user', JSON.stringify(updated));
       return updated;

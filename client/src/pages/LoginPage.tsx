@@ -83,9 +83,12 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Checkbox id="remember" checked={remember} onCheckedChange={(c) => setRemember(!!c)} />
-              <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">Remember me</Label>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Checkbox id="remember" checked={remember} onCheckedChange={(c) => setRemember(!!c)} />
+                <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">Remember me</Label>
+              </div>
+              <button type="button" onClick={() => navigate('/forgot-password')} className="text-sm text-primary hover:underline font-medium">Forgot password?</button>
             </div>
 
             {error && (
@@ -103,7 +106,7 @@ export default function LoginPage() {
             <button onClick={() => navigate('/activate')} className="text-sm text-primary hover:underline font-medium">Don't have an account? Activate here</button>
           </div>
           <div className="mt-4 text-center">
-            <button onClick={() => navigate('/')} className="text-sm text-muted-foreground hover:text-foreground">← Back to Home</button>
+            <button onClick={() => navigate('/')} className="text-sm text-muted-foreground hover:text-foreground">Back to Home</button>
           </div>
         </motion.div>
       </div>

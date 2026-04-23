@@ -10,8 +10,8 @@ const {
 
 // Store OTPs temporarily (in production, use Redis or database)
 const otpStore = new Map();
-// OTPs for password change (keyed by username)
 const passwordChangeOtpStore = new Map();
+const forgotPasswordOtpStore = new Map();
 
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 const DNS_LOOKUP_TIMEOUT_MS = Number(process.env.EMAIL_DNS_TIMEOUT_MS || 8000);
@@ -31,6 +31,19 @@ const TYPO_MAP = {
 
 const normalizeEmail = (email = '') => email.trim().toLowerCase();
 const normalizeName = (value = '') => String(value).trim().toLowerCase();
+const maskEmail = (email = '') => {
+  const normalizedEmail = normalizeEmail(email);
+  const [localPart, domain = ''] = normalizedEmail.split('@');
+
+  if (!localPart || !domain) {
+    return normalizedEmail;
+  }
+
+  const visibleLocalPart =
+    localPart.length <= 2 ? localPart.slice(0, 1) : localPart.slice(0, 2);
+
+  return `${visibleLocalPart}***@${domain}`;
+};
 
 const requireRefactorPrisma = () => {
   const setupStatus = getRefactorSetupStatus();
@@ -177,6 +190,11 @@ setInterval(() => {
   for (const [username, data] of passwordChangeOtpStore.entries()) {
     if (now > data.expiresAt) {
       passwordChangeOtpStore.delete(username);
+    }
+  }
+  for (const [username, data] of forgotPasswordOtpStore.entries()) {
+    if (now > data.expiresAt) {
+      forgotPasswordOtpStore.delete(username);
     }
   }
 }, 60 * 60 * 1000);
@@ -509,6 +527,203 @@ const verifyOTP = async (req, res) => {
   }
 };
 
+const requestForgotPasswordOtp = async (req, res) => {
+  try {
+    const username = String(req.body?.username || '').trim();
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+    const user = await refactorPrisma.user.findUnique({
+      where: { username },
+      select: {
+        username: true,
+        email: true,
+        role: true,
+        password_hash: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (await isPlaceholderAccount(user)) {
+      return res.status(400).json({
+        error: 'Account not activated yet. Please complete account activation first.'
+      });
+    }
+
+    const email = normalizeEmail(user.email || '');
+    if (!email) {
+      return res.status(400).json({ error: 'No email found for this account' });
+    }
+
+    const now = Date.now();
+    const previousOtp = forgotPasswordOtpStore.get(user.username);
+    if (previousOtp?.lastSentAt && now - previousOtp.lastSentAt < 30 * 1000) {
+      const retryAfterSeconds = Math.ceil(
+        (30 * 1000 - (now - previousOtp.lastSentAt)) / 1000
+      );
+      return res.status(429).json({
+        error: 'Please wait before requesting another OTP.',
+        retryAfterSeconds
+      });
+    }
+
+    const otp = generateOTP();
+    forgotPasswordOtpStore.set(user.username, {
+      otp,
+      expiresAt: now + 10 * 60 * 1000,
+      lastSentAt: now,
+      attemptsLeft: 5
+    });
+
+    await sendOTPEmail(email, otp, {
+      subject: 'Password reset verification (OTP)',
+      title: 'Reset Your Password',
+      message: 'Use this One-Time Password (OTP) to reset your password:',
+      expiresInMinutes: 10
+    });
+
+    return res.json({
+      success: true,
+      message: 'OTP sent successfully',
+      email: maskEmail(email)
+    });
+  } catch (error) {
+    console.error('Request forgot password OTP error:', error);
+    return res.status(500).json({ error: 'Failed to send OTP. Please try again.' });
+  }
+};
+
+const verifyForgotPasswordOtp = async (req, res) => {
+  try {
+    const username = String(req.body?.username || '').trim();
+    const rawOtp = req.body?.otp;
+
+    if (!username || !rawOtp) {
+      return res.status(400).json({ error: 'username and otp are required' });
+    }
+
+    const storedOtp = forgotPasswordOtpStore.get(username);
+    if (!storedOtp) {
+      return res
+        .status(400)
+        .json({ error: 'OTP expired or not found. Please request a new OTP.' });
+    }
+
+    if (Date.now() > storedOtp.expiresAt) {
+      forgotPasswordOtpStore.delete(username);
+      return res.status(400).json({ error: 'OTP expired. Please request a new one.' });
+    }
+
+    if (storedOtp.attemptsLeft <= 0) {
+      forgotPasswordOtpStore.delete(username);
+      return res
+        .status(429)
+        .json({ error: 'Too many attempts. Please request a new OTP.' });
+    }
+
+    const enteredOtp = Array.isArray(rawOtp) ? rawOtp.join('') : String(rawOtp).trim();
+    if (storedOtp.otp !== enteredOtp) {
+      storedOtp.attemptsLeft -= 1;
+      forgotPasswordOtpStore.set(username, storedOtp);
+      return res.status(400).json({ error: 'Invalid OTP.' });
+    }
+
+    return res.json({ success: true, message: 'OTP verified successfully' });
+  } catch (error) {
+    console.error('Verify forgot password OTP error:', error);
+    return res.status(500).json({ error: 'Failed to verify OTP' });
+  }
+};
+
+const resetPasswordWithOtp = async (req, res) => {
+  try {
+    const username = String(req.body?.username || '').trim();
+    const rawOtp = req.body?.otp;
+    const newPassword = String(req.body?.newPassword || '');
+
+    if (!username || !rawOtp || !newPassword) {
+      return res.status(400).json({ error: 'username, otp, and newPassword are required' });
+    }
+
+    if (newPassword.length < 4) {
+      return res.status(400).json({ error: 'Password too short' });
+    }
+
+    const storedOtp = forgotPasswordOtpStore.get(username);
+    if (!storedOtp) {
+      return res
+        .status(400)
+        .json({ error: 'OTP expired or not found. Please request a new OTP.' });
+    }
+
+    if (Date.now() > storedOtp.expiresAt) {
+      forgotPasswordOtpStore.delete(username);
+      return res.status(400).json({ error: 'OTP expired. Please request a new one.' });
+    }
+
+    if (storedOtp.attemptsLeft <= 0) {
+      forgotPasswordOtpStore.delete(username);
+      return res
+        .status(429)
+        .json({ error: 'Too many attempts. Please request a new OTP.' });
+    }
+
+    const enteredOtp = Array.isArray(rawOtp) ? rawOtp.join('') : String(rawOtp).trim();
+    if (storedOtp.otp !== enteredOtp) {
+      storedOtp.attemptsLeft -= 1;
+      forgotPasswordOtpStore.set(username, storedOtp);
+      return res.status(400).json({ error: 'Invalid OTP.' });
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+    const user = await refactorPrisma.user.findUnique({
+      where: { username },
+      select: {
+        username: true,
+        role: true,
+        password_hash: true
+      }
+    });
+
+    if (!user) {
+      forgotPasswordOtpStore.delete(username);
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (await isPlaceholderAccount(user)) {
+      forgotPasswordOtpStore.delete(username);
+      return res.status(400).json({
+        error: 'Account not activated yet. Please complete account activation first.'
+      });
+    }
+
+    const samePassword = await bcrypt.compare(newPassword, user.password_hash);
+    if (samePassword) {
+      return res
+        .status(400)
+        .json({ error: 'New password must be different from current password' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await refactorPrisma.user.update({
+      where: { username },
+      data: { password_hash: passwordHash }
+    });
+
+    forgotPasswordOtpStore.delete(username);
+    return res.json({ success: true, message: 'Password reset successfully' });
+  } catch (error) {
+    console.error('Reset password with OTP error:', error);
+    return res.status(500).json({ error: 'Failed to reset password' });
+  }
+};
+
 const requestChangePasswordOtp = async (req, res) => {
   try {
     const username = req.user?.username;
@@ -642,6 +857,9 @@ module.exports = {
   register,
   sendOTP,
   verifyOTP,
+  requestForgotPasswordOtp,
+  verifyForgotPasswordOtp,
+  resetPasswordWithOtp,
   requestChangePasswordOtp,
   changePassword
 };

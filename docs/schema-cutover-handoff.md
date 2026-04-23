@@ -110,18 +110,19 @@ Manual checks still worth running:
 5. Verify superadmin admin-management, settings persistence, and audit-log screens.
 6. Verify notification create/read flows.
 
-## Next Task
+## Forgot-Password Port
 
-The next implementation task after this cleanup is to retrieve the forgot-password feature from the legacy branch:
+The forgot-password feature has now been ported from the legacy branch:
 
-- source branch: `feat/forgotpassword`
+- source branch: `origin/feat/forgotPassword`
 
-Expect that work to touch both server auth/email flow and client auth screens. The key constraint is that the feature now needs to work against the canonical Prisma schema above, not the deleted legacy Prisma schema.
+See `docs/forgot-password-port-handoff.md` for the feature-level mapping and the Prisma-specific adaptations made during the port.
 
 ## Recommended Next Prompt
 
 Use this:
 
-> Continue from `docs/schema-cutover-handoff.md`.
+> Continue from `docs/schema-cutover-handoff.md` and `docs/forgot-password-port-handoff.md`.
 > The backend now uses `server/prisma/schema.prisma` as the only Prisma schema.
-> Pull in the forgot-password feature from `feat/forgotpassword`, adapt it to the current Prisma-based auth flow, and preserve the canonical command set (`prisma:generate`, `prisma:validate`, `prisma:push`, `legacy:sync-core`).
+> Focus on manual QA for forgot-password, activation/login, notifications, and superadmin/admin flows.
+> If regressions appear, patch the current Prisma-based controllers directly instead of reintroducing legacy DB patterns.

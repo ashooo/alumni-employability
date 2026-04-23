@@ -24,6 +24,7 @@ import SuperAdminAdmins from "./pages/superadmin/SuperAdminAdmins";
 import SuperAdminSettings from "./pages/superadmin/SuperAdminSettings";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import AppLayout from "./pages/AppLayout";
 import ModelSimulator from "./pages/shared/ModelSimulator";
 import NotFound from "./pages/NotFound";
@@ -48,6 +49,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/activate" element={<ActivationPage />} />
               <Route path="/app" element={<AppLayout />}>
                 <Route index element={<AppRedirect />} />

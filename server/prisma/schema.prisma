@@ -1,358 +1,598 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../generated/client"
 }
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL_REFACTOR")
 }
 
-// --- LEGACY TABLES (Lower-case mapping for raw SQL Compatibility) ---
+enum UserRole {
+  ADMIN
+  ALUMNI
+  SUPERADMIN
+}
+
+enum AlumniLifecycleStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum CompetencyKind {
+  SOFT_SKILL
+  HARD_SKILL
+  KNOWLEDGE
+  ABILITY
+  INTEREST
+  TECHNOLOGY
+}
+
+enum SurveyTemplateKind {
+  INITIAL
+  EMPLOYED
+  UNEMPLOYED
+  FOLLOWUP
+  GENERAL
+}
+
+enum SurveyPath {
+  INITIAL
+  EMPLOYED
+  UNEMPLOYED
+  FOLLOWUP
+}
+
+enum QuestionType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  BOOLEAN
+  DATE
+  SINGLE_SELECT
+  MULTI_SELECT
+  SCALE
+}
+
+enum SubmissionStatus {
+  DRAFT
+  COMPLETED
+  ABANDONED
+  CANCELED
+}
+
+enum EmploymentStatus {
+  EMPLOYED
+  UNEMPLOYED
+  SELF_EMPLOYED
+  FREELANCER
+  FURTHER_STUDYING
+  OTHER
+}
+
+enum FollowupStatus {
+  PENDING
+  SENT
+  COMPLETED
+  SKIPPED
+  OVERDUE
+  CANCELED
+}
+
+enum PredictionType {
+  EMPLOYABILITY
+  JOB_MATCHING
+  OTHER
+}
 
 model User {
-  id            Int       @id @default(autoincrement())
-  username      String    @unique @db.VarChar(50)
-  email         String?   @unique @db.VarChar(50)
-  password_hash String    @db.VarChar(255)
-  role          String    @db.VarChar(20) // admin, alumni
-  first_name    String    @db.VarChar(50)
-  last_name     String    @db.VarChar(50)
-  middle_name   String?   @db.VarChar(50)
-  suffix        String?   @db.VarChar(10)
-  last_login    DateTime?
-  created_at    DateTime  @default(now())
-  updated_at    DateTime  @updatedAt
-  phone         String?   @db.VarChar(20)
-  address       String?   @db.Text
+  id             Int                  @id @default(autoincrement())
+  username       String               @unique @db.VarChar(50)
+  email          String?              @unique @db.VarChar(100)
+  phone          String?              @db.VarChar(30)
+  address        String?              @db.Text
+  password_hash  String               @db.VarChar(255)
+  role           UserRole
+  first_name     String               @db.VarChar(50)
+  last_name      String               @db.VarChar(50)
+  middle_name    String?              @db.VarChar(50)
+  suffix         String?              @db.VarChar(10)
+  last_login     DateTime?
+  created_at     DateTime             @default(now())
+  updated_at     DateTime             @updatedAt
 
-  academics          StudentAcademic[]
-  user_notifications UserNotification[]
+  alumni_profile           AlumniProfile?
+  notifications_created    Notification[]   @relation("NotificationCreatedBy")
+  user_notifications       UserNotification[]
+  audit_logs               AuditLog[]       @relation("AuditLogUser")
+  updated_system_settings  SystemSetting[]  @relation("SystemSettingUpdatedBy")
+  uploaded_import_history  ImportHistory[]  @relation("ImportHistoryUploadedBy")
 
   @@map("user")
 }
 
-model AlumniRecord {
-  id            Int      @id @default(autoincrement())
-  student_id    String   @db.VarChar(20)
-  first_name    String   @db.VarChar(50)
-  last_name     String   @db.VarChar(50)
-  middle_name   String?  @db.VarChar(50)
-  suffix        String?  @db.VarChar(10)
-  email         String?  @db.VarChar(100)
-  program       String   @db.VarChar(100)
-  batch_year    Int
-  status        String   @default("active")
-  survey_status String   @default("pending")
-  imported_by   Int?
-  imported_at   DateTime @default(now())
-  program_id    Int?
-
-  @@map("alumni_records")
-}
-
-model EmploymentRecord {
-  id             Int      @id @default(autoincrement())
-  student_id     String   @db.VarChar(20)
-  status         String   @db.VarChar(50)
-  company        String?  @db.VarChar(100)
-  position       String?  @db.VarChar(100)
-  industry       String?  @db.VarChar(50)
-  start_date     DateTime? @db.Date
-  monthly_income Decimal? @db.Decimal(10, 2)
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
-
-  @@map("employment_records")
-}
-
 model College {
-  id             Int      @id @default(autoincrement())
-  name           String   @db.VarChar(100)
-  code           String   @db.VarChar(20)
-  description    String?  @db.Text
-  program_prefix String?  @db.VarChar(20)
-  is_active      Int      @default(1) @db.TinyInt
-  created_at     DateTime @default(now())
-  
-  degrees           Degree[]
-  published_surveys PublishedSurvey[]
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(100)
+  code        String?   @unique @db.VarChar(20)
+  description String?   @db.Text
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
 
-  @@map("colleges")
+  programs    Program[]
+
+  @@map("college")
 }
 
-model Degree {
-  id          Int      @id @default(autoincrement())
-  name        String   @db.VarChar(100)
-  code        String   @db.VarChar(20)
+model Program {
+  id          Int            @id @default(autoincrement())
+  name        String         @db.VarChar(100)
+  code        String?        @unique @db.VarChar(20)
+  description String?        @db.Text
   college_id  Int
-  description String?  @db.Text
-  is_active   Int      @default(1) @db.TinyInt
-  created_at  DateTime @default(now())
-  
-  college     College  @relation(fields: [college_id], references: [id])
-  academics   StudentAcademic[]
+  created_at  DateTime       @default(now())
+  updated_at  DateTime       @updatedAt
 
-  @@map("programs")
+  college          College           @relation(fields: [college_id], references: [id])
+  alumni_profiles  AlumniProfile[]
+  academic_snapshots AcademicSnapshot[]
+
+  @@index([college_id])
+  @@map("program")
 }
 
-// --- CORE SURVEY TABLES (Legacy) ---
+model AlumniProfile {
+  id                Int                  @id @default(autoincrement())
+  user_id           Int                  @unique
+  student_id        String               @unique @db.VarChar(20)
+  batch_year        Int
+  current_program_id Int?
+  lifecycle_status  AlumniLifecycleStatus @default(PENDING)
+  created_at        DateTime             @default(now())
+  updated_at        DateTime             @updatedAt
 
-model SurveyCategory {
-  id          Int      @id @default(autoincrement())
-  name        String   @db.VarChar(100)
-  description String?  @db.Text
-  order_index Int
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  user                User                 @relation(fields: [user_id], references: [id])
+  current_program     Program?             @relation(fields: [current_program_id], references: [id])
+  academic_snapshots  AcademicSnapshot[]
+  survey_submissions  SurveySubmission[]
+  employment_outcomes EmploymentOutcome[]
+  followup_schedules  FollowupSchedule[]
+  ml_predictions      MlPrediction[]
 
-  questions   SurveyQuestion[]
-
-  @@map("survey_categories")
+  @@index([current_program_id])
+  @@index([batch_year])
+  @@map("alumni_profile")
 }
 
-model SurveyQuestion {
-  id            Int      @id @default(autoincrement())
-  category_id   Int
-  text          String   @db.Text
-  type          String   @db.VarChar(20)
-  required      Int?     @default(1) @db.TinyInt
-  options       Json?    @db.Json
-  scale_min     Int?
-  scale_max     Int?
-  version       Int      @default(1)
-  order_index   Int
-  colleges      Json?    @db.Json
-  programs      Json?    @db.Json
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+model AcademicSnapshot {
+  id               Int       @id @default(autoincrement())
+  alumni_profile_id Int
+  program_id       Int
+  gender           String?   @db.VarChar(20)
+  age              Int?
+  year_graduated   Int
+  cgpa             Decimal?  @db.Decimal(5, 2)
+  prof_grade       Decimal?  @db.Decimal(5, 2)
+  elec_grade       Decimal?  @db.Decimal(5, 2)
+  ojt_grade        Decimal?  @db.Decimal(5, 2)
+  leader_pos       Boolean?  @default(false)
+  act_member_pos   Boolean?  @default(false)
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
 
-  category      SurveyCategory @relation(fields: [category_id], references: [id])
-  answers       SurveyAnswer[]
+  alumni_profile   AlumniProfile    @relation(fields: [alumni_profile_id], references: [id])
+  program          Program          @relation(fields: [program_id], references: [id])
+  survey_submissions SurveySubmission[]
+  ml_predictions   MlPrediction[]
 
-  @@map("survey_questions")
+  @@index([alumni_profile_id])
+  @@index([program_id])
+  @@index([year_graduated])
+  @@map("academic_snapshot")
 }
 
-model SurveyVersion {
-  id             Int       @id @default(autoincrement())
-  version_number Int       @unique
-  published      Int?      @default(0) @db.TinyInt
-  published_at   DateTime?
-  created_at     DateTime  @default(now())
+model Competency {
+  id                    Int             @id @default(autoincrement())
+  name                  String          @db.VarChar(150)
+  kind                  CompetencyKind
+  description           String?         @db.Text
+  source                String?         @db.VarChar(100)
+  category              String?         @db.VarChar(100)
+  industry_relevance    String?         @db.VarChar(100)
+  is_trending           Boolean         @default(false)
+  is_active             Boolean         @default(true)
+  created_at            DateTime        @default(now())
+  updated_at            DateTime        @updatedAt
 
-  @@map("survey_versions")
-}
+  submission_competencies SubmissionCompetency[]
+  occupation_competencies OccupationCompetency[]
 
-model PublishedSurvey {
-  id           Int      @id @default(autoincrement())
-  college_id   Int
-  version      Int
-  published_at DateTime @default(now())
-  published_by Int
-  status       String   @default("active")
-
-  college      College  @relation(fields: [college_id], references: [id])
-
-  @@map("published_surveys")
-}
-
-model SurveyAnswer {
-  id             Int      @id @default(autoincrement())
-  response_id    Int
-  question_id    Int
-  answer_text    String?  @db.Text
-  answer_options Json?    @db.Json
-  answer_number  Decimal? @db.Decimal(10, 2)
-  created_at     DateTime @default(now())
-
-  response       SurveyResponse @relation(fields: [response_id], references: [id])
-  question       SurveyQuestion @relation(fields: [question_id], references: [id])
-
-  @@map("survey_answers")
-}
-
-// --- NEW EMPLOYABILITY PIPELINE TABLES ---
-
-model Skill {
-  id          Int      @id @default(autoincrement())
-  name        String   @db.VarChar(100)
-  type        String   @db.VarChar(20) // hard, soft
-  description String?  @db.Text
-  created_at  DateTime @default(now())
-
-  responses   ResponseSkill[]
-
-  @@map("skills")
+  @@unique([name, kind])
+  @@index([kind])
+  @@map("competency")
 }
 
 model SurveyTemplate {
-  id          Int      @id @default(autoincrement())
-  name        String   @db.VarChar(100)
-  description String?  @db.Text
-  type        String   @db.VarChar(20) // initial, followup
-  is_active   Int      @default(1) @db.TinyInt
-  created_at  DateTime @default(now())
+  id                 Int                 @id @default(autoincrement())
+  template_key       String              @unique @db.VarChar(100)
+  name               String              @db.VarChar(100)
+  description        String?             @db.Text
+  kind               SurveyTemplateKind
+  path_key           SurveyPath
+  is_followup        Boolean             @default(false)
+  target_months      Int?
+  trigger_condition  Json?
+  is_active          Boolean             @default(true)
+  created_at         DateTime            @default(now())
+  updated_at         DateTime            @updatedAt
 
-  responses   SurveyResponse[]
-  schedules   FollowupSchedule[]
+  template_questions TemplateQuestion[]
+  survey_submissions SurveySubmission[]
+  triggered_followups FollowupSchedule[] @relation("FollowupTargetTemplate")
 
-  @@map("survey_templates")
+  @@index([kind])
+  @@index([path_key])
+  @@map("survey_template")
 }
 
-model SurveyResponse {
-  id                  Int       @id @default(autoincrement())
-  student_academic_id Int
-  template_id          Int
-  hard_skills_ave     Decimal?  @db.Decimal(5, 2)
-  soft_skills_ave     Decimal?  @db.Decimal(5, 2)
-  additional_data     Json?     @db.Json
-  survey_version      Int       @default(1)
-  started_at          DateTime?
-  completed_at        DateTime?
-  status              String    @default("in_progress")
-  created_at          DateTime  @default(now())
+model SurveyQuestion {
+  id                  Int              @id @default(autoincrement())
+  question_key        String           @unique @db.VarChar(100)
+  question_text       String           @db.Text
+  help_text           String?          @db.Text
+  question_type       QuestionType
+  is_active           Boolean          @default(true)
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
 
-  academic            StudentAcademic @relation(fields: [student_academic_id], references: [id])
-  template            SurveyTemplate  @relation(fields: [template_id], references: [id])
-  skills              ResponseSkill[]
-  answers             SurveyAnswer[]
-  predictions         EmployabilityPrediction[]
+  options             SurveyOption[]
+  template_questions  TemplateQuestion[]
+  survey_answers      SurveyAnswer[]
 
-  @@map("survey_responses")
+  @@map("survey_question")
 }
 
-model ResponseSkill {
-  id                 Int      @id @default(autoincrement())
-  survey_response_id Int
-  skill_id           Int
-  score              Int
+model SurveyOption {
+  id             Int            @id @default(autoincrement())
+  question_id    Int
+  option_value   String         @db.VarChar(100)
+  option_label   String         @db.VarChar(100)
+  display_order  Int            @default(0)
+  created_at     DateTime       @default(now())
+  updated_at     DateTime       @updatedAt
 
-  response           SurveyResponse @relation(fields: [survey_response_id], references: [id])
-  skill              Skill          @relation(fields: [skill_id], references: [id])
+  question       SurveyQuestion @relation(fields: [question_id], references: [id])
 
-  @@map("response_skills")
+  @@index([question_id])
+  @@map("survey_option")
+}
+
+model TemplateQuestion {
+  id              Int            @id @default(autoincrement())
+  template_id     Int
+  question_id     Int
+  display_order   Int            @default(0)
+  is_required     Boolean        @default(true)
+  section_key     String?        @db.VarChar(100)
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  template        SurveyTemplate @relation(fields: [template_id], references: [id])
+  question        SurveyQuestion @relation(fields: [question_id], references: [id])
+
+  @@unique([template_id, question_id])
+  @@index([template_id, display_order])
+  @@map("template_question")
+}
+
+model SurveySubmission {
+  id                    Int                   @id @default(autoincrement())
+  alumni_profile_id     Int
+  academic_snapshot_id  Int?
+  template_id           Int
+  parent_submission_id  Int?
+  trigger_submission_id Int?
+  branch_path           SurveyPath
+  started_at            DateTime?
+  submitted_at          DateTime?
+  status                SubmissionStatus      @default(DRAFT)
+  additional_data       Json?
+  created_at            DateTime              @default(now())
+  updated_at            DateTime              @updatedAt
+
+  alumni_profile        AlumniProfile         @relation(fields: [alumni_profile_id], references: [id])
+  academic_snapshot     AcademicSnapshot?     @relation(fields: [academic_snapshot_id], references: [id])
+  template              SurveyTemplate        @relation(fields: [template_id], references: [id])
+  parent_submission     SurveySubmission?     @relation("SubmissionParent", fields: [parent_submission_id], references: [id])
+  child_submissions     SurveySubmission[]    @relation("SubmissionParent")
+  trigger_submission    SurveySubmission?     @relation("SubmissionTrigger", fields: [trigger_submission_id], references: [id])
+  triggered_submissions SurveySubmission[]    @relation("SubmissionTrigger")
+  survey_answers        SurveyAnswer[]
+  submission_competencies SubmissionCompetency[]
+  employment_outcomes   EmploymentOutcome[]
+  triggered_followups   FollowupSchedule[]    @relation("FollowupTriggerSubmission")
+  ml_predictions        MlPrediction[]
+
+  @@index([alumni_profile_id])
+  @@index([academic_snapshot_id])
+  @@index([template_id])
+  @@index([parent_submission_id])
+  @@index([trigger_submission_id])
+  @@index([branch_path])
+  @@index([status])
+  @@map("survey_submission")
+}
+
+model SurveyAnswer {
+  id               Int              @id @default(autoincrement())
+  submission_id    Int
+  question_id      Int
+  answer_text      String?          @db.Text
+  answer_number    Decimal?         @db.Decimal(10, 2)
+  answer_boolean   Boolean?
+  answer_date      DateTime?
+  answer_json      Json?
+  created_at       DateTime         @default(now())
+  updated_at       DateTime         @updatedAt
+
+  submission       SurveySubmission @relation(fields: [submission_id], references: [id])
+  question         SurveyQuestion   @relation(fields: [question_id], references: [id])
+
+  @@index([submission_id])
+  @@index([question_id])
+  @@unique([submission_id, question_id])
+  @@map("survey_answer")
+}
+
+model SubmissionCompetency {
+  id               Int              @id @default(autoincrement())
+  submission_id    Int
+  competency_id    Int
+  selected         Boolean          @default(true)
+  score            Int?
+  importance       Int?
+  preference_rank  Int?
+  created_at       DateTime         @default(now())
+  updated_at       DateTime         @updatedAt
+
+  submission       SurveySubmission @relation(fields: [submission_id], references: [id])
+  competency       Competency       @relation(fields: [competency_id], references: [id])
+
+  @@unique([submission_id, competency_id])
+  @@index([competency_id])
+  @@map("submission_competency")
+}
+
+model EmploymentOutcome {
+  id                Int               @id @default(autoincrement())
+  alumni_profile_id Int
+  submission_id     Int
+  employment_status EmploymentStatus
+  outcome_date      DateTime
+  company           String?           @db.VarChar(150)
+  job_title         String?           @db.VarChar(150)
+  industry          String?           @db.VarChar(100)
+  salary_range      String?           @db.VarChar(100)
+  degree_relevance  Boolean?
+  additional_data   Json?
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+
+  alumni_profile    AlumniProfile     @relation(fields: [alumni_profile_id], references: [id])
+  submission        SurveySubmission  @relation(fields: [submission_id], references: [id])
+
+  @@index([alumni_profile_id])
+  @@index([submission_id])
+  @@index([employment_status])
+  @@index([outcome_date])
+  @@map("employment_outcome")
 }
 
 model FollowupSchedule {
-  id                  Int      @id @default(autoincrement())
-  student_academic_id Int
-  template_id         Int
-  due_date            DateTime
-  status              String   @default("pending") // pending, sent, completed, overdue
-  created_at          DateTime @default(now())
+  id                    Int              @id @default(autoincrement())
+  alumni_profile_id     Int
+  trigger_submission_id Int
+  target_template_id    Int
+  due_at                DateTime
+  sent_at               DateTime?
+  completed_at          DateTime?
+  status                FollowupStatus   @default(PENDING)
+  created_at            DateTime         @default(now())
+  updated_at            DateTime         @updatedAt
 
-  academic            StudentAcademic @relation(fields: [student_academic_id], references: [id])
-  template            SurveyTemplate  @relation(fields: [template_id], references: [id])
+  alumni_profile        AlumniProfile    @relation(fields: [alumni_profile_id], references: [id])
+  trigger_submission    SurveySubmission @relation("FollowupTriggerSubmission", fields: [trigger_submission_id], references: [id])
+  target_template       SurveyTemplate   @relation("FollowupTargetTemplate", fields: [target_template_id], references: [id])
 
-  @@map("followup_schedules")
+  @@index([alumni_profile_id])
+  @@index([trigger_submission_id])
+  @@index([target_template_id])
+  @@index([due_at])
+  @@index([status])
+  @@map("followup_schedule")
 }
 
-model StudentAcademic {
-  id             Int      @id @default(autoincrement())
-  student_id     String   @db.VarChar(20)
-  user_id        Int
-  degree_id      Int
-  gender         String?  @db.VarChar(10)
-  age            Int?
-  year_graduated Int
-  cgpa           Decimal? @db.Decimal(5, 2)
-  prof_grade     Decimal? @db.Decimal(5, 2)
-  elec_grade     Decimal? @db.Decimal(5, 2)
-  ojt_grade      Decimal? @db.Decimal(5, 2)
-  leader_pos     Int?     @default(0) @db.TinyInt
-  act_member_pos Int?     @default(0) @db.TinyInt
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
+model Occupation {
+  id                    Int                   @id @default(autoincrement())
+  source_system         String?               @db.VarChar(50)
+  source_code           String?               @db.VarChar(50)
+  title                 String                @db.VarChar(150)
+  description           String?               @db.Text
+  family                String?               @db.VarChar(100)
+  metadata_json         Json?
+  is_active             Boolean               @default(true)
+  created_at            DateTime              @default(now())
+  updated_at            DateTime              @updatedAt
 
-  user           User     @relation(fields: [user_id], references: [id])
-  degree         Degree   @relation(fields: [degree_id], references: [id])
-  
-  responses      SurveyResponse[]
-  predictions    EmployabilityPrediction[]
-  schedules      FollowupSchedule[]
+  occupation_competencies OccupationCompetency[]
 
-  @@map("student_academic")
+  @@unique([source_system, source_code])
+  @@index([title])
+  @@index([family])
+  @@map("occupation")
 }
 
-model EmployabilityPrediction {
-  id                  Int             @id @default(autoincrement())
-  student_academic_id Int
-  survey_response_id  Int
-  model_version       String          @db.VarChar(100)
-  employable          Int             @db.TinyInt
-  probability         Float
-  input_snapshot      Json?           @db.Json
-  prediction_date     DateTime        @default(now())
+model OccupationCompetency {
+  occupation_id         Int
+  competency_id         Int
+  weight                Decimal?             @db.Decimal(6, 3)
+  source_kind           CompetencyKind?
+  created_at            DateTime             @default(now())
+  updated_at            DateTime             @updatedAt
 
-  academic           StudentAcademic @relation(fields: [student_academic_id], references: [id])
-  response           SurveyResponse  @relation(fields: [survey_response_id], references: [id])
+  occupation            Occupation           @relation(fields: [occupation_id], references: [id])
+  competency            Competency           @relation(fields: [competency_id], references: [id])
 
-  @@map("employability_predictions")
+  @@id([occupation_id, competency_id])
+  @@index([competency_id])
+  @@map("occupation_competency")
 }
 
-// --- SYSTEM UTILS ---
+model MlPrediction {
+  id                   Int               @id @default(autoincrement())
+  prediction_type      PredictionType
+  model_name           String            @db.VarChar(100)
+  model_version        String?           @db.VarChar(100)
+  alumni_profile_id    Int
+  academic_snapshot_id Int?
+  submission_id        Int?
+  input_snapshot       Json?
+  output_json          Json
+  confidence           Decimal?          @db.Decimal(6, 4)
+  created_at           DateTime          @default(now())
+  updated_at           DateTime          @updatedAt
 
-model SystemSetting {
-  key        String   @id @db.VarChar(100)
-  value      String   @db.LongText
-  updated_by Int?
-  updated_at DateTime @updatedAt
+  alumni_profile       AlumniProfile     @relation(fields: [alumni_profile_id], references: [id])
+  academic_snapshot    AcademicSnapshot? @relation(fields: [academic_snapshot_id], references: [id])
+  submission           SurveySubmission? @relation(fields: [submission_id], references: [id])
 
-  @@map("system_settings")
+  @@index([prediction_type])
+  @@index([model_name])
+  @@index([alumni_profile_id])
+  @@index([academic_snapshot_id])
+  @@index([submission_id])
+  @@map("ml_prediction")
+}
+
+model ArimaForecast {
+  id                        Int       @id @default(autoincrement())
+  forecast_date             DateTime  @default(now())
+  period_start              DateTime
+  period_end                DateTime
+  predicted_employment_rate Decimal?  @db.Decimal(6, 2)
+  lower_bound               Decimal?  @db.Decimal(6, 2)
+  upper_bound               Decimal?  @db.Decimal(6, 2)
+  created_at                DateTime  @default(now())
+  updated_at                DateTime  @updatedAt
+
+  @@index([period_start, period_end])
+  @@map("arima_forecast")
 }
 
 model Notification {
-  id         Int      @id @default(autoincrement())
-  title      String   @db.VarChar(255)
-  body       String   @db.Text
-  type       String   @db.VarChar(50)
-  created_at DateTime @default(now())
+  id                Int                 @id @default(autoincrement())
+  title             String              @db.VarChar(255)
+  body              String?             @db.Text
+  type              String              @default("info") @db.VarChar(50)
+  target_role       String              @default("alumni") @db.VarChar(20)
+  target_college_id Int?
+  target_program_id Int?
+  created_by        Int?
+  created_at        DateTime            @default(now())
+  updated_at        DateTime            @updatedAt
 
-  users      UserNotification[]
+  created_by_user   User?               @relation("NotificationCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
+  user_notifications UserNotification[]
 
+  @@index([target_role])
+  @@index([target_college_id])
+  @@index([target_program_id])
+  @@index([created_by])
+  @@index([created_at])
   @@map("notifications")
 }
 
 model UserNotification {
-  id              Int       @id @default(autoincrement())
+  id              Int          @id @default(autoincrement())
   user_id         Int
   notification_id Int
   read_at         DateTime?
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
 
-  user            User         @relation(fields: [user_id], references: [id])
-  notification    Notification @relation(fields: [notification_id], references: [id])
+  user            User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  notification    Notification @relation(fields: [notification_id], references: [id], onDelete: Cascade)
 
+  @@unique([user_id, notification_id])
+  @@index([user_id, read_at])
+  @@index([notification_id])
   @@map("user_notifications")
 }
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  user_id    Int?
-  action     String   @db.VarChar(100)
-  metadata   Json?    @db.Json
-  created_at DateTime @default(now())
+  id          Int       @id @default(autoincrement())
+  user_id     Int?
+  action      String    @db.VarChar(100)
+  entity_type String?   @db.VarChar(100)
+  entity_id   Int?
+  metadata    Json?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
 
+  user        User?     @relation("AuditLogUser", fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, created_at])
+  @@index([action])
+  @@index([entity_type])
   @@map("audit_logs")
 }
 
+model SystemSetting {
+  key             String    @id @db.VarChar(100)
+  value           String    @db.LongText
+  updated_by      Int?
+  updated_at      DateTime  @updatedAt
+
+  updated_by_user User?     @relation("SystemSettingUpdatedBy", fields: [updated_by], references: [id], onDelete: SetNull)
+
+  @@index([updated_by])
+  @@map("system_settings")
+}
+
 model ImportHistory {
-  id            Int      @id @default(autoincrement())
-  filename      String   @db.VarChar(255)
-  uploaded_at   DateTime @default(now())
+  id            Int           @id @default(autoincrement())
+  filename      String        @db.VarChar(255)
+  uploaded_at   DateTime      @default(now())
   uploaded_by   Int?
   total_records Int
   success_count Int
   failed_count  Int
-  status        String   @default("completed")
+  status        String        @default("completed") @db.VarChar(20)
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
 
+  uploaded_by_user User?       @relation("ImportHistoryUploadedBy", fields: [uploaded_by], references: [id], onDelete: SetNull)
+  import_errors    ImportError[]
+
+  @@index([uploaded_by])
+  @@index([uploaded_at])
   @@map("import_history")
 }
 
 model ImportError {
-  id          Int    @id @default(autoincrement())
-  import_id   Int
-  row_number  Int
-  error       String @db.Text
-  raw_data    String? @db.Text
+  id         Int           @id @default(autoincrement())
+  import_id  Int
+  row_number Int
+  error      String        @db.Text
+  raw_data   String?       @db.Text
+  created_at DateTime      @default(now())
+  updated_at DateTime      @updatedAt
 
+  import_history ImportHistory @relation(fields: [import_id], references: [id])
+
+  @@index([import_id])
+  @@index([row_number])
   @@map("import_errors")
 }

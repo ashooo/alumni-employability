@@ -3,6 +3,8 @@ CREATE TABLE `user` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `username` VARCHAR(50) NOT NULL,
     `email` VARCHAR(100) NULL,
+    `phone` VARCHAR(30) NULL,
+    `address` TEXT NULL,
     `password_hash` VARCHAR(255) NOT NULL,
     `role` ENUM('ADMIN', 'ALUMNI', 'SUPERADMIN') NOT NULL,
     `first_name` VARCHAR(50) NOT NULL,
@@ -349,6 +351,103 @@ CREATE TABLE `arima_forecast` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `notifications` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `title` VARCHAR(255) NOT NULL,
+    `body` TEXT NULL,
+    `type` VARCHAR(50) NOT NULL DEFAULT 'info',
+    `target_role` VARCHAR(20) NOT NULL DEFAULT 'alumni',
+    `target_college_id` INTEGER NULL,
+    `target_program_id` INTEGER NULL,
+    `created_by` INTEGER NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL,
+
+    INDEX `notifications_target_role_idx`(`target_role`),
+    INDEX `notifications_target_college_id_idx`(`target_college_id`),
+    INDEX `notifications_target_program_id_idx`(`target_program_id`),
+    INDEX `notifications_created_by_idx`(`created_by`),
+    INDEX `notifications_created_at_idx`(`created_at`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `user_notifications` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `user_id` INTEGER NOT NULL,
+    `notification_id` INTEGER NOT NULL,
+    `read_at` DATETIME(3) NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `user_notifications_user_id_notification_id_key`(`user_id`, `notification_id`),
+    INDEX `user_notifications_user_id_read_at_idx`(`user_id`, `read_at`),
+    INDEX `user_notifications_notification_id_idx`(`notification_id`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `audit_logs` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `user_id` INTEGER NULL,
+    `action` VARCHAR(100) NOT NULL,
+    `entity_type` VARCHAR(100) NULL,
+    `entity_id` INTEGER NULL,
+    `metadata` JSON NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL,
+
+    INDEX `audit_logs_user_id_created_at_idx`(`user_id`, `created_at`),
+    INDEX `audit_logs_action_idx`(`action`),
+    INDEX `audit_logs_entity_type_idx`(`entity_type`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `system_settings` (
+    `key` VARCHAR(100) NOT NULL,
+    `value` LONGTEXT NOT NULL,
+    `updated_by` INTEGER NULL,
+    `updated_at` DATETIME(3) NOT NULL,
+
+    INDEX `system_settings_updated_by_idx`(`updated_by`),
+    PRIMARY KEY (`key`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `import_history` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `filename` VARCHAR(255) NOT NULL,
+    `uploaded_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `uploaded_by` INTEGER NULL,
+    `total_records` INTEGER NOT NULL,
+    `success_count` INTEGER NOT NULL,
+    `failed_count` INTEGER NOT NULL,
+    `status` VARCHAR(20) NOT NULL DEFAULT 'completed',
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL,
+
+    INDEX `import_history_uploaded_by_idx`(`uploaded_by`),
+    INDEX `import_history_uploaded_at_idx`(`uploaded_at`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `import_errors` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `import_id` INTEGER NOT NULL,
+    `row_number` INTEGER NOT NULL,
+    `error` TEXT NOT NULL,
+    `raw_data` TEXT NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL,
+
+    INDEX `import_errors_import_id_idx`(`import_id`),
+    INDEX `import_errors_row_number_idx`(`row_number`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- AddForeignKey
 ALTER TABLE `program` ADD CONSTRAINT `program_college_id_fkey` FOREIGN KEY (`college_id`) REFERENCES `college`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -430,3 +529,23 @@ ALTER TABLE `ml_prediction` ADD CONSTRAINT `ml_prediction_academic_snapshot_id_f
 -- AddForeignKey
 ALTER TABLE `ml_prediction` ADD CONSTRAINT `ml_prediction_submission_id_fkey` FOREIGN KEY (`submission_id`) REFERENCES `survey_submission`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
+-- AddForeignKey
+ALTER TABLE `notifications` ADD CONSTRAINT `notifications_created_by_fkey` FOREIGN KEY (`created_by`) REFERENCES `user`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `user_notifications` ADD CONSTRAINT `user_notifications_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `user_notifications` ADD CONSTRAINT `user_notifications_notification_id_fkey` FOREIGN KEY (`notification_id`) REFERENCES `notifications`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `audit_logs` ADD CONSTRAINT `audit_logs_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `system_settings` ADD CONSTRAINT `system_settings_updated_by_fkey` FOREIGN KEY (`updated_by`) REFERENCES `user`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `import_history` ADD CONSTRAINT `import_history_uploaded_by_fkey` FOREIGN KEY (`uploaded_by`) REFERENCES `user`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `import_errors` ADD CONSTRAINT `import_errors_import_id_fkey` FOREIGN KEY (`import_id`) REFERENCES `import_history`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;

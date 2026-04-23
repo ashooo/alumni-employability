@@ -1,43 +1,66 @@
-const db = require('../config/db');
+const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { normalizeUserRole, normalizeUserRoleEnum } = require('../utils/refactorAuth');
 
-const buildRecipientQuery = ({ targetRole, targetCollegeId, targetProgramId }) => {
-  const params = [];
-  let query = `
-    SELECT DISTINCT u.id
-    FROM user u
-  `;
+const requireRefactorPrisma = () => {
+  const setupStatus = getRefactorSetupStatus();
 
-  if (targetRole !== 'admin') {
-    query += `
-      LEFT JOIN alumni_records ar ON ar.student_id = u.username
-      LEFT JOIN programs p ON p.id = ar.program_id
-    `;
+  if (!setupStatus.ready) {
+    const error = new Error(setupStatus.message);
+    error.statusCode = 503;
+    throw error;
   }
 
-  query += ` WHERE 1=1 `;
+  return getRefactorPrisma();
+};
 
-  if (targetRole && targetRole !== 'all') {
-    query += ` AND u.role = ? `;
-    params.push(targetRole);
+const parseOptionalInt = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
   }
 
-  if (targetRole !== 'admin') {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const VALID_TARGET_ROLES = new Set(['all', 'admin', 'alumni', 'superadmin']);
+
+const normalizeTargetRole = (targetRole) => {
+  const normalized = String(targetRole || '').trim().toLowerCase();
+  return normalized || 'alumni';
+};
+
+const buildRecipientWhere = ({ targetRole, targetCollegeId, targetProgramId }) => {
+  const normalizedTargetRole = normalizeTargetRole(targetRole);
+  const includeAllRoles = normalizedTargetRole === 'all';
+  const where = {};
+
+  if (!includeAllRoles) {
+    where.role = normalizeUserRoleEnum(normalizedTargetRole);
+  }
+
+  const shouldUseAcademicFilters =
+    includeAllRoles || normalizeUserRole(normalizedTargetRole) !== 'admin';
+
+  if (shouldUseAcademicFilters) {
     if (targetProgramId) {
-      query += ` AND ar.program_id = ? `;
-      params.push(targetProgramId);
+      where.alumni_profile = {
+        current_program_id: targetProgramId
+      };
     } else if (targetCollegeId) {
-      query += ` AND p.college_id = ? `;
-      params.push(targetCollegeId);
+      where.alumni_profile = {
+        current_program: {
+          college_id: targetCollegeId
+        }
+      };
     }
   }
 
-  return { query, params };
+  return where;
 };
 
 const createNotification = async (req, res) => {
-  const connection = await db.getConnection();
   try {
-    if (req.user?.role !== 'admin') {
+    if (String(req.user?.role || '').toLowerCase() !== 'admin') {
       return res.status(403).json({ error: 'Only admins can create notifications' });
     }
 
@@ -54,111 +77,141 @@ const createNotification = async (req, res) => {
       return res.status(400).json({ error: 'title is required' });
     }
 
-    await connection.beginTransaction();
-
-    const [result] = await connection.query(
-      `INSERT INTO notifications
-       (title, body, type, target_role, target_college_id, target_program_id, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        String(title).trim(),
-        body ? String(body) : null,
-        String(type || 'info'),
-        String(target_role || 'alumni'),
-        target_college_id ? Number(target_college_id) : null,
-        target_program_id ? Number(target_program_id) : null,
-        req.user.id
-      ]
-    );
-
-    const notificationId = result.insertId;
-    const { query, params } = buildRecipientQuery({
-      targetRole: String(target_role || 'alumni'),
-      targetCollegeId: target_college_id ? Number(target_college_id) : null,
-      targetProgramId: target_program_id ? Number(target_program_id) : null
-    });
-
-    const [recipients] = await connection.query(query, params);
-
-    if (recipients.length > 0) {
-      const values = recipients.map((r) => [r.id, notificationId]);
-      await connection.query(
-        `INSERT IGNORE INTO user_notifications (user_id, notification_id) VALUES ?`,
-        [values]
-      );
+    const refactorPrisma = requireRefactorPrisma();
+    const normalizedTargetRole = normalizeTargetRole(target_role);
+    if (!VALID_TARGET_ROLES.has(normalizedTargetRole)) {
+      return res.status(400).json({ error: 'Invalid target_role' });
     }
 
-    await connection.commit();
+    const targetCollegeId = parseOptionalInt(target_college_id);
+    const targetProgramId = parseOptionalInt(target_program_id);
+
+    const result = await refactorPrisma.$transaction(async (tx) => {
+      const notification = await tx.notification.create({
+        data: {
+          title: String(title).trim(),
+          body: body ? String(body) : null,
+          type: String(type || 'info'),
+          target_role: normalizedTargetRole,
+          target_college_id: targetCollegeId,
+          target_program_id: targetProgramId,
+          created_by: req.user.id
+        }
+      });
+
+      const recipientWhere = buildRecipientWhere({
+        targetRole: normalizedTargetRole,
+        targetCollegeId,
+        targetProgramId
+      });
+
+      const recipients = await tx.user.findMany({
+        where: recipientWhere,
+        select: { id: true }
+      });
+
+      if (recipients.length > 0) {
+        await tx.userNotification.createMany({
+          data: recipients.map((recipient) => ({
+            user_id: recipient.id,
+            notification_id: notification.id
+          })),
+          skipDuplicates: true
+        });
+      }
+
+      return {
+        id: notification.id,
+        recipients: recipients.length
+      };
+    });
+
     return res.status(201).json({
       success: true,
-      id: notificationId,
-      recipients: recipients.length,
+      id: result.id,
+      recipients: result.recipients,
       message: 'Notification created successfully'
     });
   } catch (error) {
-    await connection.rollback();
     console.error('Create notification error:', error);
-    return res.status(500).json({ error: 'Failed to create notification' });
-  } finally {
-    connection.release();
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to create notification' });
   }
 };
 
 const getMyNotifications = async (req, res) => {
   try {
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
-    const [rows] = await db.query(
-      `SELECT
-         n.id,
-         n.title,
-         n.body,
-         n.type,
-         n.created_at,
-         un.read_at
-       FROM user_notifications un
-       JOIN notifications n ON n.id = un.notification_id
-       WHERE un.user_id = ?
-       ORDER BY n.created_at DESC
-       LIMIT 30`,
-      [userId]
+    const refactorPrisma = requireRefactorPrisma();
+    const rows = await refactorPrisma.userNotification.findMany({
+      where: {
+        user_id: userId
+      },
+      include: {
+        notification: true
+      },
+      orderBy: {
+        notification: {
+          created_at: 'desc'
+        }
+      },
+      take: 30
+    });
+
+    return res.json(
+      rows.map((row) => ({
+        id: row.notification.id,
+        title: row.notification.title,
+        body: row.notification.body,
+        type: row.notification.type,
+        createdAt: row.notification.created_at,
+        read: Boolean(row.read_at)
+      }))
     );
-
-    const data = rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      body: r.body,
-      type: r.type,
-      createdAt: r.created_at,
-      read: !!r.read_at
-    }));
-
-    return res.json(data);
   } catch (error) {
     console.error('Get my notifications error:', error);
-    return res.status(500).json({ error: 'Failed to fetch notifications' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to fetch notifications' });
   }
 };
 
 const markNotificationRead = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const notificationId = Number(req.params.id);
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    if (!notificationId) return res.status(400).json({ error: 'Invalid notification id' });
+    const notificationId = parseOptionalInt(req.params.id);
 
-    const [result] = await db.query(
-      `UPDATE user_notifications
-       SET read_at = NOW()
-       WHERE user_id = ? AND notification_id = ? AND read_at IS NULL`,
-      [userId, notificationId]
-    );
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
-    return res.json({ success: true, updated: result.affectedRows });
+    if (!notificationId) {
+      return res.status(400).json({ error: 'Invalid notification id' });
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+    const result = await refactorPrisma.userNotification.updateMany({
+      where: {
+        user_id: userId,
+        notification_id: notificationId,
+        read_at: null
+      },
+      data: {
+        read_at: new Date()
+      }
+    });
+
+    return res.json({ success: true, updated: result.count });
   } catch (error) {
     console.error('Mark notification read error:', error);
-    return res.status(500).json({ error: 'Failed to mark notification as read' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to mark notification as read' });
   }
 };
 

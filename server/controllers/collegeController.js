@@ -1,184 +1,332 @@
-const db = require('../config/db');
+const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+
+const requireRefactorPrisma = () => {
+  const setupStatus = getRefactorSetupStatus();
+
+  if (!setupStatus.ready) {
+    const error = new Error(setupStatus.message);
+    error.statusCode = 503;
+    throw error;
+  }
+
+  return getRefactorPrisma();
+};
+
+const parseOptionalInt = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeString = (value) => String(value || '').trim();
+
+const mapCollegeRecord = (college) => ({
+  id: college.id,
+  name: college.name,
+  code: college.code,
+  description: college.description,
+  created_at: college.created_at,
+  updated_at: college.updated_at
+});
 
 // Get all colleges with program counts
 const getColleges = async (req, res) => {
   try {
-    const [colleges] = await db.query(`
-      SELECT 
-        c.*,
-        COUNT(DISTINCT p.id) as program_count,
-        COUNT(ar.id) as alumni_count
-      FROM colleges c
-      LEFT JOIN programs p ON c.id = p.college_id
-      LEFT JOIN alumni_records ar ON p.id = ar.program_id
-      GROUP BY c.id
-      ORDER BY c.name ASC
-    `);
-    res.json(colleges);
+    const refactorPrisma = requireRefactorPrisma();
+    const colleges = await refactorPrisma.college.findMany({
+      include: {
+        programs: {
+          select: {
+            id: true,
+            _count: {
+              select: {
+                alumni_profiles: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        name: 'asc'
+      }
+    });
+
+    const mapped = colleges.map((college) => ({
+      ...mapCollegeRecord(college),
+      program_count: college.programs.length,
+      alumni_count: college.programs.reduce(
+        (sum, program) => sum + (program._count?.alumni_profiles || 0),
+        0
+      )
+    }));
+
+    return res.json(mapped);
   } catch (error) {
     console.error('Get colleges error:', error);
-    res.status(500).json({ error: 'Failed to fetch colleges' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to fetch colleges' });
   }
 };
 
 // Get single college by ID with programs
 const getCollegeById = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const [colleges] = await db.query(
-      'SELECT * FROM colleges WHERE id = ?',
-      [id]
-    );
-    
-    if (colleges.length === 0) {
+    const id = parseOptionalInt(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'Invalid college id' });
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+    const college = await refactorPrisma.college.findUnique({
+      where: { id },
+      include: {
+        programs: {
+          include: {
+            _count: {
+              select: {
+                alumni_profiles: true
+              }
+            }
+          },
+          orderBy: {
+            name: 'asc'
+          }
+        }
+      }
+    });
+
+    if (!college) {
       return res.status(404).json({ error: 'College not found' });
     }
-    
-    // Get programs under this college
-    const [programs] = await db.query(
-      `SELECT 
-        p.*,
-        COUNT(ar.id) as alumni_count
-       FROM programs p
-       LEFT JOIN alumni_records ar ON p.id = ar.program_id
-       WHERE p.college_id = ?
-       GROUP BY p.id
-       ORDER BY p.name ASC`,
-      [id]
-    );
-    
-    res.json({
-      ...colleges[0],
-      programs
+
+    return res.json({
+      ...mapCollegeRecord(college),
+      programs: college.programs.map((program) => ({
+        id: program.id,
+        name: program.name,
+        code: program.code,
+        description: program.description,
+        college_id: program.college_id,
+        created_at: program.created_at,
+        updated_at: program.updated_at,
+        alumni_count: program._count?.alumni_profiles || 0
+      }))
     });
   } catch (error) {
     console.error('Get college error:', error);
-    res.status(500).json({ error: 'Failed to fetch college' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to fetch college' });
   }
 };
 
 // Add new college
 const addCollege = async (req, res) => {
   try {
-    const { name, code, description } = req.body;
-    
-    // Check if code already exists
-    const [existing] = await db.query(
-      'SELECT id FROM colleges WHERE code = ?',
-      [code]
-    );
-    
-    if (existing.length > 0) {
-      return res.status(400).json({ error: 'College code already exists' });
+    const name = normalizeString(req.body?.name);
+    const code = normalizeString(req.body?.code) || null;
+    const description = normalizeString(req.body?.description) || null;
+
+    if (!name) {
+      return res.status(400).json({ error: 'College name is required' });
     }
-    
-    const [result] = await db.query(
-      'INSERT INTO colleges (name, code, description) VALUES (?, ?, ?)',
-      [name, code, description]
-    );
-    
-    const [newCollege] = await db.query(
-      'SELECT * FROM colleges WHERE id = ?',
-      [result.insertId]
-    );
-    
-    res.status(201).json(newCollege[0]);
+
+    const refactorPrisma = requireRefactorPrisma();
+
+    if (code) {
+      const existing = await refactorPrisma.college.findFirst({
+        where: { code },
+        select: { id: true }
+      });
+
+      if (existing) {
+        return res.status(400).json({ error: 'College code already exists' });
+      }
+    }
+
+    const created = await refactorPrisma.college.create({
+      data: {
+        name,
+        code,
+        description
+      }
+    });
+
+    return res.status(201).json(mapCollegeRecord(created));
   } catch (error) {
     console.error('Add college error:', error);
-    res.status(500).json({ error: 'Failed to add college' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to add college' });
   }
 };
 
 // Update college
 const updateCollege = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { name, code, description } = req.body;
-    
-    // Check if code already exists (excluding current college)
-    const [existing] = await db.query(
-      'SELECT id FROM colleges WHERE code = ? AND id != ?',
-      [code, id]
-    );
-    
-    if (existing.length > 0) {
-      return res.status(400).json({ error: 'College code already exists' });
+    const id = parseOptionalInt(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'Invalid college id' });
     }
-    
-    await db.query(
-      'UPDATE colleges SET name = ?, code = ?, description = ? WHERE id = ?',
-      [name, code, description, id]
-    );
-    
-    res.json({ success: true, message: 'College updated successfully' });
+
+    const name = normalizeString(req.body?.name);
+    const code = normalizeString(req.body?.code) || null;
+    const description = normalizeString(req.body?.description) || null;
+
+    if (!name) {
+      return res.status(400).json({ error: 'College name is required' });
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+    const college = await refactorPrisma.college.findUnique({
+      where: { id },
+      select: { id: true }
+    });
+
+    if (!college) {
+      return res.status(404).json({ error: 'College not found' });
+    }
+
+    if (code) {
+      const existing = await refactorPrisma.college.findFirst({
+        where: {
+          code,
+          id: {
+            not: id
+          }
+        },
+        select: { id: true }
+      });
+
+      if (existing) {
+        return res.status(400).json({ error: 'College code already exists' });
+      }
+    }
+
+    await refactorPrisma.college.update({
+      where: { id },
+      data: {
+        name,
+        code,
+        description
+      }
+    });
+
+    return res.json({ success: true, message: 'College updated successfully' });
   } catch (error) {
     console.error('Update college error:', error);
-    res.status(500).json({ error: 'Failed to update college' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to update college' });
   }
 };
 
-// Delete college (only if no programs or surveys)
+// Delete college (only if no programs)
 const deleteCollege = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    // Check if college has programs
-    const [programs] = await db.query(
-      'SELECT COUNT(*) as count FROM programs WHERE college_id = ?',
-      [id]
-    );
-    
-    if (programs[0].count > 0) {
-      return res.status(400).json({ 
-        error: 'Cannot delete college because it has associated programs' 
+    const id = parseOptionalInt(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'Invalid college id' });
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+    const programCount = await refactorPrisma.program.count({
+      where: {
+        college_id: id
+      }
+    });
+
+    if (programCount > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete college because it has associated programs'
       });
     }
-    
-    // Check if college is used in survey questions
-    const [usage] = await db.query(
-      'SELECT COUNT(*) as count FROM survey_questions WHERE JSON_CONTAINS(colleges, ?)',
-      [JSON.stringify(String(id))]
-    );
-    
-    if (usage[0].count > 0) {
-      return res.status(400).json({ 
-        error: 'Cannot delete college because it is being used in survey questions' 
-      });
+
+    const deleted = await refactorPrisma.college.deleteMany({
+      where: { id }
+    });
+
+    if (deleted.count === 0) {
+      return res.status(404).json({ error: 'College not found' });
     }
-    
-    await db.query('DELETE FROM colleges WHERE id = ?', [id]);
-    
-    res.json({ success: true, message: 'College deleted successfully' });
+
+    return res.json({ success: true, message: 'College deleted successfully' });
   } catch (error) {
     console.error('Delete college error:', error);
-    res.status(500).json({ error: 'Failed to delete college' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to delete college' });
   }
 };
 
 // Get college statistics
 const getCollegeStats = async (req, res) => {
   try {
-    const [stats] = await db.query(`
-      SELECT 
-        c.id,
-        c.name,
-        c.code,
-        COUNT(DISTINCT p.id) as total_programs,
-        COUNT(DISTINCT ar.id) as total_alumni,
-        SUM(CASE WHEN ar.survey_status = 'completed' THEN 1 ELSE 0 END) as surveys_completed,
-        SUM(CASE WHEN ar.status = 'active' THEN 1 ELSE 0 END) as active_accounts
-      FROM colleges c
-      LEFT JOIN programs p ON c.id = p.college_id
-      LEFT JOIN alumni_records ar ON p.id = ar.program_id
-      GROUP BY c.id
-      ORDER BY c.name ASC
-    `);
-    
-    res.json(stats);
+    const refactorPrisma = requireRefactorPrisma();
+    const colleges = await refactorPrisma.college.findMany({
+      orderBy: {
+        name: 'asc'
+      }
+    });
+
+    const stats = await Promise.all(
+      colleges.map(async (college) => {
+        const [totalPrograms, totalAlumni, surveysCompleted, activeAccounts] =
+          await Promise.all([
+            refactorPrisma.program.count({
+              where: { college_id: college.id }
+            }),
+            refactorPrisma.alumniProfile.count({
+              where: {
+                current_program: {
+                  college_id: college.id
+                }
+              }
+            }),
+            refactorPrisma.alumniProfile.count({
+              where: {
+                current_program: {
+                  college_id: college.id
+                },
+                survey_submissions: {
+                  some: {
+                    status: 'COMPLETED'
+                  }
+                }
+              }
+            }),
+            refactorPrisma.alumniProfile.count({
+              where: {
+                current_program: {
+                  college_id: college.id
+                },
+                lifecycle_status: 'ACTIVE'
+              }
+            })
+          ]);
+
+        return {
+          id: college.id,
+          name: college.name,
+          code: college.code,
+          total_programs: totalPrograms,
+          total_alumni: totalAlumni,
+          surveys_completed: surveysCompleted,
+          active_accounts: activeAccounts
+        };
+      })
+    );
+
+    return res.json(stats);
   } catch (error) {
     console.error('Get college stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch college statistics' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to fetch college statistics' });
   }
 };
 

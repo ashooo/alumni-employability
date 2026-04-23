@@ -1,9 +1,12 @@
-const db = require('../config/db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { generateOTP, sendOTPEmail } = require('../config/email');
 const dns = require('node:dns').promises;
-const { lastDayOfDecade } = require('date-fns');
+const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const {
+  normalizeUserRole,
+  isPlaceholderPasswordHash
+} = require('../utils/refactorAuth');
 
 // Store OTPs temporarily (in production, use Redis or database)
 const otpStore = new Map();
@@ -27,6 +30,75 @@ const TYPO_MAP = {
 };
 
 const normalizeEmail = (email = '') => email.trim().toLowerCase();
+const normalizeName = (value = '') => String(value).trim().toLowerCase();
+
+const requireRefactorPrisma = () => {
+  const setupStatus = getRefactorSetupStatus();
+
+  if (!setupStatus.ready) {
+    const error = new Error(setupStatus.message);
+    error.statusCode = 503;
+    throw error;
+  }
+
+  return getRefactorPrisma();
+};
+
+const isPlaceholderAccount = async (user) => {
+  if (!user || normalizeUserRole(user.role) !== 'alumni') {
+    return false;
+  }
+
+  return isPlaceholderPasswordHash(user.username, user.password_hash);
+};
+
+const buildUserResponse = (user) => ({
+  id: user.id,
+  username: user.username,
+  email: user.email,
+  role: normalizeUserRole(user.role),
+  firstName: user.first_name,
+  lastName: user.last_name,
+  middleName: user.middle_name,
+  suffix: user.suffix,
+  lastLogin: user.last_login
+});
+
+const parseRegistrationName = (body = {}) => {
+  const providedFirstName = String(body.firstName || '').trim();
+  const providedLastName = String(body.lastName || '').trim();
+  const providedMiddleName = String(body.middleName || '').trim();
+  const providedSuffix = String(body.suffix || '').trim();
+  const fullName = String(body.fullName || '').trim();
+
+  if (providedFirstName || providedLastName) {
+    return {
+      firstName: providedFirstName || null,
+      lastName: providedLastName || null,
+      middleName: providedMiddleName || null,
+      suffix: providedSuffix || null
+    };
+  }
+
+  if (!fullName) {
+    return {
+      firstName: null,
+      lastName: null,
+      middleName: null,
+      suffix: null
+    };
+  }
+
+  const nameParts = fullName.split(/\s+/).filter(Boolean);
+  return {
+    firstName: nameParts[0] || null,
+    lastName: nameParts.length > 1 ? nameParts[nameParts.length - 1] : null,
+    middleName: nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : null,
+    suffix: null
+  };
+};
+
+const joinFullName = (...parts) => parts.filter(Boolean).join(' ');
 
 const resolveMxWithTimeout = async (domain, timeoutMs = DNS_LOOKUP_TIMEOUT_MS) => {
   return Promise.race([
@@ -112,30 +184,47 @@ setInterval(() => {
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
+    const identifier = String(username || '').trim();
 
-    const [users] = await db.query(
-      'SELECT * FROM user WHERE username = ? OR email = ?',
-      [username, username]
-    );
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
 
-    if (users.length === 0) {
+    const refactorPrisma = requireRefactorPrisma();
+    const user = await refactorPrisma.user.findFirst({
+      where: {
+        OR: [
+          { username: identifier },
+          { email: normalizeEmail(identifier) }
+        ]
+      }
+    });
+
+    if (!user) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    const user = users[0];
-    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (await isPlaceholderAccount(user)) {
+      return res.status(403).json({
+        error: 'Account not activated yet. Please complete account activation first.'
+      });
+    }
+
+    const validPassword = await bcrypt.compare(String(password), user.password_hash);
     
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    await db.query(
-      'UPDATE user SET last_login = CURRENT_TIMESTAMP WHERE id = ?',
-      [user.id]
-    );
+    await refactorPrisma.user.update({
+      where: { id: user.id },
+      data: {
+        last_login: new Date()
+      }
+    });
 
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
+      { id: user.id, username: user.username, role: normalizeUserRole(user.role) },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -143,17 +232,7 @@ const login = async (req, res) => {
     res.json({
       success: true,
       token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        middleName: user.middle_name,
-        suffix: user.suffix,
-        lastLogin: user.last_login
-      }
+      user: buildUserResponse(user)
     });
 
   } catch (error) {
@@ -165,46 +244,50 @@ const login = async (req, res) => {
 const checkStudentRecord = async (req, res) => {
   try {
     const { studentId, firstName, lastName } = req.body;
+    const normalizedStudentId = String(studentId || '').trim();
 
     // Validate inputs
-    if (!studentId || !firstName || !lastName) {
+    if (!normalizedStudentId || !firstName || !lastName) {
       return res.status(400).json({ 
         error: 'Student ID and First Name, and Last Name are required' 
       });
     }
 
-    // First, check if user already has an account
-    const [existingUser] = await db.query(
-      'SELECT * FROM user WHERE username = ?',
-      [studentId]
-    );
+    const refactorPrisma = requireRefactorPrisma();
+    const user = await refactorPrisma.user.findUnique({
+      where: { username: normalizedStudentId },
+      include: {
+        alumni_profile: true
+      }
+    });
 
-    if (existingUser.length > 0) {
-      return res.json({ 
-        status: 'already',
-        message: 'This student ID already has an account. Please login instead.'
-      });
-    }
-
-    // Check if student exists in alumni_records
-    const [records] = await db.query(
-      `SELECT * FROM alumni_records
-      WHERE student_id = ?
-      AND LOWER(TRIM(first_name)) = LOWER(TRIM(?))
-      AND LOWER(TRIM(last_name)) = LOWER(TRIM(?))`,
-      [studentId, firstName.trim(), lastName.trim()]
-    );
-
-    // If student ID not found in alumni_records
-    if (records.length === 0) {
+    if (!user) {
       return res.json({ 
         status: 'not_found',
         message: 'No alumni record found with this Student ID.'
       });
     }
 
-    const alumni = records[0];
-    const alumniEmail = normalizeEmail(alumni.email || '');
+    const placeholderAccount = await isPlaceholderAccount(user);
+    if (!placeholderAccount) {
+      return res.json({ 
+        status: 'already',
+        message: 'This student ID already has an account. Please login instead.'
+      });
+    }
+
+    const namesMatch =
+      normalizeName(user.first_name) === normalizeName(firstName) &&
+      normalizeName(user.last_name) === normalizeName(lastName);
+
+    if (!namesMatch) {
+      return res.json({ 
+        status: 'not_found',
+        message: 'No alumni record found with this Student ID.'
+      });
+    }
+
+    const alumniEmail = normalizeEmail(user.email || '');
     const hasSchoolEmail = alumniEmail.endsWith('@plpasig.edu.ph');
     const preferredEmailDomain = hasSchoolEmail ? 'plpasig.edu.ph' : 'gmail.com';
 
@@ -212,12 +295,12 @@ const checkStudentRecord = async (req, res) => {
       status: 'found',
       message: 'Alumni record verified successfully.',
       record: {
-        studentId: alumni.student_id,
-        firstName: alumni.first_name,
-        lastName: alumni.last_name,
-        middleName: alumni.middle_name,
-        suffix: alumni.suffix,
-        fullName: `${alumni.first_name} ${alumni.last_name}`,
+        studentId: user.username,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        middleName: user.middle_name,
+        suffix: user.suffix,
+        fullName: joinFullName(user.first_name, user.middle_name, user.last_name, user.suffix),
         hasSchoolEmail,
         preferredEmailDomain
       }
@@ -234,7 +317,13 @@ const checkStudentRecord = async (req, res) => {
 
 const register = async (req, res) => {
   try {
-    const { studentId, fullName, email, password } = req.body;
+    const { studentId, email, password } = req.body;
+    const normalizedStudentId = String(studentId || '').trim();
+
+    if (!normalizedStudentId || !email || !password) {
+      return res.status(400).json({ error: 'studentId, email, and password are required' });
+    }
+
     const emailValidation = await validateDeliverableEmail(email);
 
     if (!emailValidation.valid) {
@@ -245,68 +334,90 @@ const register = async (req, res) => {
     }
 
     const normalizedEmail = emailValidation.email;
+    const refactorPrisma = requireRefactorPrisma();
 
-    const [existing] = await db.query(
-      'SELECT * FROM user WHERE username = ? OR email = ?',
-      [studentId, normalizedEmail]
-    );
+    const emailOwner = await refactorPrisma.user.findFirst({
+      where: {
+        email: normalizedEmail,
+        NOT: {
+          username: normalizedStudentId
+        }
+      },
+      select: {
+        id: true
+      }
+    });
 
-    if (existing.length > 0) {
+    if (emailOwner) {
       return res.status(400).json({ error: 'Username or email already exists' });
     }
 
-    const [alumniRecords] = await db.query(
-      `SELECT first_name, last_name, middle_name, suffix 
-       FROM alumni_records 
-       WHERE student_id = ?`,
-      [studentId]
-    );
+    const existingUser = await refactorPrisma.user.findUnique({
+      where: { username: normalizedStudentId },
+      include: {
+        alumni_profile: true
+      }
+    });
 
-    let firstName, lastName, middleName, suffix;
+    if (!existingUser) {
+      return res.status(404).json({ error: 'No alumni record found with this Student ID.' });
+    }
 
-    if (alumniRecords.length > 0) {
-      const alumni = alumniRecords[0];
-      firstName = alumni.first_name;
-      lastName = alumni.last_name;
-      middleName = alumni.middle_name;
-      suffix = alumni.suffix;
-    } else {
-      const nameParts = fullName.trim().split(/\s+/);
-      firstName = nameParts[0];
-      lastName = nameParts[nameParts.length - 1];
-      middleName = nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : null;
-      suffix = null;
+    if (!(await isPlaceholderAccount(existingUser))) {
+      return res.status(400).json({ error: 'Username or email already exists' });
+    }
+
+    const parsedName = parseRegistrationName(req.body);
+    const firstName = existingUser.first_name || parsedName.firstName;
+    const lastName = existingUser.last_name || parsedName.lastName;
+    const middleName = existingUser.middle_name || parsedName.middleName;
+    const suffix = existingUser.suffix || parsedName.suffix;
+
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: 'Unable to resolve alumni name for this activation request' });
     }
 
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
-    await db.query('START TRANSACTION');
-
-    try {
-      await db.query(
-        `INSERT INTO user 
-         (username, email, password_hash, role, first_name, last_name, middle_name, suffix) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [studentId, normalizedEmail, passwordHash, 'alumni', firstName, lastName, middleName, suffix]
-      );
-
-      await db.query(
-        `UPDATE alumni_records SET status = 'active' WHERE student_id = ?`,
-        [studentId]
-      );
-
-      await db.query('COMMIT');
-
-      res.status(201).json({ 
-        success: true, 
-        message: 'Account created successfully' 
+    await refactorPrisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: existingUser.id },
+        data: {
+          email: normalizedEmail,
+          password_hash: passwordHash,
+          role: 'ALUMNI',
+          first_name: firstName,
+          last_name: lastName,
+          middle_name: middleName || null,
+          suffix: suffix || null
+        }
       });
 
-    } catch (error) {
-      await db.query('ROLLBACK');
-      throw error;
-    }
+      if (existingUser.alumni_profile) {
+        await tx.alumniProfile.update({
+          where: { id: existingUser.alumni_profile.id },
+          data: {
+            student_id: normalizedStudentId,
+            lifecycle_status: 'ACTIVE'
+          }
+        });
+      } else {
+        await tx.alumniProfile.create({
+          data: {
+            user_id: existingUser.id,
+            student_id: normalizedStudentId,
+            batch_year: new Date().getFullYear(),
+            lifecycle_status: 'ACTIVE'
+          }
+        });
+      }
+    });
+
+    res.status(201).json({ 
+      success: true, 
+      message: 'Account created successfully' 
+    });
 
   } catch (error) {
     console.error('Registration error:', error);
@@ -403,10 +514,20 @@ const requestChangePasswordOtp = async (req, res) => {
     const username = req.user?.username;
     if (!username) return res.status(401).json({ error: 'Unauthorized' });
 
-    const [rows] = await db.query('SELECT email FROM user WHERE username = ? LIMIT 1', [username]);
-    if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const refactorPrisma = requireRefactorPrisma();
+    const user = await refactorPrisma.user.findUnique({
+      where: { username: String(username) },
+      select: {
+        email: true,
+        password_hash: true
+      }
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (await isPlaceholderPasswordHash(username, user.password_hash)) {
+      return res.status(400).json({ error: 'Account not activated yet' });
+    }
 
-    const email = normalizeEmail(rows[0].email || '');
+    const email = normalizeEmail(user.email || '');
     if (!email) return res.status(400).json({ error: 'No email found for this account' });
 
     const now = Date.now();
@@ -473,26 +594,39 @@ const changePassword = async (req, res) => {
       return res.status(400).json({ error: 'Invalid OTP.' });
     }
 
-    const [users] = await db.query('SELECT password_hash FROM user WHERE username = ? LIMIT 1', [username]);
-    if (users.length === 0) {
+    const refactorPrisma = requireRefactorPrisma();
+    const user = await refactorPrisma.user.findUnique({
+      where: { username: String(username) },
+      select: {
+        password_hash: true
+      }
+    });
+    if (!user) {
       passwordChangeOtpStore.delete(String(username));
       return res.status(404).json({ error: 'User not found' });
     }
+    if (await isPlaceholderPasswordHash(username, user.password_hash)) {
+      passwordChangeOtpStore.delete(String(username));
+      return res.status(400).json({ error: 'Account not activated yet' });
+    }
 
-    const ok = await bcrypt.compare(String(currentPassword), users[0].password_hash);
+    const ok = await bcrypt.compare(String(currentPassword), user.password_hash);
     if (!ok) {
       return res.status(400).json({ error: 'Current password is incorrect' });
     }
 
     // Prevent "change" to same password (optional but helpful)
-    const same = await bcrypt.compare(String(newPassword), users[0].password_hash);
+    const same = await bcrypt.compare(String(newPassword), user.password_hash);
     if (same) {
       return res.status(400).json({ error: 'New password must be different from current password' });
     }
 
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(String(newPassword), saltRounds);
-    await db.query('UPDATE user SET password_hash = ? WHERE username = ?', [passwordHash, username]);
+    await refactorPrisma.user.update({
+      where: { username: String(username) },
+      data: { password_hash: passwordHash }
+    });
 
     passwordChangeOtpStore.delete(String(username));
     return res.json({ success: true, message: 'Password updated successfully' });

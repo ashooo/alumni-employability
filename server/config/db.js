@@ -1,21 +1,73 @@
-const mysql = require('mysql2');
-const { PrismaClient } = require('@prisma/client');
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv');
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'alumni_tracer',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  port: 3307
-});
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const db = pool.promise();
-const prisma = new PrismaClient();
+const refactorEnvPath = path.resolve(__dirname, '../.env.refactor');
+const refactorExamplePath = path.resolve(__dirname, '../.env.refactor.example');
 
-// Attach prisma to the db object for easy access in controllers
-db.prisma = prisma;
+if (fs.existsSync(refactorEnvPath)) {
+  dotenv.config({ path: refactorEnvPath, override: false });
+} else if (fs.existsSync(refactorExamplePath)) {
+  dotenv.config({ path: refactorExamplePath, override: false });
+}
 
-module.exports = db;
+let PrismaClient;
+let prismaClientLoadError = null;
+let prisma = null;
+
+try {
+  ({ PrismaClient } = require('../generated/client'));
+} catch (error) {
+  prismaClientLoadError = error;
+}
+
+const getDatabaseSetupStatus = () => {
+  if (prismaClientLoadError || !PrismaClient) {
+    return {
+      ready: false,
+      message: 'Run `npm run prisma:generate` in `server/` to generate the Prisma client.'
+    };
+  }
+
+  if (!process.env.DATABASE_URL_REFACTOR) {
+    return {
+      ready: false,
+      message: 'Set `DATABASE_URL_REFACTOR` in `server/.env.refactor` or export it before starting the server.'
+    };
+  }
+
+  return {
+    ready: true,
+    message: null
+  };
+};
+
+const getPrisma = () => {
+  const status = getDatabaseSetupStatus();
+
+  if (!status.ready) {
+    throw new Error(status.message);
+  }
+
+  if (!prisma) {
+    prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL_REFACTOR
+        }
+      }
+    });
+  }
+
+  return prisma;
+};
+
+module.exports = {
+  getPrisma,
+  getDatabaseSetupStatus,
+  // Backward-compatible aliases while refactor-era controller names are still in place.
+  getRefactorPrisma: getPrisma,
+  getRefactorSetupStatus: getDatabaseSetupStatus
+};

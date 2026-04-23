@@ -1,5 +1,4 @@
-const { prisma } = require('../config/db');
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/refactorDb');
+const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
 
 const COMPETENCY_KIND_ALIASES = {
   SKILL: ['SOFT_SKILL', 'HARD_SKILL'],
@@ -78,40 +77,46 @@ const parseActiveFilter = (activeQuery) => {
   };
 };
 
-const isRefactorReady = () => getRefactorSetupStatus().ready;
+const requireRefactorPrisma = (res) => {
+  const setupStatus = getRefactorSetupStatus();
+
+  if (!setupStatus.ready) {
+    res.status(503).json({
+      error: 'Refactor Prisma setup is not ready',
+      details: setupStatus.message
+    });
+    return null;
+  }
+
+  return getRefactorPrisma();
+};
 
 const getSkills = async (req, res) => {
-  // Backward-compatible endpoint: prefer v2 competency catalog, then fall back to legacy skills.
   try {
-    if (isRefactorReady()) {
-      const refactorPrisma = getRefactorPrisma();
-      const competencies = await refactorPrisma.competency.findMany({
-        where: {
-          kind: { in: ['HARD_SKILL', 'SOFT_SKILL'] },
-          is_active: true
-        },
-        orderBy: [
-          { kind: 'asc' },
-          { name: 'asc' }
-        ]
-      });
-
-      if (competencies.length > 0) {
-        const mapped = competencies.map((competency) => ({
-          id: competency.id,
-          name: competency.name,
-          type: competency.kind === 'SOFT_SKILL' ? 'soft' : 'hard',
-          description: competency.description
-        }));
-
-        return res.json(mapped);
-      }
+    const refactorPrisma = requireRefactorPrisma(res);
+    if (!refactorPrisma) {
+      return;
     }
 
-    const legacySkills = await prisma.skill.findMany({
-      orderBy: [{ type: 'asc' }, { name: 'asc' }]
+    const competencies = await refactorPrisma.competency.findMany({
+      where: {
+        kind: { in: ['HARD_SKILL', 'SOFT_SKILL'] },
+        is_active: true
+      },
+      orderBy: [
+        { kind: 'asc' },
+        { name: 'asc' }
+      ]
     });
-    return res.json(legacySkills);
+
+    const mapped = competencies.map((competency) => ({
+      id: competency.id,
+      name: competency.name,
+      type: competency.kind === 'SOFT_SKILL' ? 'soft' : 'hard',
+      description: competency.description
+    }));
+
+    return res.json(mapped);
   } catch (error) {
     console.error('Get skills error:', error);
     res.status(500).json({ error: 'Failed to fetch skills' });
@@ -119,31 +124,25 @@ const getSkills = async (req, res) => {
 };
 
 const getDegrees = async (req, res) => {
-  // Backward-compatible endpoint: prefer v2 programs, then fall back to legacy degrees.
   try {
-    if (isRefactorReady()) {
-      const refactorPrisma = getRefactorPrisma();
-      const programs = await refactorPrisma.program.findMany({
-        orderBy: [{ name: 'asc' }]
-      });
-
-      if (programs.length > 0) {
-        const mappedPrograms = programs.map((program) => ({
-          id: program.id,
-          name: program.name,
-          code: program.code,
-          college_id: program.college_id,
-          description: program.description
-        }));
-
-        return res.json(mappedPrograms);
-      }
+    const refactorPrisma = requireRefactorPrisma(res);
+    if (!refactorPrisma) {
+      return;
     }
 
-    const legacyDegrees = await prisma.degree.findMany({
+    const programs = await refactorPrisma.program.findMany({
       orderBy: [{ name: 'asc' }]
     });
-    return res.json(legacyDegrees);
+
+    const mappedPrograms = programs.map((program) => ({
+      id: program.id,
+      name: program.name,
+      code: program.code,
+      college_id: program.college_id,
+      description: program.description
+    }));
+
+    return res.json(mappedPrograms);
   } catch (error) {
     console.error('Get degrees error:', error);
     res.status(500).json({ error: 'Failed to fetch degrees' });
@@ -151,13 +150,9 @@ const getDegrees = async (req, res) => {
 };
 
 const getCompetencies = async (req, res) => {
-  const setupStatus = getRefactorSetupStatus();
-
-  if (!setupStatus.ready) {
-    return res.status(503).json({
-      error: 'Refactor competency catalog is not available',
-      details: setupStatus.message
-    });
+  const refactorPrisma = requireRefactorPrisma(res);
+  if (!refactorPrisma) {
+    return;
   }
 
   const { kinds, invalidKinds } = parseCompetencyKinds(req.query.kind);
@@ -194,7 +189,6 @@ const getCompetencies = async (req, res) => {
   }
 
   try {
-    const refactorPrisma = getRefactorPrisma();
     const competencies = await refactorPrisma.competency.findMany({
       where,
       orderBy: [

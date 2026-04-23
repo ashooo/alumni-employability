@@ -21,16 +21,7 @@ router.patch(
 // Programs and reference data
 router.get('/programs', authenticateToken, adminController.getPrograms);
 router.get('/batch-years', authenticateToken, adminController.getBatchYears);
-router.get('/colleges', authenticateToken, async (req, res) => {
-  const db = require('../config/db');
-
-  try {
-    const [colleges] = await db.query('SELECT * FROM colleges ORDER BY name ASC');
-    res.json(colleges);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch colleges' });
-  }
-});
+router.get('/colleges', authenticateToken, adminController.getColleges);
 
 // Analytics and reports
 router.get('/analytics', authenticateToken, adminController.getAnalytics);

@@ -1,33 +1,69 @@
-const db = require('../config/db');
+const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
 const { runMlScript } = require('../utils/mlRunner');
+
+const requireRefactorPrisma = () => {
+  const setupStatus = getRefactorSetupStatus();
+
+  if (!setupStatus.ready) {
+    const error = new Error(setupStatus.message);
+    error.statusCode = 503;
+    throw error;
+  }
+
+  return getRefactorPrisma();
+};
+
+const isEmployedOutcome = (status) => {
+  return ['EMPLOYED', 'SELF_EMPLOYED', 'FREELANCER'].includes(String(status || '').toUpperCase());
+};
 
 const getArimaPrediction = async (req, res) => {
   try {
-    // 1. Get real data from database
-    // We get alumni who have an employment record
-    const [rows] = await db.query(`
-      SELECT 
-          ar.batch_year as year,
-          SUM(CASE WHEN er.status = 'Employed' THEN 1 ELSE 0 END) as employed,
-          COUNT(er.id) as total
-      FROM alumni_records ar
-      JOIN employment_records er ON ar.student_id = er.student_id
-      WHERE er.status IS NOT NULL AND ar.batch_year <= YEAR(CURDATE())
-      GROUP BY ar.batch_year
-      ORDER BY ar.batch_year ASC
-    `);
+    const refactorPrisma = requireRefactorPrisma();
+    const outcomes = await refactorPrisma.employmentOutcome.findMany({
+      where: {
+        alumni_profile: {
+          batch_year: {
+            lte: new Date().getFullYear()
+          }
+        }
+      },
+      include: {
+        alumni_profile: true
+      },
+      orderBy: {
+        alumni_profile: {
+          batch_year: 'asc'
+        }
+      }
+    });
 
-    if (rows.length === 0) {
+    if (outcomes.length === 0) {
       return res.status(404).json({ error: 'No employment data found to run ARIMA predictions.' });
     }
 
-    // 2. Format it to what we'll send to Python
-    const historicalData = rows.map(r => ({
-      year: r.year,
-      employment_rate: r.total > 0 ? (r.employed / r.total) * 100 : 0
-    }));
+    const grouped = new Map();
 
-    // 3. Run Python script
+    for (const outcome of outcomes) {
+      const year = outcome.alumni_profile.batch_year;
+      if (!grouped.has(year)) {
+        grouped.set(year, { year, employed: 0, total: 0 });
+      }
+
+      const bucket = grouped.get(year);
+      bucket.total += 1;
+      if (isEmployedOutcome(outcome.employment_status)) {
+        bucket.employed += 1;
+      }
+    }
+
+    const historicalData = Array.from(grouped.values())
+      .sort((left, right) => left.year - right.year)
+      .map((row) => ({
+        year: row.year,
+        employment_rate: row.total > 0 ? (row.employed / row.total) * 100 : 0
+      }));
+
     const result = await runMlScript({
       scriptPath: 'scripts/predict_api.py',
       input: historicalData
@@ -35,19 +71,26 @@ const getArimaPrediction = async (req, res) => {
 
     if (result.code !== 0) {
       console.error('Python script error output:', result.stderr);
-      return res.status(500).json({ error: 'Failed to generate prediction with model.', details: result.stderr });
+      return res.status(500).json({
+        error: 'Failed to generate prediction with model.',
+        details: result.stderr
+      });
     }
 
     try {
       return res.json(JSON.parse(result.stdout));
-    } catch (e) {
+    } catch (error) {
       console.error('Error parsing Python script output:', result.stdout);
-      return res.status(500).json({ error: 'Failed to parse model output.', details: result.stdout });
+      return res.status(500).json({
+        error: 'Failed to parse model output.',
+        details: result.stdout
+      });
     }
-
   } catch (error) {
     console.error('Get ARIMA prediction error:', error);
-    res.status(500).json({ error: 'Server error generating model predictions' });
+    return res.status(error.statusCode || 500).json({
+      error: error.message || 'Server error generating model predictions'
+    });
   }
 };
 

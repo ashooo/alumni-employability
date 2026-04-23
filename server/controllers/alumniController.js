@@ -1,7 +1,12 @@
-const db = require('../config/db');
 const { generateOTP, sendOTPEmail } = require('../config/email');
+const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const {
+  getSurveyDefinition,
+  getSurveyResponses,
+  getSurveyStatus,
+  submitSurveyResponse: persistSurveyResponse
+} = require('../services/surveyDataService');
 
-// OTPs for email change (in production, use DB/Redis)
 const emailChangeOtpStore = new Map();
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
@@ -9,14 +14,16 @@ const normalizeEmail = (email = '') => email.trim().toLowerCase();
 
 const assertSelf = (req, res, studentId) => {
   const tokenUsername = req.user?.username;
-  const role = req.user?.role;
+  const role = String(req.user?.role || '').toLowerCase();
 
   if (!tokenUsername) {
     res.status(401).json({ error: 'Unauthorized' });
     return false;
   }
 
-  if (role === 'admin') return true;
+  if (role === 'admin' || role === 'superadmin') {
+    return true;
+  }
 
   if (String(tokenUsername) !== String(studentId)) {
     res.status(403).json({ error: 'Forbidden' });
@@ -26,86 +33,208 @@ const assertSelf = (req, res, studentId) => {
   return true;
 };
 
-// Cleanup expired OTPs occasionally
 setInterval(() => {
   const now = Date.now();
   for (const [key, data] of emailChangeOtpStore.entries()) {
-    if (now > data.expiresAt) emailChangeOtpStore.delete(key);
+    if (now > data.expiresAt) {
+      emailChangeOtpStore.delete(key);
+    }
   }
 }, 30 * 60 * 1000);
 
-// Get alumni profile with program and college information
-const getProfile = async (req, res) => {
-  try {
-    const { studentId } = req.params;
+const requireRefactorPrisma = () => {
+  const setupStatus = getRefactorSetupStatus();
 
-    // Get from alumni_records with program and college joins
-    const [records] = await db.query(
-      `SELECT 
-        ar.student_id,
-        ar.first_name,
-        ar.last_name,
-        ar.middle_name,
-        ar.suffix,
-        ar.batch_year,
-        ar.status,
-        ar.survey_status,
-        u.email,
-        u.phone,
-        u.address,
-        p.id as program_id,
-        p.name as program_name,
-        p.code as program_code,
-        c.id as college_id,
-        c.name as college_name,
-        c.code as college_code
-       FROM alumni_records ar
-       LEFT JOIN user u ON ar.student_id = u.username
-       LEFT JOIN programs p ON ar.program_id = p.id
-       LEFT JOIN colleges c ON p.college_id = c.id
-       WHERE ar.student_id = ?`,
-      [studentId]
-    );
+  if (!setupStatus.ready) {
+    const error = new Error(setupStatus.message);
+    error.statusCode = 503;
+    throw error;
+  }
 
-    if (records.length === 0) {
-      return res.status(404).json({ error: 'Profile not found' });
-    }
+  return getRefactorPrisma();
+};
 
-    res.json(records[0]);
-  } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({ error: 'Failed to fetch profile' });
+const normalizeEmploymentStatus = (status) => {
+  const normalized = String(status || '').trim().toLowerCase();
+
+  switch (normalized) {
+    case 'employed':
+      return 'EMPLOYED';
+    case 'unemployed':
+      return 'UNEMPLOYED';
+    case 'self-employed':
+    case 'self employed':
+      return 'SELF_EMPLOYED';
+    case 'freelancer':
+      return 'FREELANCER';
+    case 'further studies':
+    case 'further studying':
+      return 'FURTHER_STUDYING';
+    default:
+      return 'OTHER';
   }
 };
 
-// Update alumni profile (contact info only)
+const mapEmploymentStatusToLegacy = (status) => {
+  switch (status) {
+    case 'EMPLOYED':
+      return 'Employed';
+    case 'UNEMPLOYED':
+      return 'Unemployed';
+    case 'SELF_EMPLOYED':
+      return 'Self-Employed';
+    case 'FREELANCER':
+      return 'Freelancer';
+    case 'FURTHER_STUDYING':
+      return 'Further Studies';
+    default:
+      return 'Other';
+  }
+};
+
+const ensureProfile = async (refactorPrisma, studentId) => {
+  const profile = await refactorPrisma.alumniProfile.findUnique({
+    where: { student_id: String(studentId) },
+    include: {
+      user: true,
+      current_program: {
+        include: {
+          college: true
+        }
+      }
+    }
+  });
+
+  if (!profile) {
+    const user = await refactorPrisma.user.findUnique({
+      where: { username: String(studentId) }
+    });
+
+    if (!user) {
+      const error = new Error('Profile not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return {
+      user,
+      student_id: String(studentId),
+      batch_year: new Date().getFullYear(),
+      current_program: null
+    };
+  }
+
+  return profile;
+};
+
+const ensureEmploymentTemplate = async (refactorPrisma) => {
+  return refactorPrisma.surveyTemplate.upsert({
+    where: { template_key: 'profile_employment_update' },
+    update: {
+      name: 'Profile Employment Update',
+      description: 'Employment updates submitted from the alumni profile screen.',
+      kind: 'FOLLOWUP',
+      path_key: 'FOLLOWUP',
+      is_followup: false,
+      is_active: true
+    },
+    create: {
+      template_key: 'profile_employment_update',
+      name: 'Profile Employment Update',
+      description: 'Employment updates submitted from the alumni profile screen.',
+      kind: 'FOLLOWUP',
+      path_key: 'FOLLOWUP',
+      is_followup: false,
+      is_active: true
+    }
+  });
+};
+
+const mapEmploymentOutcomeRecord = (record) => {
+  const monthlyIncome = record.additional_data?.monthly_income || record.salary_range || '';
+
+  return {
+    id: record.id,
+    status: mapEmploymentStatusToLegacy(record.employment_status),
+    company: record.company || '',
+    position: record.job_title || '',
+    industry: record.industry || '',
+    start_date: record.outcome_date ? record.outcome_date.toISOString().slice(0, 10) : '',
+    monthly_income: monthlyIncome
+  };
+};
+
+const getProfile = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    if (!assertSelf(req, res, studentId)) {
+      return;
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+    const profile = await ensureProfile(refactorPrisma, studentId);
+
+    return res.json({
+      student_id: profile.student_id,
+      first_name: profile.user.first_name,
+      last_name: profile.user.last_name,
+      middle_name: profile.user.middle_name,
+      suffix: profile.user.suffix,
+      batch_year: profile.batch_year,
+      status: profile.lifecycle_status || 'ACTIVE',
+      survey_status: 'completed',
+      email: profile.user.email || '',
+      phone: profile.user.phone || '',
+      address: profile.user.address || '',
+      program_id: profile.current_program?.id || 0,
+      program_name: profile.current_program?.name || '',
+      program_code: profile.current_program?.code || '',
+      college_id: profile.current_program?.college?.id || 0,
+      college_name: profile.current_program?.college?.name || '',
+      college_code: profile.current_program?.college?.code || ''
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch profile' });
+  }
+};
+
 const updateProfile = async (req, res) => {
   try {
     const { studentId } = req.params;
     const { email, phone, address } = req.body;
 
-    if (!assertSelf(req, res, studentId)) return;
+    if (!assertSelf(req, res, studentId)) {
+      return;
+    }
 
-    // Update user table
-    await db.query(
-      `UPDATE user SET email = ?, phone = ?, address = ? WHERE username = ?`,
-      [email, phone, address, studentId]
-    );
+    const refactorPrisma = requireRefactorPrisma();
+    const profile = await ensureProfile(refactorPrisma, studentId);
+
+    await refactorPrisma.user.update({
+      where: { id: profile.user.id },
+      data: {
+        email: email || null,
+        phone: phone || null,
+        address: address || null
+      }
+    });
 
     res.json({ success: true, message: 'Profile updated successfully' });
   } catch (error) {
     console.error('Update profile error:', error);
-    res.status(500).json({ error: 'Failed to update profile' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update profile' });
   }
 };
 
-// Request OTP to confirm changing email (OTP is sent to the NEW email)
 const requestEmailChangeOtp = async (req, res) => {
   try {
     const { studentId } = req.params;
     const { newEmail } = req.body;
 
-    if (!assertSelf(req, res, studentId)) return;
+    if (!assertSelf(req, res, studentId)) {
+      return;
+    }
 
     if (!newEmail) {
       return res.status(400).json({ error: 'newEmail is required' });
@@ -116,20 +245,19 @@ const requestEmailChangeOtp = async (req, res) => {
       return res.status(400).json({ error: 'Please enter a valid email.' });
     }
 
-    const [existingEmail] = await db.query(
-      `SELECT username FROM user WHERE email = ? LIMIT 1`,
-      [normalizedNewEmail]
-    );
+    const refactorPrisma = requireRefactorPrisma();
+    const existingEmail = await refactorPrisma.user.findFirst({
+      where: { email: normalizedNewEmail },
+      select: { username: true }
+    });
 
-    if (existingEmail.length > 0 && String(existingEmail[0].username) !== String(studentId)) {
+    if (existingEmail && String(existingEmail.username) !== String(studentId)) {
       return res.status(400).json({ error: 'Email is already in use.' });
     }
 
     const key = `${studentId}:${normalizedNewEmail}`;
     const now = Date.now();
     const prev = emailChangeOtpStore.get(key);
-
-    // Basic resend throttling (30s)
     if (prev?.lastSentAt && now - prev.lastSentAt < 30 * 1000) {
       return res.status(429).json({ error: 'Please wait before requesting another OTP.' });
     }
@@ -152,18 +280,20 @@ const requestEmailChangeOtp = async (req, res) => {
     return res.json({ success: true, message: 'OTP sent to new email.' });
   } catch (error) {
     console.error('Request email change OTP error:', error);
-    const debugMsg = process.env.NODE_ENV !== 'production' ? (error?.message || String(error)) : null;
-    return res.status(500).json({ error: debugMsg ? `Failed to send OTP. ${debugMsg}` : 'Failed to send OTP. Please try again.' });
+    return res.status(error.statusCode || 500).json({
+      error: error.message || 'Failed to send OTP. Please try again.'
+    });
   }
 };
 
-// Verify OTP and apply the email change
 const verifyEmailChangeOtp = async (req, res) => {
   try {
     const { studentId } = req.params;
     const { newEmail, otp } = req.body;
 
-    if (!assertSelf(req, res, studentId)) return;
+    if (!assertSelf(req, res, studentId)) {
+      return;
+    }
 
     if (!newEmail || !otp) {
       return res.status(400).json({ error: 'newEmail and otp are required' });
@@ -185,341 +315,252 @@ const verifyEmailChangeOtp = async (req, res) => {
       return res.status(400).json({ error: 'OTP expired. Please request a new one.' });
     }
 
-    const entered = Array.isArray(otp) ? otp.join('') : String(otp).trim();
-
     if (stored.attemptsLeft <= 0) {
       emailChangeOtpStore.delete(key);
       return res.status(429).json({ error: 'Too many attempts. Please request a new OTP.' });
     }
 
-    if (stored.otp !== entered) {
+    const enteredOtp = Array.isArray(otp) ? otp.join('') : String(otp).trim();
+    if (stored.otp !== enteredOtp) {
       stored.attemptsLeft -= 1;
       emailChangeOtpStore.set(key, stored);
       return res.status(400).json({ error: 'Invalid OTP.' });
     }
 
-    // Ensure email not taken by others (race-safe check)
-    const [existingEmail] = await db.query(
-      `SELECT username FROM user WHERE email = ? LIMIT 1`,
-      [normalizedNewEmail]
-    );
-    if (existingEmail.length > 0 && String(existingEmail[0].username) !== String(studentId)) {
+    const refactorPrisma = requireRefactorPrisma();
+    const existingEmail = await refactorPrisma.user.findFirst({
+      where: { email: normalizedNewEmail },
+      select: { username: true }
+    });
+
+    if (existingEmail && String(existingEmail.username) !== String(studentId)) {
       emailChangeOtpStore.delete(key);
       return res.status(400).json({ error: 'Email is already in use.' });
     }
 
-    await db.query(
-      `UPDATE user SET email = ? WHERE username = ?`,
-      [normalizedNewEmail, studentId]
-    );
+    const profile = await ensureProfile(refactorPrisma, studentId);
+    await refactorPrisma.user.update({
+      where: { id: profile.user.id },
+      data: { email: normalizedNewEmail }
+    });
 
     emailChangeOtpStore.delete(key);
 
-    return res.json({ success: true, message: 'Email updated successfully.', email: normalizedNewEmail });
+    return res.json({
+      success: true,
+      message: 'Email updated successfully.',
+      email: normalizedNewEmail
+    });
   } catch (error) {
     console.error('Verify email change OTP error:', error);
-    return res.status(500).json({ error: 'Failed to verify OTP' });
+    return res.status(error.statusCode || 500).json({ error: error.message || 'Failed to verify OTP' });
   }
 };
 
-// Get employment history
 const getEmploymentHistory = async (req, res) => {
   try {
     const { studentId } = req.params;
+    if (!assertSelf(req, res, studentId)) {
+      return;
+    }
 
-    const [records] = await db.query(
-      `SELECT * FROM employment_records 
-       WHERE student_id = ? 
-       ORDER BY start_date DESC`,
-      [studentId]
-    );
+    const refactorPrisma = requireRefactorPrisma();
+    const profile = await refactorPrisma.alumniProfile.findUnique({
+      where: { student_id: String(studentId) },
+      include: {
+        employment_outcomes: {
+          orderBy: { outcome_date: 'desc' }
+        }
+      }
+    });
 
-    res.json(records);
+    if (!profile) {
+      return res.json([]);
+    }
+
+    return res.json(profile.employment_outcomes.map(mapEmploymentOutcomeRecord));
   } catch (error) {
     console.error('Get employment error:', error);
-    res.status(500).json({ error: 'Failed to fetch employment history' });
+    return res.status(error.statusCode || 500).json({
+      error: error.message || 'Failed to fetch employment history'
+    });
   }
 };
 
-// Add employment record
 const addEmploymentRecord = async (req, res) => {
   try {
     const { studentId } = req.params;
     const { status, company, position, industry, start_date, monthly_income } = req.body;
 
-    const [result] = await db.query(
-      `INSERT INTO employment_records 
-       (student_id, status, company, position, industry, start_date, monthly_income)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [studentId, status, company, position, industry, start_date, monthly_income]
-    );
+    if (!assertSelf(req, res, studentId)) {
+      return;
+    }
 
-    res.status(201).json({ 
-      success: true, 
-      id: result.insertId,
-      message: 'Employment record added successfully' 
+    const refactorPrisma = requireRefactorPrisma();
+    const template = await ensureEmploymentTemplate(refactorPrisma);
+    const profile = await refactorPrisma.alumniProfile.findUnique({
+      where: { student_id: String(studentId) },
+      include: { user: true }
+    });
+
+    if (!profile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const submission = await refactorPrisma.surveySubmission.create({
+      data: {
+        alumni_profile_id: profile.id,
+        template_id: template.id,
+        branch_path: 'FOLLOWUP',
+        started_at: new Date(),
+        submitted_at: new Date(),
+        status: 'COMPLETED',
+        additional_data: {
+          source: 'profile_employment_update'
+        }
+      }
+    });
+
+    const outcome = await refactorPrisma.employmentOutcome.create({
+      data: {
+        alumni_profile_id: profile.id,
+        submission_id: submission.id,
+        employment_status: normalizeEmploymentStatus(status),
+        outcome_date: start_date ? new Date(start_date) : new Date(),
+        company: company || null,
+        job_title: position || null,
+        industry: industry || null,
+        salary_range: monthly_income ? String(monthly_income) : null,
+        additional_data: {
+          monthly_income: monthly_income || null
+        }
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      id: outcome.id,
+      message: 'Employment record added successfully'
     });
   } catch (error) {
     console.error('Add employment error:', error);
-    res.status(500).json({ error: 'Failed to add employment record' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to add employment record' });
   }
 };
 
-// Update employment record
 const updateEmploymentRecord = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, company, position, industry, start_date, monthly_income } = req.body;
 
-    await db.query(
-      `UPDATE employment_records 
-       SET status = ?, company = ?, position = ?, industry = ?, 
-           start_date = ?, monthly_income = ?
-       WHERE id = ?`,
-      [status, company, position, industry, start_date, monthly_income, id]
-    );
+    const refactorPrisma = requireRefactorPrisma();
+    const existing = await refactorPrisma.employmentOutcome.findUnique({
+      where: { id: Number(id) },
+      include: {
+        alumni_profile: true
+      }
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Employment record not found' });
+    }
+
+    if (!assertSelf(req, res, existing.alumni_profile.student_id)) {
+      return;
+    }
+
+    await refactorPrisma.employmentOutcome.update({
+      where: { id: Number(id) },
+      data: {
+        employment_status: normalizeEmploymentStatus(status),
+        outcome_date: start_date ? new Date(start_date) : new Date(),
+        company: company || null,
+        job_title: position || null,
+        industry: industry || null,
+        salary_range: monthly_income ? String(monthly_income) : null,
+        additional_data: {
+          monthly_income: monthly_income || null
+        }
+      }
+    });
 
     res.json({ success: true, message: 'Employment record updated successfully' });
   } catch (error) {
     console.error('Update employment error:', error);
-    res.status(500).json({ error: 'Failed to update employment record' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update employment record' });
   }
 };
 
-// =============================
-// GET COLLEGE SURVEY (for alumni)
-// =============================
 const getCollegeSurvey = async (req, res) => {
   try {
-    const { collegeId } = req.params;
-    console.log('Fetching survey for college:', collegeId); // Debug log
-
-    // Get active published survey for this college
-    const [published] = await db.query(
-      `SELECT * FROM published_surveys 
-       WHERE college_id = ? AND status = 'active'
-       ORDER BY published_at DESC LIMIT 1`,
-      [collegeId]
-    );
-
-    if (published.length === 0) {
-      return res.status(404).json({ error: 'No active survey found for this college' });
-    }
-
-    const version = published[0].version;
-
-    // Get categories
-    const [categories] = await db.query(
-      `SELECT * FROM survey_categories ORDER BY order_index ASC`
-    );
-
-    // Get questions for this version that apply to this college
-    const result = [];
-    for (const cat of categories) {
-      const [questions] = await db.query(
-        `SELECT * FROM survey_questions 
-         WHERE category_id = ? AND version = ? 
-         AND (colleges IS NULL OR colleges = '[]' OR JSON_CONTAINS(colleges, ?))
-         ORDER BY order_index ASC`,
-        [cat.id, version, JSON.stringify(String(collegeId))]
-      );
-
-      // Parse options JSON for each question
-      const parsedQuestions = questions.map(q => {
-        let options = q.options;
-        if (typeof options === 'string' && options.trim() !== '') {
-          try {
-            options = JSON.parse(options);
-          } catch (e) {
-            console.error('Failed to parse options for question', q.id, e);
-          }
-        }
-        
-        let colleges = q.colleges;
-        if (typeof colleges === 'string' && colleges.trim() !== '') {
-          try {
-            colleges = JSON.parse(colleges);
-          } catch (e) {
-            colleges = [];
-          }
-        }
-
-        return {
-          ...q,
-          options,
-          colleges: colleges || []
-        };
-      });
-
-      result.push({
-        id: cat.id,
-        name: cat.name,
-        description: cat.description,
-        order_index: cat.order_index,
-        questions: parsedQuestions
-      });
-    }
-
-    res.json({ 
-      survey: result,
-      version: version,
-      published_at: published[0].published_at
+    const survey = await getSurveyDefinition();
+    res.json({
+      survey: survey.categories,
+      version: survey.version,
+      published_at: survey.published_at
     });
-
   } catch (error) {
     console.error('Get college survey error:', error);
-    res.status(500).json({ error: 'Failed to fetch college survey' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch college survey' });
   }
 };
 
-// =============================
-// SUBMIT SURVEY RESPONSE
-// =============================
 const submitSurveyResponse = async (req, res) => {
-  const connection = await db.getConnection();
   try {
     const { studentId } = req.params;
     const { version, answers } = req.body;
 
-    // Validate required fields
-    if (!studentId || !version || !answers) {
+    if (!studentId || !Array.isArray(answers)) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    await connection.beginTransaction();
-
-    // Create survey response record
-    const [responseResult] = await connection.query(
-      `INSERT INTO survey_responses 
-       (student_id, survey_version, completed_at, status) 
-       VALUES (?, ?, NOW(), 'completed')`,
-      [studentId, version]
-    );
-
-    const responseId = responseResult.insertId;
-
-    // Insert all answers
-    for (const answer of answers) {
-      await connection.query(
-        `INSERT INTO survey_answers 
-         (response_id, question_id, answer_text, answer_options, answer_number)
-         VALUES (?, ?, ?, ?, ?)`,
-        [
-          responseId, 
-          answer.question_id, 
-          answer.answer_text || null,
-          answer.answer_options ? JSON.stringify(answer.answer_options) : null,
-          answer.answer_number || null
-        ]
-      );
+    if (!assertSelf(req, res, studentId)) {
+      return;
     }
 
-    // Update alumni survey status
-    await connection.query(
-      `UPDATE alumni_records 
-       SET survey_status = 'completed' 
-       WHERE student_id = ?`,
-      [studentId]
-    );
-
-    await connection.commit();
-
-    res.json({ 
-      success: true, 
-      message: 'Survey submitted successfully' 
+    await persistSurveyResponse({
+      studentId,
+      version,
+      answers
     });
 
+    res.json({
+      success: true,
+      message: 'Survey submitted successfully'
+    });
   } catch (error) {
-    await connection.rollback();
     console.error('Submit survey error:', error);
-    res.status(500).json({ error: 'Failed to submit survey' });
-  } finally {
-    connection.release();
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to submit survey' });
   }
 };
 
-// =============================
-// GET SURVEY RESPONSES
-// =============================
-const getSurveyResponses = async (req, res) => {
+const getSurveyResponsesHandler = async (req, res) => {
   try {
     const { studentId } = req.params;
+    if (!assertSelf(req, res, studentId)) {
+      return;
+    }
 
-    const [responses] = await db.query(
-      `SELECT 
-        sr.*,
-        sa.question_id,
-        sa.answer_text,
-        sa.answer_options,
-        sa.answer_number,
-        sq.text as question_text,
-        sq.type as question_type
-       FROM survey_responses sr
-       INNER JOIN student_academic sa_acad ON sr.student_academic_id = sa_acad.id
-       LEFT JOIN survey_answers sa ON sr.id = sa.response_id
-       LEFT JOIN survey_questions sq ON sa.question_id = sq.id
-       WHERE sa_acad.student_id = ?
-       ORDER BY sr.completed_at DESC, sa.id ASC`,
-      [studentId]
-    );
-
-    // Group answers by response
-    const grouped = responses.reduce((acc, row) => {
-      if (!acc[row.id]) {
-        acc[row.id] = {
-          id: row.id,
-          student_id: row.student_id,
-          survey_version: row.survey_version,
-          completed_at: row.completed_at,
-          status: row.status,
-          answers: []
-        };
-      }
-      if (row.question_id) {
-        acc[row.id].answers.push({
-          question_id: row.question_id,
-          question_text: row.question_text,
-          question_type: row.question_type,
-          answer_text: row.answer_text,
-          answer_options: row.answer_options ? JSON.parse(row.answer_options) : null,
-          answer_number: row.answer_number
-        });
-      }
-      return acc;
-    }, {});
-
-    res.json(Object.values(grouped));
-
+    const responses = await getSurveyResponses(studentId);
+    res.json(responses);
   } catch (error) {
     console.error('Get survey responses error:', error);
-    res.status(500).json({ error: 'Failed to fetch survey responses' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch survey responses' });
   }
 };
 
-// =============================
-// CHECK IF SURVEY IS COMPLETED
-// =============================
 const checkSurveyStatus = async (req, res) => {
   try {
     const { studentId } = req.params;
-
-    const [records] = await db.query(
-      `SELECT survey_status FROM alumni_records WHERE student_id = ?`,
-      [studentId]
-    );
-
-    if (records.length === 0) {
-      return res.status(404).json({ error: 'Student not found' });
+    if (!assertSelf(req, res, studentId)) {
+      return;
     }
 
-    res.json({ 
-      completed: records[0].survey_status === 'completed',
-      status: records[0].survey_status
-    });
-
+    const status = await getSurveyStatus(studentId);
+    res.json(status);
   } catch (error) {
     console.error('Check survey status error:', error);
-    res.status(500).json({ error: 'Failed to check survey status' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to check survey status' });
   }
 };
 
@@ -531,7 +572,7 @@ module.exports = {
   updateEmploymentRecord,
   getCollegeSurvey,
   submitSurveyResponse,
-  getSurveyResponses,
+  getSurveyResponses: getSurveyResponsesHandler,
   checkSurveyStatus,
   requestEmailChangeOtp,
   verifyEmailChangeOtp

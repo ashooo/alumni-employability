@@ -1,301 +1,198 @@
-const { prisma } = require('../config/db');
-const path = require('path');
-const fs = require('fs');
+const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
 const { runMlScript, resolvePythonExecutable } = require('../utils/mlRunner');
 const {
   getLatestRefactorPrediction,
-  writeRefactorSurveyMirror
-} = require('../services/refactorEmployabilityService');
+  submitEmployabilitySurvey: persistEmployabilitySurvey
+} = require('../services/employabilityDataService');
 
-/**
- * Handles the submission of the Initial Alumni Tracer Survey.
- * Implements the append-only data pipeline for StudentAcademic features.
- */
+const parseNumeric = (value) => {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const requireRefactorPrisma = () => {
+  const setupStatus = getRefactorSetupStatus();
+
+  if (!setupStatus.ready) {
+    const error = new Error(setupStatus.message);
+    error.statusCode = 503;
+    throw error;
+  }
+
+  return getRefactorPrisma();
+};
+
+const ensureSubmissionAccess = (req, res, studentId) => {
+  const requestUsername = String(studentId);
+  const tokenUsername = String(req.user?.username || '');
+  const role = String(req.user?.role || '').toLowerCase();
+
+  if (!tokenUsername) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+
+  if (role === 'admin' || role === 'superadmin') {
+    return true;
+  }
+
+  if (tokenUsername !== requestUsername) {
+    res.status(403).json({ error: 'Forbidden' });
+    return false;
+  }
+
+  return true;
+};
+
+const buildModelInput = (academicData, degreeName, hardAve, softAve) => {
+  return {
+    Gender: academicData.gender,
+    Age: Number.parseInt(academicData.age, 10),
+    Degree: degreeName || 'Unknown',
+    'Year Graduated': Number.parseInt(academicData.year_graduated, 10),
+    CGPA: parseNumeric(academicData.cgpa),
+    'Average Prof Grade': parseNumeric(academicData.prof_grade),
+    'Average Elec Grade': parseNumeric(academicData.elec_grade),
+    'OJT Grade': parseNumeric(academicData.ojt_grade),
+    'Leadership POS': academicData.leader_pos === 'Yes' || academicData.leader_pos === true ? 'Yes' : 'No',
+    'Act Member POS': academicData.act_member_pos === 'Yes' || academicData.act_member_pos === true ? 'Yes' : 'No',
+    'Soft Skills Ave': parseNumeric(softAve.toFixed(2)),
+    'Hard Skills Ave': parseNumeric(hardAve.toFixed(2))
+  };
+};
+
 const submitEmployabilitySurvey = async (req, res) => {
   try {
     const { studentId, academicData, skillRatings, additionalAnswers } = req.body;
 
-    if (!studentId || !academicData || !skillRatings) {
+    if (!studentId || !academicData || !Array.isArray(skillRatings)) {
       return res.status(400).json({ error: 'Missing required survey data' });
     }
 
-    // 1. Verify User exists
-    const user = await prisma.user.findUnique({ where: { username: String(studentId) } });
+    if (!ensureSubmissionAccess(req, res, studentId)) {
+      return;
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+
+    const user = await refactorPrisma.user.findUnique({
+      where: { username: String(studentId) }
+    });
+
     if (!user) {
-      return res.status(404).json({ error: 'User/Alumni record not found' });
+      return res.status(404).json({ error: 'User/Alumni record not found in refactor schema' });
     }
 
-    let academicSnapshot;
-    try {
-      // 2. CREATE FEATURE SNAPSHOT (Append-Only StudentAcademic)
-      academicSnapshot = await prisma.studentAcademic.create({
-        data: {
-          student_id: String(studentId),
-          user_id: user.id,
-          degree_id: parseInt(academicData.degree_id),
-          gender: academicData.gender,
-          age: parseInt(academicData.age),
-          year_graduated: parseInt(academicData.year_graduated),
-          cgpa: academicData.cgpa,
-          prof_grade: academicData.prof_grade,
-          elec_grade: academicData.elec_grade,
-          ojt_grade: academicData.ojt_grade,
-          leader_pos: (academicData.leader_pos === 'Yes' || academicData.leader_pos === true) ? 1 : 0,
-          act_member_pos: (academicData.act_member_pos === 'Yes' || academicData.act_member_pos === true) ? 1 : 0
-        }
-      });
-      
-      // Update AlumniRecord status
-      await prisma.alumniRecord.updateMany({
-        where: { student_id: String(studentId) },
-        data: { survey_status: 'completed' }
-      });
-    } catch (e) {
-      fs.writeFileSync(path.join(__dirname, 'err-block2.txt'), String(e.stack || e));
-      console.error("Block 2 Error (StudentAcademic creation):", e);
-      throw e;
+    const degreeId = Number.parseInt(academicData.degree_id, 10);
+    if (!Number.isFinite(degreeId)) {
+      return res.status(400).json({ error: 'A valid degree/program is required' });
     }
 
-    // 3. COMPUTE SKILL AVERAGES for the current model
-    const hardSkills = skillRatings.filter(s => s.type === 'hard');
-    const softSkills = skillRatings.filter(s => s.type === 'soft');
-    
-    const hardAve = hardSkills.length > 0 
-      ? hardSkills.reduce((acc, curr) => acc + parseInt(curr.score), 0) / hardSkills.length 
-      : 0;
-    
-    const softAve = softSkills.length > 0 
-      ? softSkills.reduce((acc, curr) => acc + parseInt(curr.score), 0) / softSkills.length 
+    const program = await refactorPrisma.program.findUnique({
+      where: { id: degreeId }
+    });
+
+    if (!program) {
+      return res.status(400).json({ error: 'Selected degree/program does not exist in refactor schema' });
+    }
+
+    const hardSkills = skillRatings.filter((skill) => skill.type === 'hard');
+    const softSkills = skillRatings.filter((skill) => skill.type === 'soft');
+
+    const hardAve = hardSkills.length > 0
+      ? hardSkills.reduce((acc, curr) => acc + Number.parseInt(curr.score, 10), 0) / hardSkills.length
       : 0;
 
-    // 4. CREATE SURVEY RESPONSE
-    let surveyResponseData;
+    const softAve = softSkills.length > 0
+      ? softSkills.reduce((acc, curr) => acc + Number.parseInt(curr.score, 10), 0) / softSkills.length
+      : 0;
+
+    const modelInput = buildModelInput(academicData, program.name, hardAve, softAve);
+
+    let mlResult;
     try {
-      surveyResponseData = await prisma.surveyResponse.create({
-        data: {
-          student_academic_id: academicSnapshot.id,
-          template_id: 1, // Initial Tracer Template (Seeded earlier)
-          hard_skills_ave: hardAve,
-          soft_skills_ave: softAve,
-          additional_data: additionalAnswers || {},
-          completed_at: new Date(),
-          status: 'completed'
-        }
-      });
-    } catch (e) {
-      fs.writeFileSync(path.join(__dirname, 'err-block4.txt'), String(e.stack || e));
-      console.error("Block 4 Error (SurveyResponse creation):", e);
-      throw e;
-    }
-
-    // 4b. SAVE GENERIC TRACER SURVEY ANSWERS
-    if (additionalAnswers && Object.keys(additionalAnswers).length > 0) {
-      const answerPromises = [];
-      for (const [qId, ans] of Object.entries(additionalAnswers)) {
-        if (ans !== undefined && ans !== null && ans !== '') {
-          let ansText = null;
-          let ansNum = null;
-          let ansOptions = null;
-          
-          if (Array.isArray(ans)) {
-            ansOptions = ans;
-          } else if (typeof ans === 'number' || !isNaN(parseFloat(ans))) {
-            ansNum = parseFloat(ans);
-            ansText = String(ans);
-          } else {
-            ansText = String(ans);
-          }
-          
-          answerPromises.push(
-            prisma.surveyAnswer.create({
-              data: {
-                response_id: surveyResponseData.id,
-                question_id: parseInt(qId),
-                answer_text: ansText,
-                answer_number: ansNum,
-                answer_options: ansOptions
-              }
-            })
-          );
-        }
-      }
-      if (answerPromises.length > 0) {
-        try {
-          await Promise.all(answerPromises);
-        } catch (ansErr) {
-          console.error("Failed to insert survey answers:", ansErr);
-          // Don't blow up the entire employability request if generic answers fail to insert gracefully
-        }
-      }
-    }
-
-    // 5. SAVE GRANULAR SKILL RATINGS (For future fine-tuning)
-    for (const skill of skillRatings) {
-      await prisma.responseSkill.create({
-        data: {
-          survey_response_id: surveyResponseData.id,
-          skill_id: parseInt(skill.id),
-          score: parseInt(skill.score)
-        }
-      });
-    }
-
-    // 6. TRIGGER ML PREDICTION
-    const degree = await prisma.degree.findUnique({ where: { id: parseInt(academicData.degree_id) } });
-    
-    const modelInput = {
-      "Gender": academicSnapshot.gender,
-      "Age": academicSnapshot.age,
-      "Degree": degree ? degree.name : "Unknown",
-      "Year Graduated": academicSnapshot.year_graduated,
-      "CGPA": parseFloat(academicSnapshot.cgpa),
-      "Average Prof Grade": parseFloat(academicSnapshot.prof_grade),
-      "Average Elec Grade": parseFloat(academicSnapshot.elec_grade),
-      "OJT Grade": parseFloat(academicSnapshot.ojt_grade),
-      "Leadership POS": academicSnapshot.leader_pos ? "Yes" : "No",
-      "Act Member POS": academicSnapshot.act_member_pos ? "Yes" : "No",
-      "Soft Skills Ave": parseFloat(softAve.toFixed(2)),
-      "Hard Skills Ave": parseFloat(hardAve.toFixed(2))
-    };
-
-    let outputData = '';
-    try {
-      const mlResult = await runMlScript({
+      mlResult = await runMlScript({
         scriptPath: 'scripts/predict_employability.py',
         input: modelInput
       });
-
-      outputData = mlResult.stdout;
-      if (mlResult.code !== 0) {
-        console.error('ML Prediction Process Error:', mlResult.stderr);
-        return res.status(500).json({ error: 'ML Prediction service failed' });
-      }
-    } catch (err) {
-      console.error('[ML] Failed to start Python process in submit:', err);
+    } catch (error) {
+      console.error('[ML] Failed to start Python process in submit:', error);
       return res.status(500).json({ error: 'Failed to start ML pipeline' });
     }
 
-    try {
-      const predictionResult = JSON.parse(outputData);
-      
-      if (predictionResult.status === 'success') {
-        // 7. SAVE PREDICTION RECORD
-        await prisma.employabilityPrediction.create({
-          data: {
-            student_academic_id: academicSnapshot.id,
-            survey_response_id: surveyResponseData.id,
-            model_version: predictionResult.model_type || '1.0.0',
-            employable: predictionResult.employable ? 1 : 0,
-            probability: predictionResult.probability,
-            input_snapshot: modelInput
-          }
-        });
-        
-        // 8. SCHEDULE FOLLOW-UP (Standard 2 months later as ground truth collector)
-        const dueDate = new Date();
-        dueDate.setMonth(dueDate.getMonth() + 2);
-        
-        await prisma.followupSchedule.create({
-          data: {
-            student_academic_id: academicSnapshot.id,
-            template_id: 2, // Follow-up Template
-            due_date: dueDate
-          }
-        });
-
-        let refactorMirror = null;
-        try {
-          refactorMirror = await writeRefactorSurveyMirror({
-            legacyPrisma: prisma,
-            user,
-            studentId: String(studentId),
-            academicData,
-            skillRatings,
-            additionalAnswers: additionalAnswers || {},
-            legacyAcademicSnapshotId: academicSnapshot.id,
-            legacySurveyResponseId: surveyResponseData.id,
-            modelInput,
-            predictionResult,
-            followupDueDate: dueDate
-          });
-        } catch (refactorError) {
-          fs.writeFileSync(path.join(__dirname, 'err-refactor.txt'), String(refactorError.stack || refactorError));
-          console.error('Refactor dual-write warning:', refactorError);
-        }
-
-        return res.json({ 
-          success: true, 
-          message: 'Survey processed and prediction generated',
-          storage: {
-            legacy: true,
-            refactor: Boolean(refactorMirror?.ready),
-            refactor_submission_id: refactorMirror?.surveySubmissionId || null
-          },
-          prediction: {
-            employable: predictionResult.employable,
-            probability: predictionResult.probability,
-            label: predictionResult.label,
-            confidence: predictionResult.confidence
-          }
-        });
-      }
-
-      console.error('ML Script Error Message:', predictionResult.message);
-      return res.status(500).json({ error: 'Prediction script returned error' });
-    } catch (e) {
-      fs.writeFileSync(path.join(__dirname, 'err-python.txt'), outputData);
-      console.error('Error securely recording prediction result:', e, 'Raw output:', outputData);
-      return res.status(500).json({ error: 'Failed to record prediction result' });
+    if (mlResult.code !== 0) {
+      console.error('ML Prediction Process Error:', mlResult.stderr);
+      return res.status(500).json({ error: 'ML Prediction service failed' });
     }
 
+    let predictionResult;
+    try {
+      predictionResult = JSON.parse(mlResult.stdout);
+    } catch (error) {
+      console.error('Error parsing ML result:', error, mlResult.stdout);
+      return res.status(500).json({ error: 'Failed to parse prediction result' });
+    }
+
+    if (predictionResult.status !== 'success') {
+      return res.status(500).json({
+        error: predictionResult.message || 'Prediction script returned error'
+      });
+    }
+
+    const stored = await persistEmployabilitySurvey({
+      studentId: String(studentId),
+      academicData,
+      skillRatings,
+      additionalAnswers: additionalAnswers || {},
+      modelInput,
+      predictionResult
+    });
+
+    return res.json({
+      success: true,
+      message: 'Survey processed and prediction generated',
+      storage: {
+        refactor: true,
+        refactor_submission_id: stored.surveySubmissionId
+      },
+      prediction: {
+        employable: Boolean(predictionResult.employable),
+        probability: predictionResult.probability,
+        label: predictionResult.label,
+        confidence: predictionResult.confidence,
+        model_type: predictionResult.model_type || null
+      }
+    });
   } catch (error) {
-    fs.writeFileSync(path.join(__dirname, 'err-fatal.txt'), String(error.stack || error));
-    console.error('Fatal Employability Survey Error:', error);
-    res.status(500).json({ error: 'Internal server error processing survey' });
+    console.error('Employability survey error:', error);
+    res.status(error.statusCode || 500).json({
+      error: error.message || 'Internal server error processing survey'
+    });
   }
 };
 
-/**
- * Gets the latest prediction for an alumni
- */
 const getLatestPrediction = async (req, res) => {
   try {
     const { studentId } = req.params;
-    
-    const prediction = await prisma.employabilityPrediction.findFirst({
-      where: {
-        student_academic: {
-          student_id: String(studentId)
-        }
-      },
-      orderBy: {
-        created_at: 'desc'
-      },
-      include: {
-        student_academic: true
-      }
-    });
 
-    if (!prediction) {
-      const refactorPrediction = await getLatestRefactorPrediction(studentId);
-      if (!refactorPrediction) {
-        return res.status(404).json({ error: 'No prediction found for this alumni' });
-      }
-
-      return res.json(refactorPrediction);
+    if (!ensureSubmissionAccess(req, res, studentId)) {
+      return;
     }
 
-    res.json(prediction);
+    const prediction = await getLatestRefactorPrediction(studentId);
+    if (!prediction) {
+      return res.status(404).json({ error: 'No prediction found for this alumni' });
+    }
+
+    return res.json(prediction);
   } catch (error) {
     console.error('Get latest prediction error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(error.statusCode || 500).json({
+      error: error.message || 'Internal server error'
+    });
   }
 };
 
-/**
- * Performs a "Dry Run" prediction for the Model Simulator.
- * Does not persist any data to the database.
- */
 const testPrediction = async (req, res) => {
   try {
     const { modelInput } = req.body;
@@ -319,20 +216,20 @@ const testPrediction = async (req, res) => {
     try {
       const predictionResult = JSON.parse(mlResult.stdout);
       if (predictionResult.status === 'success') {
-        return res.json({ 
-          success: true, 
-          prediction: predictionResult 
+        return res.json({
+          success: true,
+          prediction: predictionResult
         });
       }
+
       return res.status(500).json({ error: predictionResult.message });
-    } catch (e) {
-      console.error('Parsing error:', e, mlResult.stdout);
+    } catch (error) {
+      console.error('Parsing error:', error, mlResult.stdout);
       return res.status(500).json({ error: 'Failed to parse prediction result' });
     }
-
   } catch (error) {
     console.error('Fatal Test Prediction Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 };
 

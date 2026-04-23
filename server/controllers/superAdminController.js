@@ -1,275 +1,563 @@
-const db = require('../config/db');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
 const path = require('path');
+const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { normalizeUserRole, normalizeUserRoleEnum } = require('../utils/refactorAuth');
 
-const writeAuditLog = async (connectionOrDb, { userId, action, entityType, entityId = null, metadata = null }) => {
-  const meta = metadata ? JSON.stringify(metadata) : null;
-  await connectionOrDb.query(
-    `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
-     VALUES (?, ?, ?, ?, ?)`,
-    [userId, action, entityType, entityId, meta]
-  );
+const createHttpError = (statusCode, message) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+const requireRefactorPrisma = () => {
+  const setupStatus = getRefactorSetupStatus();
+
+  if (!setupStatus.ready) {
+    throw createHttpError(503, setupStatus.message);
+  }
+
+  return getRefactorPrisma();
+};
+
+const parseOptionalInt = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeString = (value) => String(value || '').trim();
+const normalizeEmail = (value) => normalizeString(value).toLowerCase();
+
+const writeAuditLog = async (
+  prismaClient,
+  { userId, action, entityType, entityId = null, metadata = null }
+) => {
+  await prismaClient.auditLog.create({
+    data: {
+      user_id: userId || null,
+      action: String(action),
+      entity_type: entityType ? String(entityType) : null,
+      entity_id: entityId === null || entityId === undefined ? null : Number(entityId),
+      metadata: metadata || null
+    }
+  });
+};
+
+const deleteAlumniProfileData = async (tx, profileId) => {
+  const snapshots = await tx.academicSnapshot.findMany({
+    where: { alumni_profile_id: profileId },
+    select: { id: true }
+  });
+  const snapshotIds = snapshots.map((row) => row.id);
+
+  const submissions = await tx.surveySubmission.findMany({
+    where: { alumni_profile_id: profileId },
+    select: { id: true }
+  });
+  const submissionIds = submissions.map((row) => row.id);
+
+  if (submissionIds.length > 0) {
+    await tx.followupSchedule.deleteMany({
+      where: {
+        OR: [
+          { trigger_submission_id: { in: submissionIds } },
+          { alumni_profile_id: profileId }
+        ]
+      }
+    });
+
+    await tx.mlPrediction.deleteMany({
+      where: {
+        OR: [
+          { alumni_profile_id: profileId },
+          { submission_id: { in: submissionIds } },
+          ...(snapshotIds.length > 0
+            ? [{ academic_snapshot_id: { in: snapshotIds } }]
+            : [])
+        ]
+      }
+    });
+
+    await tx.employmentOutcome.deleteMany({
+      where: {
+        OR: [
+          { alumni_profile_id: profileId },
+          { submission_id: { in: submissionIds } }
+        ]
+      }
+    });
+
+    await tx.submissionCompetency.deleteMany({
+      where: {
+        submission_id: {
+          in: submissionIds
+        }
+      }
+    });
+
+    await tx.surveyAnswer.deleteMany({
+      where: {
+        submission_id: {
+          in: submissionIds
+        }
+      }
+    });
+
+    await tx.surveySubmission.updateMany({
+      where: {
+        parent_submission_id: {
+          in: submissionIds
+        }
+      },
+      data: {
+        parent_submission_id: null
+      }
+    });
+
+    await tx.surveySubmission.updateMany({
+      where: {
+        trigger_submission_id: {
+          in: submissionIds
+        }
+      },
+      data: {
+        trigger_submission_id: null
+      }
+    });
+
+    await tx.surveySubmission.deleteMany({
+      where: {
+        id: {
+          in: submissionIds
+        }
+      }
+    });
+  } else {
+    await tx.followupSchedule.deleteMany({
+      where: {
+        alumni_profile_id: profileId
+      }
+    });
+
+    await tx.employmentOutcome.deleteMany({
+      where: {
+        alumni_profile_id: profileId
+      }
+    });
+
+    await tx.mlPrediction.deleteMany({
+      where: {
+        alumni_profile_id: profileId
+      }
+    });
+  }
+
+  if (snapshotIds.length > 0) {
+    await tx.mlPrediction.deleteMany({
+      where: {
+        academic_snapshot_id: {
+          in: snapshotIds
+        }
+      }
+    });
+  }
+
+  await tx.academicSnapshot.deleteMany({
+    where: {
+      alumni_profile_id: profileId
+    }
+  });
+
+  await tx.alumniProfile.delete({
+    where: {
+      id: profileId
+    }
+  });
 };
 
 const listUsers = async (req, res) => {
   try {
-    const { role } = req.query;
-    const params = [];
-    let where = '';
-
-    if (role && role !== 'all') {
-      where = 'WHERE role = ?';
-      params.push(role);
+    const roleParam = normalizeString(req.query?.role).toLowerCase();
+    if (roleParam && roleParam !== 'all' && !['admin', 'alumni', 'superadmin'].includes(roleParam)) {
+      return res.status(400).json({ error: 'Invalid role filter' });
     }
 
-    const [rows] = await db.query(
-      `SELECT id, username, email, role, first_name, last_name, last_login
-       FROM user
-       ${where}
-       ORDER BY role ASC, last_name ASC, first_name ASC, username ASC
-       LIMIT 2000`,
-      params
-    );
+    const where =
+      roleParam && roleParam !== 'all'
+        ? { role: normalizeUserRoleEnum(roleParam) }
+        : undefined;
 
-    return res.json(rows);
+    const refactorPrisma = requireRefactorPrisma();
+    const rows = await refactorPrisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        first_name: true,
+        last_name: true,
+        last_login: true
+      },
+      orderBy: [
+        { role: 'asc' },
+        { last_name: 'asc' },
+        { first_name: 'asc' },
+        { username: 'asc' }
+      ],
+      take: 2000
+    });
+
+    return res.json(
+      rows.map((row) => ({
+        ...row,
+        role: normalizeUserRole(row.role)
+      }))
+    );
   } catch (error) {
     console.error('List users error:', error);
-    return res.status(500).json({ error: 'Failed to list users' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to list users' });
   }
 };
 
 const createAdmin = async (req, res) => {
-  const connection = await db.getConnection();
   try {
-    const { username, email, password, firstName, lastName } = req.body || {};
+    const username = normalizeString(req.body?.username);
+    const email = normalizeEmail(req.body?.email);
+    const password = String(req.body?.password || '');
+    const firstName = normalizeString(req.body?.firstName);
+    const lastName = normalizeString(req.body?.lastName);
 
     if (!username || !email || !password || !firstName || !lastName) {
-      return res.status(400).json({ error: 'username, email, password, firstName, lastName are required' });
+      return res.status(400).json({
+        error: 'username, email, password, firstName, lastName are required'
+      });
     }
 
-    await connection.beginTransaction();
+    const refactorPrisma = requireRefactorPrisma();
+    const result = await refactorPrisma.$transaction(async (tx) => {
+      const existing = await tx.user.findFirst({
+        where: {
+          OR: [{ username }, { email }]
+        },
+        select: { id: true }
+      });
 
-    const [existing] = await connection.query(
-      `SELECT id FROM user WHERE username = ? OR email = ? LIMIT 1`,
-      [String(username).trim(), String(email).trim().toLowerCase()]
-    );
-    if (existing.length > 0) {
-      await connection.rollback();
-      return res.status(400).json({ error: 'Username or email already exists' });
-    }
+      if (existing) {
+        throw createHttpError(400, 'Username or email already exists');
+      }
 
-    const passwordHash = await bcrypt.hash(String(password), 10);
-    const [result] = await connection.query(
-      `INSERT INTO user (username, email, password_hash, role, first_name, last_name)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        String(username).trim(),
-        String(email).trim().toLowerCase(),
-        passwordHash,
-        'admin',
-        String(firstName).trim(),
-        String(lastName).trim()
-      ]
-    );
+      const passwordHash = await bcrypt.hash(password, 10);
+      const created = await tx.user.create({
+        data: {
+          username,
+          email,
+          password_hash: passwordHash,
+          role: 'ADMIN',
+          first_name: firstName,
+          last_name: lastName
+        }
+      });
 
-    await writeAuditLog(connection, {
-      userId: req.user.id,
-      action: 'create_admin',
-      entityType: 'user',
-      entityId: result.insertId,
-      metadata: { username, email, role: 'admin' }
+      await writeAuditLog(tx, {
+        userId: req.user.id,
+        action: 'create_admin',
+        entityType: 'user',
+        entityId: created.id,
+        metadata: { username, email, role: 'admin' }
+      });
+
+      return created;
     });
 
-    await connection.commit();
-    return res.status(201).json({ success: true, id: result.insertId });
+    return res.status(201).json({ success: true, id: result.id });
   } catch (error) {
-    await connection.rollback();
     console.error('Create admin error:', error);
-    return res.status(500).json({ error: 'Failed to create admin' });
-  } finally {
-    connection.release();
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to create admin' });
   }
 };
 
 const updateUserRole = async (req, res) => {
-  const connection = await db.getConnection();
   try {
-    const userId = Number(req.params.id);
-    const { role } = req.body || {};
+    const userId = parseOptionalInt(req.params.id);
+    const role = normalizeString(req.body?.role).toLowerCase();
 
-    if (!userId) return res.status(400).json({ error: 'Invalid user id' });
+    if (!userId) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
     if (!role || !['admin', 'alumni'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
+
     if (userId === req.user.id) {
       return res.status(400).json({ error: 'You cannot change your own role' });
     }
 
-    await connection.beginTransaction();
+    const refactorPrisma = requireRefactorPrisma();
+    await refactorPrisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          username: true,
+          role: true
+        }
+      });
 
-    const [users] = await connection.query(`SELECT id, username, role FROM user WHERE id = ? LIMIT 1`, [userId]);
-    if (users.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({ error: 'User not found' });
-    }
+      if (!user) {
+        throw createHttpError(404, 'User not found');
+      }
 
-    const prevRole = users[0].role;
-    if (prevRole === 'superadmin') {
-      await connection.rollback();
-      return res.status(403).json({ error: 'Superadmin role cannot be changed' });
-    }
-    if (prevRole === 'alumni' && role === 'admin') {
-      await connection.rollback();
-      return res.status(403).json({ error: 'Alumni accounts cannot be promoted to admin' });
-    }
-    await connection.query(`UPDATE user SET role = ? WHERE id = ?`, [role, userId]);
+      const previousRole = normalizeUserRole(user.role);
+      if (previousRole === 'superadmin') {
+        throw createHttpError(403, 'Superadmin role cannot be changed');
+      }
 
-    await writeAuditLog(connection, {
-      userId: req.user.id,
-      action: 'update_user_role',
-      entityType: 'user',
-      entityId: userId,
-      metadata: { username: users[0].username, from: prevRole, to: role }
+      if (previousRole === 'alumni' && role === 'admin') {
+        throw createHttpError(403, 'Alumni accounts cannot be promoted to admin');
+      }
+
+      await tx.user.update({
+        where: {
+          id: userId
+        },
+        data: {
+          role: normalizeUserRoleEnum(role)
+        }
+      });
+
+      await writeAuditLog(tx, {
+        userId: req.user.id,
+        action: 'update_user_role',
+        entityType: 'user',
+        entityId: userId,
+        metadata: { username: user.username, from: previousRole, to: role }
+      });
     });
 
-    await connection.commit();
     return res.json({ success: true });
   } catch (error) {
-    await connection.rollback();
     console.error('Update user role error:', error);
-    return res.status(500).json({ error: 'Failed to update role' });
-  } finally {
-    connection.release();
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to update role' });
   }
 };
 
 const removeAdmin = async (req, res) => {
-  const connection = await db.getConnection();
   try {
-    const userId = Number(req.params.id);
-    if (!userId) return res.status(400).json({ error: 'Invalid user id' });
-    if (userId === req.user.id) return res.status(400).json({ error: 'You cannot remove your own account' });
-
-    await connection.beginTransaction();
-
-    const [users] = await connection.query(
-      `SELECT id, username, role FROM user WHERE id = ? LIMIT 1`,
-      [userId]
-    );
-    if (users.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({ error: 'User not found' });
+    const userId = parseOptionalInt(req.params.id);
+    if (!userId) {
+      return res.status(400).json({ error: 'Invalid user id' });
     }
 
-    const target = users[0];
-    if (target.role === 'superadmin') {
-      await connection.rollback();
-      return res.status(403).json({ error: 'Superadmin account cannot be removed' });
+    if (userId === req.user.id) {
+      return res.status(400).json({ error: 'You cannot remove your own account' });
     }
 
-    await connection.query(`DELETE FROM user WHERE id = ?`, [userId]);
+    const refactorPrisma = requireRefactorPrisma();
+    await refactorPrisma.$transaction(async (tx) => {
+      const target = await tx.user.findUnique({
+        where: { id: userId },
+        include: {
+          alumni_profile: {
+            select: { id: true }
+          }
+        }
+      });
 
-    await writeAuditLog(connection, {
-      userId: req.user.id,
-      action: 'remove_user',
-      entityType: 'user',
-      entityId: userId,
-      metadata: { username: target.username, role: target.role }
+      if (!target) {
+        throw createHttpError(404, 'User not found');
+      }
+
+      const role = normalizeUserRole(target.role);
+      if (role === 'superadmin') {
+        throw createHttpError(403, 'Superadmin account cannot be removed');
+      }
+
+      await tx.userNotification.deleteMany({
+        where: {
+          user_id: userId
+        }
+      });
+
+      if (target.alumni_profile) {
+        await deleteAlumniProfileData(tx, target.alumni_profile.id);
+      }
+
+      await tx.auditLog.updateMany({
+        where: {
+          user_id: userId
+        },
+        data: {
+          user_id: null
+        }
+      });
+
+      await tx.systemSetting.updateMany({
+        where: {
+          updated_by: userId
+        },
+        data: {
+          updated_by: null
+        }
+      });
+
+      await tx.notification.updateMany({
+        where: {
+          created_by: userId
+        },
+        data: {
+          created_by: null
+        }
+      });
+
+      await tx.importHistory.updateMany({
+        where: {
+          uploaded_by: userId
+        },
+        data: {
+          uploaded_by: null
+        }
+      });
+
+      await tx.user.delete({
+        where: {
+          id: userId
+        }
+      });
+
+      await writeAuditLog(tx, {
+        userId: req.user.id,
+        action: 'remove_user',
+        entityType: 'user',
+        entityId: userId,
+        metadata: { username: target.username, role }
+      });
     });
 
-    await connection.commit();
     return res.json({ success: true });
   } catch (error) {
-    await connection.rollback();
     console.error('Remove admin error:', error);
-    return res.status(500).json({ error: 'Failed to remove admin' });
-  } finally {
-    connection.release();
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to remove admin' });
   }
 };
 
 const listAuditLogs = async (req, res) => {
   try {
-    const { userId, action, entityType, limit = 100 } = req.query;
-    const lim = Math.min(Math.max(Number(limit) || 100, 1), 500);
+    const limitParam = parseOptionalInt(req.query?.limit);
+    const limit = Math.min(Math.max(limitParam || 100, 1), 500);
+    const userId = parseOptionalInt(req.query?.userId);
+    const action = normalizeString(req.query?.action);
+    const entityType = normalizeString(req.query?.entityType);
 
-    const params = [];
-    const wheres = [];
+    const where = {
+      ...(userId ? { user_id: userId } : {}),
+      ...(action ? { action } : {}),
+      ...(entityType ? { entity_type: entityType } : {})
+    };
 
-    if (userId) {
-      wheres.push('al.user_id = ?');
-      params.push(Number(userId));
-    }
-    if (action) {
-      wheres.push('al.action = ?');
-      params.push(String(action));
-    }
-    if (entityType) {
-      wheres.push('al.entity_type = ?');
-      params.push(String(entityType));
-    }
+    const refactorPrisma = requireRefactorPrisma();
+    const rows = await refactorPrisma.auditLog.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            username: true,
+            role: true
+          }
+        }
+      },
+      orderBy: {
+        created_at: 'desc'
+      },
+      take: limit
+    });
 
-    const whereSql = wheres.length ? `WHERE ${wheres.join(' AND ')}` : '';
-
-    const [rows] = await db.query(
-      `SELECT
-         al.id,
-         al.user_id,
-         u.username,
-         u.role,
-         al.action,
-         al.entity_type,
-         al.entity_id,
-         al.metadata,
-         al.created_at
-       FROM audit_logs al
-       LEFT JOIN user u ON u.id = al.user_id
-       ${whereSql}
-       ORDER BY al.created_at DESC
-       LIMIT ${lim}`,
-      params
+    return res.json(
+      rows.map((row) => ({
+        id: row.id,
+        user_id: row.user_id,
+        username: row.user?.username || null,
+        role: row.user?.role ? normalizeUserRole(row.user.role) : null,
+        action: row.action,
+        entity_type: row.entity_type,
+        entity_id: row.entity_id,
+        metadata: row.metadata,
+        created_at: row.created_at
+      }))
     );
-
-    return res.json(rows);
   } catch (error) {
     console.error('List audit logs error:', error);
-    return res.status(500).json({ error: 'Failed to list audit logs' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to list audit logs' });
   }
 };
 
 const getSetting = async (req, res) => {
   try {
-    const key = String(req.params.key || '').trim();
-    if (!key) return res.status(400).json({ error: 'Invalid key' });
+    const key = normalizeString(req.params.key);
+    if (!key) {
+      return res.status(400).json({ error: 'Invalid key' });
+    }
 
-    const [rows] = await db.query(`SELECT \`key\`, value, updated_by, updated_at FROM system_settings WHERE \`key\` = ? LIMIT 1`, [key]);
-    if (rows.length === 0) return res.status(404).json({ error: 'Setting not found' });
+    const refactorPrisma = requireRefactorPrisma();
+    const setting = await refactorPrisma.systemSetting.findUnique({
+      where: { key }
+    });
 
-    return res.json(rows[0]);
+    if (!setting) {
+      return res.status(404).json({ error: 'Setting not found' });
+    }
+
+    return res.json(setting);
   } catch (error) {
     console.error('Get setting error:', error);
-    return res.status(500).json({ error: 'Failed to get setting' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to get setting' });
   }
 };
 
 const getPublicSetting = async (req, res) => {
   try {
-    const key = String(req.params.key || '').trim();
-    if (!key) return res.status(400).json({ error: 'Invalid key' });
+    const key = normalizeString(req.params.key);
+    if (!key) {
+      return res.status(400).json({ error: 'Invalid key' });
+    }
 
     const allowedPublicKeys = new Set(['system_branding']);
     if (!allowedPublicKeys.has(key)) {
       return res.status(403).json({ error: 'Setting is not publicly accessible' });
     }
 
-    const [rows] = await db.query(`SELECT \`key\`, value, updated_by, updated_at FROM system_settings WHERE \`key\` = ? LIMIT 1`, [key]);
-    if (rows.length === 0) return res.status(404).json({ error: 'Setting not found' });
+    const refactorPrisma = requireRefactorPrisma();
+    const setting = await refactorPrisma.systemSetting.findUnique({
+      where: { key }
+    });
 
-    return res.json(rows[0]);
+    if (!setting) {
+      return res.status(404).json({ error: 'Setting not found' });
+    }
+
+    return res.json(setting);
   } catch (error) {
     console.error('Get public setting error:', error);
-    return res.status(500).json({ error: 'Failed to get setting' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to get setting' });
   }
 };
 
@@ -283,7 +571,9 @@ const uploadLogo = async (req, res) => {
     fs.mkdirSync(uploadsDir, { recursive: true });
 
     const extension = path.extname(req.file.originalname || '').toLowerCase() || '.png';
-    const safeExt = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'].includes(extension) ? extension : '.png';
+    const safeExt = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'].includes(extension)
+      ? extension
+      : '.png';
     const filename = `logo-${Date.now()}${safeExt}`;
     const filePath = path.join(uploadsDir, filename);
 
@@ -295,44 +585,56 @@ const uploadLogo = async (req, res) => {
     });
   } catch (error) {
     console.error('Upload logo error:', error);
-    return res.status(500).json({ error: 'Failed to upload logo' });
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to upload logo' });
   }
 };
 
 const upsertSetting = async (req, res) => {
-  const connection = await db.getConnection();
   try {
-    const key = String(req.params.key || '').trim();
-    const { value } = req.body || {};
-    if (!key) return res.status(400).json({ error: 'Invalid key' });
-    if (value === undefined) return res.status(400).json({ error: 'value is required' });
+    const key = normalizeString(req.params.key);
+    const value = req.body?.value;
 
-    const jsonValue = JSON.stringify(value);
+    if (!key) {
+      return res.status(400).json({ error: 'Invalid key' });
+    }
 
-    await connection.beginTransaction();
-    await connection.query(
-      `INSERT INTO system_settings (\`key\`, value, updated_by)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE value = VALUES(value), updated_by = VALUES(updated_by)`,
-      [key, jsonValue, req.user.id]
-    );
+    if (value === undefined) {
+      return res.status(400).json({ error: 'value is required' });
+    }
 
-    await writeAuditLog(connection, {
-      userId: req.user.id,
-      action: 'upsert_setting',
-      entityType: 'system_setting',
-      entityId: null,
-      metadata: { key }
+    const serializedValue = JSON.stringify(value);
+    const refactorPrisma = requireRefactorPrisma();
+
+    await refactorPrisma.$transaction(async (tx) => {
+      await tx.systemSetting.upsert({
+        where: { key },
+        update: {
+          value: serializedValue,
+          updated_by: req.user.id
+        },
+        create: {
+          key,
+          value: serializedValue,
+          updated_by: req.user.id
+        }
+      });
+
+      await writeAuditLog(tx, {
+        userId: req.user.id,
+        action: 'upsert_setting',
+        entityType: 'system_setting',
+        metadata: { key }
+      });
     });
 
-    await connection.commit();
     return res.json({ success: true });
   } catch (error) {
-    await connection.rollback();
     console.error('Upsert setting error:', error);
-    return res.status(500).json({ error: 'Failed to save setting' });
-  } finally {
-    connection.release();
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to save setting' });
   }
 };
 
@@ -347,4 +649,3 @@ module.exports = {
   upsertSetting,
   uploadLogo
 };
-

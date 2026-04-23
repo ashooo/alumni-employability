@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Bell, Briefcase, AlertTri
 import { useAuth, type SurveyFlowStatus } from '@/contexts/AuthContext';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -61,10 +62,23 @@ interface PreviousSubmission {
   }[];
 }
 
-interface Skill {
+type CompetencyKind =
+  | 'SOFT_SKILL'
+  | 'HARD_SKILL'
+  | 'KNOWLEDGE'
+  | 'ABILITY'
+  | 'INTEREST'
+  | 'TECHNOLOGY';
+
+type CompetencySelectionView = 'all' | 'selected';
+
+interface Competency {
   id: number;
   name: string;
-  type: 'hard' | 'soft';
+  kind: CompetencyKind;
+  description?: string | null;
+  source?: string | null;
+  category?: string | null;
 }
 
 interface Degree {
@@ -83,7 +97,137 @@ interface Prediction {
 
 type SurveyStage = 'initial' | 'wizard' | 'employedPending' | 'completed' | 'finished';
 
+interface CompetencyStepConfig {
+  step: number;
+  kind: CompetencyKind;
+  title: string;
+  min: number;
+  max?: number;
+  description: string;
+  searchPlaceholder: string;
+  emptyMessage: string;
+}
+
 const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
+
+const WIZARD_STEPS = [
+  { step: 1, label: 'Academic Performance' },
+  { step: 2, label: 'Hard Skills' },
+  { step: 3, label: 'Soft Skills' },
+  { step: 4, label: 'Knowledge' },
+  { step: 5, label: 'Abilities' },
+  { step: 6, label: 'Interests' },
+  { step: 7, label: 'Technology Skills' },
+  { step: 8, label: 'Skill Proficiency' }
+];
+
+const TECHNOLOGY_VISIBLE_LIMIT = 120;
+const TECHNOLOGY_SEARCH_LIMIT = 180;
+
+const COMPETENCY_STEP_CONFIGS: Record<number, CompetencyStepConfig> = {
+  2: {
+    step: 2,
+    kind: 'HARD_SKILL',
+    title: 'Select 6-8 Hard Skills',
+    min: 6,
+    max: 8,
+    description: 'Choose the technical and professional skills that best represent your strongest areas.',
+    searchPlaceholder: 'Search hard skills',
+    emptyMessage: 'No hard skills matched your current search or filter.'
+  },
+  3: {
+    step: 3,
+    kind: 'SOFT_SKILL',
+    title: 'Select 4-5 Soft Skills',
+    min: 4,
+    max: 5,
+    description: 'Choose the people and workplace skills that best describe how you work with others.',
+    searchPlaceholder: 'Search soft skills',
+    emptyMessage: 'No soft skills matched your current search or filter.'
+  },
+  4: {
+    step: 4,
+    kind: 'KNOWLEDGE',
+    title: 'Select Knowledge Areas',
+    min: 1,
+    description: 'Pick at least one knowledge area that matches what you are most familiar with academically or professionally.',
+    searchPlaceholder: 'Search knowledge areas',
+    emptyMessage: 'No knowledge areas matched your current search or filter.'
+  },
+  5: {
+    step: 5,
+    kind: 'ABILITY',
+    title: 'Select Abilities',
+    min: 1,
+    description: 'Pick at least one ability that reflects how you naturally solve problems and perform tasks.',
+    searchPlaceholder: 'Search abilities',
+    emptyMessage: 'No abilities matched your current search or filter.'
+  },
+  6: {
+    step: 6,
+    kind: 'INTEREST',
+    title: 'Select Interests',
+    min: 1,
+    description: 'Pick at least one interest that aligns with the type of work and environment you prefer.',
+    searchPlaceholder: 'Search interests',
+    emptyMessage: 'No interests matched your current search or filter.'
+  },
+  7: {
+    step: 7,
+    kind: 'TECHNOLOGY',
+    title: 'Select Technology Skills',
+    min: 1,
+    description: 'Pick at least one technology skill. Use search or switch to Selected to manage the larger catalog faster.',
+    searchPlaceholder: 'Search technology skills',
+    emptyMessage: 'No technology skills matched your current search or filter.'
+  }
+};
+
+const createInitialSelectionState = (): Record<CompetencyKind, number[]> => ({
+  SOFT_SKILL: [],
+  HARD_SKILL: [],
+  KNOWLEDGE: [],
+  ABILITY: [],
+  INTEREST: [],
+  TECHNOLOGY: []
+});
+
+const createInitialSearchState = (): Record<CompetencyKind, string> => ({
+  SOFT_SKILL: '',
+  HARD_SKILL: '',
+  KNOWLEDGE: '',
+  ABILITY: '',
+  INTEREST: '',
+  TECHNOLOGY: ''
+});
+
+const createInitialViewState = (): Record<CompetencyKind, CompetencySelectionView> => ({
+  SOFT_SKILL: 'all',
+  HARD_SKILL: 'all',
+  KNOWLEDGE: 'all',
+  ABILITY: 'all',
+  INTEREST: 'all',
+  TECHNOLOGY: 'all'
+});
+
+const mapCompetencyKindToSubmissionType = (kind: CompetencyKind) => {
+  switch (kind) {
+    case 'HARD_SKILL':
+      return 'hard';
+    case 'SOFT_SKILL':
+      return 'soft';
+    case 'KNOWLEDGE':
+      return 'knowledge';
+    case 'ABILITY':
+      return 'ability';
+    case 'INTEREST':
+      return 'interest';
+    case 'TECHNOLOGY':
+      return 'technology';
+    default:
+      return 'other';
+  }
+};
 
 const mapEmploymentStatusToAnswer = (status?: string | null) => {
   switch (String(status || '').toUpperCase()) {
@@ -179,7 +323,7 @@ export default function AlumniSurvey() {
   const [surveyStatus, setSurveyStatus] = useState<SurveyFlowStatus | null>(user?.survey || null);
   const [latestSubmission, setLatestSubmission] = useState<PreviousSubmission | null>(null);
   const [answers, setAnswers] = useState<Record<string, string | string[] | number>>({});
-  const [availableSkills, setAvailableSkills] = useState<Skill[]>([]);
+  const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [availableDegrees, setAvailableDegrees] = useState<Degree[]>([]);
   const [academicData, setAcademicData] = useState({
     cgpa: '',
@@ -193,8 +337,15 @@ export default function AlumniSurvey() {
     act_member_pos: false,
     degree_id: ''
   });
-  const [selectedHardSkills, setSelectedHardSkills] = useState<number[]>([]);
-  const [selectedSoftSkills, setSelectedSoftSkills] = useState<number[]>([]);
+  const [selectedCompetencies, setSelectedCompetencies] = useState<Record<CompetencyKind, number[]>>(
+    createInitialSelectionState
+  );
+  const [competencySearch, setCompetencySearch] = useState<Record<CompetencyKind, string>>(
+    createInitialSearchState
+  );
+  const [competencyView, setCompetencyView] = useState<Record<CompetencyKind, CompetencySelectionView>>(
+    createInitialViewState
+  );
   const [skillRatings, setSkillRatings] = useState<Record<number, number>>({});
   const [predictionResult, setPredictionResult] = useState<Prediction | null>(null);
 
@@ -283,11 +434,11 @@ export default function AlumniSurvey() {
           'Content-Type': 'application/json'
         };
 
-        const [profileResponse, statusResponse, skillsResponse, degreesResponse] =
+        const [profileResponse, statusResponse, competenciesResponse, degreesResponse] =
           await Promise.all([
             fetch(`${API_URL}/alumni/profile/${user.username}`, { headers }),
             fetch(`${API_URL}/alumni/survey/status/${user.username}`, { headers }),
-            fetch(`${API_URL}/prediction/skills`, { headers }),
+            fetch(`${API_URL}/prediction/competencies`, { headers }),
             fetch(`${API_URL}/prediction/degrees`, { headers })
           ]);
 
@@ -299,8 +450,8 @@ export default function AlumniSurvey() {
         const nextSurveyStatus: SurveyFlowStatus = await statusResponse.json();
         syncSurveyStatus(nextSurveyStatus);
 
-        if (skillsResponse.ok) {
-          setAvailableSkills(await skillsResponse.json());
+        if (competenciesResponse.ok) {
+          setAvailableCompetencies(await competenciesResponse.json());
         }
 
         if (degreesResponse.ok) {
@@ -369,6 +520,180 @@ export default function AlumniSurvey() {
 
   const setAnswer = (questionId: string, value: string | string[] | number) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  };
+
+  const getCompetenciesByKind = (kind: CompetencyKind) =>
+    availableCompetencies.filter((competency) => competency.kind === kind);
+
+  const toggleCompetencySelection = (kind: CompetencyKind, competencyId: number, max?: number) => {
+    const selectedIds = selectedCompetencies[kind];
+
+    if (!selectedIds.includes(competencyId) && max && selectedIds.length >= max) {
+      toast({
+        title: 'Selection limit reached',
+        description: `You can only select up to ${max} items in this section.`
+      });
+      return;
+    }
+
+    setSelectedCompetencies((prev) => ({
+      ...prev,
+      [kind]: prev[kind].includes(competencyId)
+        ? prev[kind].filter((id) => id !== competencyId)
+        : [...prev[kind], competencyId]
+    }));
+  };
+
+  const renderCompetencySelectionStep = (config: CompetencyStepConfig) => {
+    const allItems = getCompetenciesByKind(config.kind);
+    const selectedIds = selectedCompetencies[config.kind];
+    const selectedSet = new Set(selectedIds);
+    const query = competencySearch[config.kind].trim().toLowerCase();
+    const view = competencyView[config.kind];
+
+    const filteredItems = allItems
+      .filter((competency) => {
+        if (view === 'selected' && !selectedSet.has(competency.id)) {
+          return false;
+        }
+
+        if (!query) {
+          return true;
+        }
+
+        const searchableText = [
+          competency.name,
+          competency.description || '',
+          competency.category || ''
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        return searchableText.includes(query);
+      })
+      .sort((left, right) => {
+        const leftSelected = selectedSet.has(left.id) ? 1 : 0;
+        const rightSelected = selectedSet.has(right.id) ? 1 : 0;
+
+        if (leftSelected !== rightSelected) {
+          return rightSelected - leftSelected;
+        }
+
+        return left.name.localeCompare(right.name);
+      });
+
+    const visibleLimit =
+      config.kind === 'TECHNOLOGY'
+        ? query || view === 'selected'
+          ? TECHNOLOGY_SEARCH_LIMIT
+          : TECHNOLOGY_VISIBLE_LIMIT
+        : filteredItems.length;
+    const visibleItems = filteredItems.slice(0, visibleLimit);
+    const isTruncated = visibleItems.length < filteredItems.length;
+    const selectionValid =
+      selectedIds.length >= config.min && (!config.max || selectedIds.length <= config.max);
+
+    return (
+      <div className="space-y-6 flex-1">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <h3 className="text-xl font-semibold">{config.title}</h3>
+            <p className="text-sm text-muted-foreground">{config.description}</p>
+          </div>
+          <Badge
+            variant="outline"
+            className={
+              selectionValid
+                ? 'border-success/30 bg-success/5 text-success'
+                : 'border-destructive/30 bg-destructive/5 text-destructive'
+            }
+          >
+            {selectedIds.length} selected
+            {config.max ? ` • ${config.min}-${config.max} required` : ` • at least ${config.min}`}
+          </Badge>
+        </div>
+
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <Input
+            value={competencySearch[config.kind]}
+            onChange={(event) =>
+              setCompetencySearch((prev) => ({
+                ...prev,
+                [config.kind]: event.target.value
+              }))
+            }
+            placeholder={config.searchPlaceholder}
+            className="md:max-w-sm"
+          />
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={view === 'all' ? 'default' : 'outline'}
+              onClick={() =>
+                setCompetencyView((prev) => ({
+                  ...prev,
+                  [config.kind]: 'all'
+                }))
+              }
+            >
+              All
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={view === 'selected' ? 'default' : 'outline'}
+              onClick={() =>
+                setCompetencyView((prev) => ({
+                  ...prev,
+                  [config.kind]: 'selected'
+                }))
+              }
+            >
+              Selected
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-primary/15 bg-primary/5 p-4 text-sm text-muted-foreground">
+          {isTruncated
+            ? `Showing first ${visibleItems.length} of ${filteredItems.length} matching items. Refine your search to narrow the list further.`
+            : `Showing ${filteredItems.length} matching items.`}
+        </div>
+
+        {visibleItems.length === 0 ? (
+          <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+            {config.emptyMessage}
+          </div>
+        ) : (
+          <div className="max-h-[340px] overflow-auto pr-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {visibleItems.map((competency) => {
+                const isSelected = selectedSet.has(competency.id);
+
+                return (
+                  <button
+                    key={competency.id}
+                    type="button"
+                    title={competency.description || competency.name}
+                    onClick={() =>
+                      toggleCompetencySelection(config.kind, competency.id, config.max)
+                    }
+                    className={`min-h-[72px] rounded-xl border-2 p-3 text-left text-sm font-medium transition-all ${
+                      isSelected
+                        ? 'bg-primary/10 border-primary text-primary shadow-sm ring-1 ring-primary/20'
+                        : 'bg-muted/50 border-transparent hover:bg-muted'
+                    }`}
+                  >
+                    <span className="line-clamp-3">{competency.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const handleInitialSubmit = async () => {
@@ -459,18 +784,17 @@ export default function AlumniSurvey() {
     setSubmitting(true);
     try {
       const token = getToken();
-      const skillRatingsFormatted = [
-        ...selectedHardSkills.map((id) => ({
-          id,
-          score: skillRatings[id] || 3,
-          type: 'hard'
-        })),
-        ...selectedSoftSkills.map((id) => ({
-          id,
-          score: skillRatings[id] || 3,
-          type: 'soft'
-        }))
-      ];
+      const skillRatingsFormatted = (Object.keys(selectedCompetencies) as CompetencyKind[]).flatMap(
+        (kind) =>
+          selectedCompetencies[kind].map((id) => ({
+            id,
+            score:
+              kind === 'HARD_SKILL' || kind === 'SOFT_SKILL'
+                ? skillRatings[id] || 5
+                : null,
+            type: mapCompetencyKindToSubmissionType(kind)
+          }))
+      );
 
       const response = await fetch(`${API_URL}/prediction/employability/submit`, {
         method: 'POST',
@@ -666,8 +990,71 @@ export default function AlumniSurvey() {
   }
 
   if (surveyStage === 'wizard') {
-    const hardSkills = availableSkills.filter((skill) => skill.type === 'hard');
-    const softSkills = availableSkills.filter((skill) => skill.type === 'soft');
+    const currentStep = WIZARD_STEPS.find((step) => step.step === wizardStep) || WIZARD_STEPS[0];
+    const totalWizardSteps = WIZARD_STEPS.length;
+    const competencyStepConfig = COMPETENCY_STEP_CONFIGS[wizardStep];
+    const selectedHardSkills = selectedCompetencies.HARD_SKILL;
+    const selectedSoftSkills = selectedCompetencies.SOFT_SKILL;
+
+    const validateWizardStep = () => {
+      if (wizardStep === 1 && (!academicData.cgpa || !academicData.age || !academicData.degree_id)) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please fill in the required academic details.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 2 && selectedHardSkills.length < 6) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please select at least 6 hard skills.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 3 && selectedSoftSkills.length < 4) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please select at least 4 soft skills.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 4 && selectedCompetencies.KNOWLEDGE.length < 1) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please select at least 1 knowledge area.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 5 && selectedCompetencies.ABILITY.length < 1) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please select at least 1 ability.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 6 && selectedCompetencies.INTEREST.length < 1) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please select at least 1 interest.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 7 && selectedCompetencies.TECHNOLOGY.length < 1) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please select at least 1 technology skill.'
+        });
+        return false;
+      }
+
+      return true;
+    };
 
     return (
       <div className="max-w-4xl mx-auto space-y-6 pb-12">
@@ -675,22 +1062,15 @@ export default function AlumniSurvey() {
           <div>
             <h1 className="text-3xl font-display font-bold text-primary">Employability Assessment</h1>
             <p className="text-muted-foreground">
-              Step {wizardStep} of 4:{' '}
-              {wizardStep === 1
-                ? 'Academic Performance'
-                : wizardStep === 2
-                  ? 'Hard Skills Selection'
-                  : wizardStep === 3
-                    ? 'Soft Skills Selection'
-                    : 'Skill Proficiency'}
+              Step {wizardStep} of {totalWizardSteps}: {currentStep.label}
             </p>
           </div>
           <div className="flex gap-2">
-            {[1, 2, 3, 4].map((step) => (
+            {WIZARD_STEPS.map((step) => (
               <div
-                key={step}
+                key={step.step}
                 className={`h-2 w-12 rounded-full transition-colors ${
-                  step <= wizardStep ? 'bg-primary' : 'bg-muted'
+                  step.step <= wizardStep ? 'bg-primary' : 'bg-muted'
                 }`}
               />
             ))}
@@ -698,9 +1078,10 @@ export default function AlumniSurvey() {
         </div>
 
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
-          Your initial employment answer has been recorded as <strong>Unemployed</strong>. Additional
-          knowledge, interest, ability, and technology sections will be enabled once those competency
-          records are populated in the database.
+          Your initial employment answer has been recorded as <strong>Unemployed</strong>. This flow
+          now captures hard skills, soft skills, knowledge, abilities, interests, and technology
+          skills. Every competency section includes search plus an <strong>All / Selected</strong>{' '}
+          filter to make long lists easier to review.
         </div>
 
         <motion.div
@@ -850,90 +1231,14 @@ export default function AlumniSurvey() {
             </div>
           )}
 
-          {wizardStep === 2 && (
-            <div className="space-y-6 flex-1">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xl font-semibold">Select 6-8 Hard Skills</h3>
-                <span
-                  className={`text-sm font-bold ${
-                    selectedHardSkills.length >= 6 && selectedHardSkills.length <= 8
-                      ? 'text-success'
-                      : 'text-destructive'
-                  }`}
-                >
-                  {selectedHardSkills.length} selected
-                </span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {hardSkills.map((skill) => (
-                  <button
-                    key={skill.id}
-                    type="button"
-                    onClick={() => {
-                      if (selectedHardSkills.includes(skill.id)) {
-                        setSelectedHardSkills((prev) => prev.filter((id) => id !== skill.id));
-                      } else if (selectedHardSkills.length < 8) {
-                        setSelectedHardSkills((prev) => [...prev, skill.id]);
-                      }
-                    }}
-                    className={`rounded-xl border-2 p-3 text-sm font-medium transition-all ${
-                      selectedHardSkills.includes(skill.id)
-                        ? 'bg-primary/10 border-primary text-primary shadow-sm ring-1 ring-primary/20'
-                        : 'bg-muted/50 border-transparent hover:bg-muted'
-                    }`}
-                  >
-                    {skill.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {competencyStepConfig && renderCompetencySelectionStep(competencyStepConfig)}
 
-          {wizardStep === 3 && (
-            <div className="space-y-6 flex-1">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xl font-semibold">Select 4-5 Soft Skills</h3>
-                <span
-                  className={`text-sm font-bold ${
-                    selectedSoftSkills.length >= 4 && selectedSoftSkills.length <= 5
-                      ? 'text-success'
-                      : 'text-destructive'
-                  }`}
-                >
-                  {selectedSoftSkills.length} selected
-                </span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {softSkills.map((skill) => (
-                  <button
-                    key={skill.id}
-                    type="button"
-                    onClick={() => {
-                      if (selectedSoftSkills.includes(skill.id)) {
-                        setSelectedSoftSkills((prev) => prev.filter((id) => id !== skill.id));
-                      } else if (selectedSoftSkills.length < 5) {
-                        setSelectedSoftSkills((prev) => [...prev, skill.id]);
-                      }
-                    }}
-                    className={`rounded-xl border-2 p-3 text-sm font-medium transition-all ${
-                      selectedSoftSkills.includes(skill.id)
-                        ? 'bg-primary/10 border-primary text-primary shadow-sm ring-1 ring-primary/20'
-                        : 'bg-muted/50 border-transparent hover:bg-muted'
-                    }`}
-                  >
-                    {skill.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {wizardStep === 4 && (
+          {wizardStep === 8 && (
             <div className="space-y-6 flex-1">
               <h3 className="text-xl font-semibold">Rate your Proficiency (1-10)</h3>
               <div className="space-y-8 max-w-2xl mx-auto">
                 {[...selectedHardSkills, ...selectedSoftSkills].map((id) => {
-                  const skill = availableSkills.find((entry) => entry.id === id);
+                  const skill = availableCompetencies.find((entry) => entry.id === id);
                   if (!skill) {
                     return null;
                   }
@@ -976,31 +1281,11 @@ export default function AlumniSurvey() {
               <ArrowLeft className="mr-2 h-4 w-4" /> {wizardStep === 1 ? 'Dashboard' : 'Back'}
             </Button>
 
-            {wizardStep < 4 ? (
+            {wizardStep < totalWizardSteps ? (
               <Button
                 size="lg"
                 onClick={() => {
-                  if (wizardStep === 1 && (!academicData.cgpa || !academicData.age || !academicData.degree_id)) {
-                    toast({
-                      title: 'Validation Error',
-                      description: 'Please fill in the required academic details.'
-                    });
-                    return;
-                  }
-
-                  if (wizardStep === 2 && selectedHardSkills.length < 6) {
-                    toast({
-                      title: 'Validation Error',
-                      description: 'Please select at least 6 hard skills.'
-                    });
-                    return;
-                  }
-
-                  if (wizardStep === 3 && selectedSoftSkills.length < 4) {
-                    toast({
-                      title: 'Validation Error',
-                      description: 'Please select at least 4 soft skills.'
-                    });
+                  if (!validateWizardStep()) {
                     return;
                   }
 

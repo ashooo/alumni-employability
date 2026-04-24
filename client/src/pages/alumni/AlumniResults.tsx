@@ -2,6 +2,7 @@ import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Responsi
 import { AlertTriangle, Star, Briefcase, TrendingUp, Loader2, Target } from 'lucide-react';
 import { jobRecommendations } from '@/data/mockData';
 import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
@@ -17,7 +18,66 @@ interface Prediction {
   confidence: number;
   input_snapshot: any; // Dynamic from model
   created_at: string;
+  label?: string | null;
+  submission_summary?: {
+    id: number;
+    branch_path?: string | null;
+    survey_answers: Array<{
+      question_id: number;
+      question_key?: string | null;
+      question_text: string;
+      value: string | number | boolean | Record<string, unknown> | null;
+    }>;
+    competencies: Array<{
+      id: number;
+      name: string;
+      kind: 'SOFT_SKILL' | 'HARD_SKILL' | 'KNOWLEDGE' | 'ABILITY' | 'INTEREST' | 'TECHNOLOGY';
+      score?: number | null;
+      importance?: number | null;
+      selected?: boolean;
+    }>;
+    competencies_by_kind: Record<
+      'SOFT_SKILL' | 'HARD_SKILL' | 'KNOWLEDGE' | 'ABILITY' | 'INTEREST' | 'TECHNOLOGY',
+      Array<{
+        id: number;
+        name: string;
+        kind: 'SOFT_SKILL' | 'HARD_SKILL' | 'KNOWLEDGE' | 'ABILITY' | 'INTEREST' | 'TECHNOLOGY';
+        score?: number | null;
+        importance?: number | null;
+        selected?: boolean;
+      }>
+    >;
+  } | null;
 }
+
+const COMPETENCY_GROUP_LABELS = {
+  HARD_SKILL: 'Hard Skills',
+  SOFT_SKILL: 'Soft Skills',
+  KNOWLEDGE: 'Knowledge',
+  ABILITY: 'Abilities',
+  INTEREST: 'Interests',
+  TECHNOLOGY: 'Technology Skills'
+} as const;
+
+const formatChoiceValue = (value: unknown) => {
+  if (value === null || value === undefined || value === '') {
+    return 'Not provided';
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No';
+  }
+
+  if (typeof value === 'number') {
+    return String(value);
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return JSON.stringify(value);
+};
 
 export default function AlumniResults() {
   const { user } = useAuth();
@@ -74,6 +134,21 @@ export default function AlumniResults() {
   
   // Prepare radar data from the snapshot if available
   const snapshot = prediction.input_snapshot || {};
+  const submissionSummary = prediction.submission_summary;
+  const academicSummary = [
+    { label: 'Degree', value: snapshot.Degree || 'Not provided' },
+    { label: 'Gender', value: snapshot.Gender || 'Not provided' },
+    { label: 'Age', value: snapshot.Age || 'Not provided' },
+    { label: 'Year Graduated', value: snapshot['Year Graduated'] || 'Not provided' },
+    { label: 'CGPA', value: snapshot.CGPA || 'Not provided' },
+    { label: 'Average Prof Grade', value: snapshot['Average Prof Grade'] || 'Not provided' },
+    { label: 'Average Elec Grade', value: snapshot['Average Elec Grade'] || 'Not provided' },
+    { label: 'OJT Grade', value: snapshot['OJT Grade'] || 'Not provided' },
+    { label: 'Leadership Position', value: snapshot['Leadership POS'] || 'Not provided' },
+    { label: 'Active Membership', value: snapshot['Act Member POS'] || 'Not provided' },
+    { label: 'Soft Skills Average', value: snapshot['Soft Skills Ave'] || 'Not provided' },
+    { label: 'Hard Skills Average', value: snapshot['Hard Skills Ave'] || 'Not provided' }
+  ];
   const radarData = [
     { skill: 'CGPA', value: (parseFloat(snapshot.CGPA) || 0) * 20 }, // Normalize roughly
     { skill: 'Prof Grade', value: (parseFloat(snapshot['Average Prof Grade']) || 0) * 20 },
@@ -144,6 +219,14 @@ export default function AlumniResults() {
         </motion.div>
       </div>
 
+      <div className="glass-card p-4 border-l-4 border-l-primary">
+        <p className="text-sm text-muted-foreground">
+          The <strong>employability prediction above is live model output</strong> generated from your
+          saved academic and competency inputs. The market alignment cards below are still sample UI
+          placeholders until the real job-matching results are surfaced on this page.
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glass-card p-6 shadow-xl">
           <h3 className="font-display font-semibold mb-6 flex items-center gap-2">
@@ -192,6 +275,77 @@ export default function AlumniResults() {
                 </div>
               </motion.div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="glass-card p-6 shadow-xl space-y-6">
+        <div className="space-y-2">
+          <h3 className="font-display font-semibold text-xl">Full Submission Summary</h3>
+          <p className="text-sm text-muted-foreground">
+            This is the saved profile and the exact selections currently attached to this prediction.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <h4 className="font-semibold">Academic and Model Inputs</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {academicSummary.map((item) => (
+              <div key={item.label} className="rounded-xl border bg-muted/20 p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                <p className="mt-1 font-medium">{formatChoiceValue(item.value)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <h4 className="font-semibold">Scoped Survey Answers</h4>
+          {submissionSummary?.survey_answers?.length ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {submissionSummary.survey_answers.map((answer) => (
+                <div key={`${answer.question_id}-${answer.question_key || 'answer'}`} className="rounded-xl border bg-muted/20 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{answer.question_text}</p>
+                  <p className="mt-1 font-medium">{formatChoiceValue(answer.value)}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+              No extra scoped survey answers were saved for this prediction.
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <h4 className="font-semibold">Selected Competencies</h4>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {(
+              Object.keys(COMPETENCY_GROUP_LABELS) as Array<keyof typeof COMPETENCY_GROUP_LABELS>
+            ).map((kind) => {
+              const items = submissionSummary?.competencies_by_kind?.[kind] || [];
+
+              return (
+                <div key={kind} className="rounded-xl border bg-muted/20 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h5 className="font-medium">{COMPETENCY_GROUP_LABELS[kind]}</h5>
+                    <Badge variant="outline">{items.length} selected</Badge>
+                  </div>
+                  {items.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((item) => (
+                        <Badge key={item.id} variant="outline" className="bg-primary/5 text-foreground">
+                          {item.name}
+                          {item.score !== null && item.score !== undefined ? ` • ${item.score}/10` : ''}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No selections saved in this category.</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

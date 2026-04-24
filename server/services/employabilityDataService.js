@@ -30,6 +30,34 @@ const parseBooleanFlag = (value) =>
   String(value || '').trim().toLowerCase() === 'yes' ||
   String(value || '').trim().toLowerCase() === 'true';
 
+const mapSubmissionAnswerValue = (answer) => {
+  if (!answer) {
+    return null;
+  }
+
+  if (Array.isArray(answer.answer_json)) {
+    return answer.answer_json.join(', ');
+  }
+
+  if (answer.answer_json !== null && answer.answer_json !== undefined) {
+    return answer.answer_json;
+  }
+
+  if (answer.answer_boolean !== null && answer.answer_boolean !== undefined) {
+    return answer.answer_boolean ? 'Yes' : 'No';
+  }
+
+  if (answer.answer_number !== null && answer.answer_number !== undefined) {
+    return Number(answer.answer_number);
+  }
+
+  if (answer.answer_date) {
+    return answer.answer_date.toISOString().slice(0, 10);
+  }
+
+  return answer.answer_text ?? null;
+};
+
 const normalizeQuestionType = (rawAnswer) => {
   if (Array.isArray(rawAnswer)) {
     return 'MULTI_SELECT';
@@ -516,7 +544,21 @@ const getLatestRefactorPrediction = async (studentId) => {
     },
     include: {
       alumni_profile: true,
-      academic_snapshot: true
+      academic_snapshot: true,
+      submission: {
+        include: {
+          survey_answers: {
+            include: {
+              question: true
+            }
+          },
+          submission_competencies: {
+            include: {
+              competency: true
+            }
+          }
+        }
+      }
     }
   });
 
@@ -525,6 +567,54 @@ const getLatestRefactorPrediction = async (studentId) => {
   }
 
   const output = prediction.output_json || {};
+  const submissionCompetencies = (prediction.submission?.submission_competencies || [])
+    .filter((entry) => entry.competency)
+    .map((entry) => ({
+      id: entry.competency.id,
+      name: entry.competency.name,
+      kind: entry.competency.kind,
+      score: entry.score === null || entry.score === undefined ? null : Number(entry.score),
+      importance:
+        entry.importance === null || entry.importance === undefined
+          ? null
+          : Number(entry.importance),
+      selected: Boolean(entry.selected)
+    }))
+    .sort((left, right) => {
+      if (left.kind !== right.kind) {
+        return String(left.kind).localeCompare(String(right.kind));
+      }
+
+      return left.name.localeCompare(right.name);
+    });
+
+  const competenciesByKind = submissionCompetencies.reduce(
+    (groups, competency) => {
+      if (!groups[competency.kind]) {
+        groups[competency.kind] = [];
+      }
+
+      groups[competency.kind].push(competency);
+      return groups;
+    },
+    {
+      SOFT_SKILL: [],
+      HARD_SKILL: [],
+      KNOWLEDGE: [],
+      ABILITY: [],
+      INTEREST: [],
+      TECHNOLOGY: []
+    }
+  );
+
+  const surveyAnswers = (prediction.submission?.survey_answers || [])
+    .map((answer) => ({
+      question_id: answer.question_id,
+      question_key: answer.question?.question_key || null,
+      question_text: answer.question?.question_text || `Question ${answer.question_id}`,
+      value: mapSubmissionAnswerValue(answer)
+    }))
+    .filter((answer) => answer.value !== null && answer.value !== '');
 
   return {
     id: prediction.id,
@@ -553,6 +643,15 @@ const getLatestRefactorPrediction = async (studentId) => {
           ojt_grade: prediction.academic_snapshot.ojt_grade,
           leader_pos: prediction.academic_snapshot.leader_pos,
           act_member_pos: prediction.academic_snapshot.act_member_pos
+        }
+      : null,
+    submission_summary: prediction.submission
+      ? {
+          id: prediction.submission.id,
+          branch_path: prediction.submission.branch_path,
+          survey_answers: surveyAnswers,
+          competencies: submissionCompetencies,
+          competencies_by_kind: competenciesByKind
         }
       : null
   };

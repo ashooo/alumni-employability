@@ -123,25 +123,31 @@ const WIZARD_STEPS = [
 
 const TECHNOLOGY_VISIBLE_LIMIT = 120;
 const TECHNOLOGY_SEARCH_LIMIT = 180;
+const HARD_SKILL_MIN_SELECTIONS = 4;
+const HARD_SKILL_MAX_SELECTIONS = 10;
+const SOFT_SKILL_MIN_SELECTIONS = 3;
+const SOFT_SKILL_MAX_SELECTIONS = 7;
 
 const COMPETENCY_STEP_CONFIGS: Record<number, CompetencyStepConfig> = {
   2: {
     step: 2,
     kind: 'HARD_SKILL',
-    title: 'Select 6-8 Hard Skills',
-    min: 6,
-    max: 8,
-    description: 'Choose the technical and professional skills that best represent your strongest areas.',
+    title: `Select ${HARD_SKILL_MIN_SELECTIONS}-${HARD_SKILL_MAX_SELECTIONS} Hard Skills`,
+    min: HARD_SKILL_MIN_SELECTIONS,
+    max: HARD_SKILL_MAX_SELECTIONS,
+    description:
+      'Choose at least 4 and up to 10 hard skills. Broader coverage helps the model read your profile more reliably.',
     searchPlaceholder: 'Search hard skills',
     emptyMessage: 'No hard skills matched your current search or filter.'
   },
   3: {
     step: 3,
     kind: 'SOFT_SKILL',
-    title: 'Select 4-5 Soft Skills',
-    min: 4,
-    max: 5,
-    description: 'Choose the people and workplace skills that best describe how you work with others.',
+    title: `Select ${SOFT_SKILL_MIN_SELECTIONS}-${SOFT_SKILL_MAX_SELECTIONS} Soft Skills`,
+    min: SOFT_SKILL_MIN_SELECTIONS,
+    max: SOFT_SKILL_MAX_SELECTIONS,
+    description:
+      'Choose at least 3 and up to 7 soft skills. Narrower selections are allowed, but they are weighted more conservatively.',
     searchPlaceholder: 'Search soft skills',
     emptyMessage: 'No soft skills matched your current search or filter.'
   },
@@ -1005,18 +1011,18 @@ export default function AlumniSurvey() {
         return false;
       }
 
-      if (wizardStep === 2 && selectedHardSkills.length < 6) {
+      if (wizardStep === 2 && selectedHardSkills.length < HARD_SKILL_MIN_SELECTIONS) {
         toast({
           title: 'Validation Error',
-          description: 'Please select at least 6 hard skills.'
+          description: `Please select at least ${HARD_SKILL_MIN_SELECTIONS} hard skills.`
         });
         return false;
       }
 
-      if (wizardStep === 3 && selectedSoftSkills.length < 4) {
+      if (wizardStep === 3 && selectedSoftSkills.length < SOFT_SKILL_MIN_SELECTIONS) {
         toast({
           title: 'Validation Error',
-          description: 'Please select at least 4 soft skills.'
+          description: `Please select at least ${SOFT_SKILL_MIN_SELECTIONS} soft skills.`
         });
         return false;
       }
@@ -1081,7 +1087,8 @@ export default function AlumniSurvey() {
           Your initial employment answer has been recorded as <strong>Unemployed</strong>. This flow
           now captures hard skills, soft skills, knowledge, abilities, interests, and technology
           skills. Every competency section includes search plus an <strong>All / Selected</strong>{' '}
-          filter to make long lists easier to review.
+          filter to make long lists easier to review, and the employability model now treats very
+          narrow hard/soft selections more conservatively instead of forcing a tiny range.
         </div>
 
         <motion.div

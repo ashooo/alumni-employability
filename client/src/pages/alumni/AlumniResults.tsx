@@ -69,8 +69,12 @@ interface JobMatch {
   title: string;
   score?: number;
   final_score?: number;
+  display_score?: number;
   cosine_score?: number;
   match_percentage?: number;
+  candidate_match_percentage?: number;
+  occupation_match_percentage?: number;
+  matched_competency_count?: number;
   matched_competencies?: string[];
   missing_competencies?: string[];
   all_competencies?: string[];
@@ -92,6 +96,12 @@ interface JobMatchingPrediction {
   totalMatches: number;
   candidateSkills: string[];
   matches: JobMatch[];
+  filters?: {
+    min_cosine_score?: number;
+    min_candidate_match_percentage?: number;
+    min_matched_competencies?: number;
+    min_display_score?: number;
+  } | null;
   sourceSubmissionId?: number | null;
   academicSnapshotId?: number | null;
   predictionDate?: string | null;
@@ -132,7 +142,9 @@ const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('
 
 const getJobMatchScorePercent = (match: JobMatch) => {
   const rawScore =
-    typeof match.final_score === 'number'
+    typeof match.display_score === 'number'
+      ? match.display_score
+      : typeof match.final_score === 'number'
       ? match.final_score
       : typeof match.score === 'number'
         ? match.score
@@ -143,6 +155,19 @@ const getJobMatchScorePercent = (match: JobMatch) => {
   }
 
   return Math.max(0, Math.min(100, Math.round(rawScore * 100)));
+};
+
+const needsJobMatchingRefresh = (prediction: JobMatchingPrediction | null) => {
+  if (!prediction?.matches?.length) {
+    return false;
+  }
+
+  return prediction.matches.some(
+    (match) =>
+      typeof match.display_score !== 'number' ||
+      typeof match.candidate_match_percentage !== 'number' ||
+      typeof match.matched_competency_count !== 'number'
+  );
 };
 
 export default function AlumniResults() {
@@ -195,14 +220,7 @@ export default function AlumniResults() {
           'Content-Type': 'application/json'
         };
 
-        let jobMatchingResponse = await fetch(
-          `${API_URL}/prediction/job-matching/latest/${user.username}`,
-          {
-            headers: jobHeaders
-          }
-        );
-
-        if (jobMatchingResponse.status === 404) {
+        const generateJobMatching = async () => {
           const generateResponse = await fetch(
             `${API_URL}/prediction/job-matching/generate/${user.username}`,
             {
@@ -216,7 +234,17 @@ export default function AlumniResults() {
             const generateError = await generateResponse.json().catch(() => null);
             throw new Error(generateError?.error || 'Unable to generate live job matches.');
           }
+        };
 
+        let jobMatchingResponse = await fetch(
+          `${API_URL}/prediction/job-matching/latest/${user.username}`,
+          {
+            headers: jobHeaders
+          }
+        );
+
+        if (jobMatchingResponse.status === 404) {
+          await generateJobMatching();
           jobMatchingResponse = await fetch(
             `${API_URL}/prediction/job-matching/latest/${user.username}`,
             {
@@ -230,7 +258,26 @@ export default function AlumniResults() {
           throw new Error(jobMatchingFailure?.error || 'Unable to load live job matches.');
         }
 
-        const jobMatchingData = await jobMatchingResponse.json();
+        let jobMatchingData: JobMatchingPrediction = await jobMatchingResponse.json();
+
+        if (needsJobMatchingRefresh(jobMatchingData)) {
+          await generateJobMatching();
+
+          const refreshedJobMatchingResponse = await fetch(
+            `${API_URL}/prediction/job-matching/latest/${user.username}`,
+            {
+              headers: jobHeaders
+            }
+          );
+
+          if (!refreshedJobMatchingResponse.ok) {
+            const refreshFailure = await refreshedJobMatchingResponse.json().catch(() => null);
+            throw new Error(refreshFailure?.error || 'Unable to refresh live job matches.');
+          }
+
+          jobMatchingData = await refreshedJobMatchingResponse.json();
+        }
+
         if (isActive) {
           setJobMatching(jobMatchingData);
         }
@@ -462,6 +509,16 @@ export default function AlumniResults() {
                     from {jobMatching?.candidateSkills.length || 0} saved competencies.
                   </span>
                 </div>
+                {jobMatching?.filters ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Filtered to roles with at least{' '}
+                    {Math.round((jobMatching.filters.min_cosine_score || 0) * 100)}% cosine
+                    similarity,{' '}
+                    {Math.round(jobMatching.filters.min_candidate_match_percentage || 0)}%
+                    candidate overlap, and{' '}
+                    {jobMatching.filters.min_matched_competencies || 0} matched skills.
+                  </p>
+                ) : null}
               </div>
 
               {jobMatching?.matches.map((job, index) => {
@@ -480,7 +537,7 @@ export default function AlumniResults() {
                       <div>
                         <p className="font-bold">{job.title}</p>
                         <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                          Ranked by live job-matching model
+                          Quality-filtered by live job-matching model
                         </p>
                       </div>
                       <span className="text-sm font-black text-primary">{scorePercent}%</span>
@@ -506,8 +563,17 @@ export default function AlumniResults() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      <span>Overlap: {Math.round(job.match_percentage || 0)}%</span>
+                      <span>
+                        Candidate overlap:{' '}
+                        {Math.round(job.candidate_match_percentage || job.match_percentage || 0)}%
+                      </span>
                       <span>Cosine score: {Math.round((job.cosine_score || 0) * 100)}%</span>
+                      <span>
+                        Matched skills: {job.matched_competency_count || matchedCompetencies.length}
+                      </span>
+                      <span>
+                        Role coverage: {Math.round(job.occupation_match_percentage || 0)}%
+                      </span>
                     </div>
                   </motion.div>
                 );
@@ -515,10 +581,10 @@ export default function AlumniResults() {
             </div>
           ) : (
             <div className="rounded-xl border border-dashed p-6 text-center">
-              <p className="font-medium">No live job matches available yet</p>
+              <p className="font-medium">No strong job matches passed the quality filter</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 {jobMatchingError ||
-                  'The job-matching route is ready, but this profile does not have a saved result yet.'}
+                  'The matcher is now rejecting weak roles with low similarity or overlap for this profile.'}
               </p>
             </div>
           )}

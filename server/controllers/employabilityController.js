@@ -5,9 +5,43 @@ const {
   submitEmployabilitySurvey: persistEmployabilitySurvey
 } = require('../services/employabilityDataService');
 
+const HARD_SKILL_MIN_SELECTIONS = 4;
+const HARD_SKILL_MAX_SELECTIONS = 10;
+const SOFT_SKILL_MIN_SELECTIONS = 3;
+const SOFT_SKILL_MAX_SELECTIONS = 7;
+const HARD_SKILL_TARGET_COUNT = 6;
+const SOFT_SKILL_TARGET_COUNT = 4;
+
 const parseNumeric = (value) => {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const computeAverageScore = (skills) => {
+  if (!Array.isArray(skills) || skills.length === 0) {
+    return 0;
+  }
+
+  const total = skills.reduce((acc, curr) => acc + Number.parseInt(curr.score, 10), 0);
+  return total / skills.length;
+};
+
+const applyCoverageAdjustment = (averageScore, selectedCount, targetCount) => {
+  if (!selectedCount || !targetCount || averageScore <= 0) {
+    return 0;
+  }
+
+  const coverageRatio = Math.min(selectedCount, targetCount) / targetCount;
+  const coverageMultiplier = Math.sqrt(Math.max(coverageRatio, 0));
+  return averageScore * coverageMultiplier;
+};
+
+const validateSelectionCount = (count, minimum, maximum, label) => {
+  if (count < minimum || count > maximum) {
+    const error = new Error(`Please select between ${minimum} and ${maximum} ${label}.`);
+    error.statusCode = 400;
+    throw error;
+  }
 };
 
 const requireRefactorPrisma = () => {
@@ -99,15 +133,38 @@ const submitEmployabilitySurvey = async (req, res) => {
     const hardSkills = skillRatings.filter((skill) => skill.type === 'hard');
     const softSkills = skillRatings.filter((skill) => skill.type === 'soft');
 
-    const hardAve = hardSkills.length > 0
-      ? hardSkills.reduce((acc, curr) => acc + Number.parseInt(curr.score, 10), 0) / hardSkills.length
-      : 0;
+    validateSelectionCount(
+      hardSkills.length,
+      HARD_SKILL_MIN_SELECTIONS,
+      HARD_SKILL_MAX_SELECTIONS,
+      'hard skills'
+    );
+    validateSelectionCount(
+      softSkills.length,
+      SOFT_SKILL_MIN_SELECTIONS,
+      SOFT_SKILL_MAX_SELECTIONS,
+      'soft skills'
+    );
 
-    const softAve = softSkills.length > 0
-      ? softSkills.reduce((acc, curr) => acc + Number.parseInt(curr.score, 10), 0) / softSkills.length
-      : 0;
+    const hardAve = computeAverageScore(hardSkills);
+    const softAve = computeAverageScore(softSkills);
+    const adjustedHardAve = applyCoverageAdjustment(
+      hardAve,
+      hardSkills.length,
+      HARD_SKILL_TARGET_COUNT
+    );
+    const adjustedSoftAve = applyCoverageAdjustment(
+      softAve,
+      softSkills.length,
+      SOFT_SKILL_TARGET_COUNT
+    );
 
-    const modelInput = buildModelInput(academicData, program.name, hardAve, softAve);
+    const modelInput = buildModelInput(
+      academicData,
+      program.name,
+      adjustedHardAve,
+      adjustedSoftAve
+    );
 
     let mlResult;
     try {

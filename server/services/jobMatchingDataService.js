@@ -9,6 +9,10 @@ const JOB_MATCHING_TIMEOUT_MS = 180000;
 const JOB_MATCHING_MODEL_NAME = 'job_matcher';
 const JOB_MATCHING_MODEL_VERSION = 'jobbert_v2_onnx';
 const MAX_TOP_N = 20;
+const JOB_MATCHING_MIN_COSINE_SCORE = 0.55;
+const JOB_MATCHING_MIN_CANDIDATE_MATCH_PERCENTAGE = 20;
+const JOB_MATCHING_MIN_MATCHED_COMPETENCIES = 3;
+const JOB_MATCHING_MIN_DISPLAY_SCORE = 0.45;
 
 const CANDIDATE_KIND_PRIORITY = {
   HARD_SKILL: 0,
@@ -206,7 +210,11 @@ const runJobMatchingPrediction = async ({ candidateSkills, topN }) => {
     scriptPath: JOB_MATCHING_SCRIPT,
     input: {
       candidate_skills: normalizedSkills,
-      top_n: clampTopN(topN)
+      top_n: clampTopN(topN),
+      min_cosine_score: JOB_MATCHING_MIN_COSINE_SCORE,
+      min_candidate_match_percentage: JOB_MATCHING_MIN_CANDIDATE_MATCH_PERCENTAGE,
+      min_matched_competencies: JOB_MATCHING_MIN_MATCHED_COMPETENCIES,
+      min_display_score: JOB_MATCHING_MIN_DISPLAY_SCORE
     },
     timeoutMs: JOB_MATCHING_TIMEOUT_MS
   });
@@ -244,7 +252,7 @@ const persistJobMatchingPrediction = async ({
 }) => {
   const refactorPrisma = requireRefactorPrisma();
   const topMatch = Array.isArray(prediction.matches) ? prediction.matches[0] : null;
-  const topScore = Number(topMatch?.final_score ?? topMatch?.score);
+  const topScore = Number(topMatch?.display_score ?? topMatch?.final_score ?? topMatch?.score);
 
   return refactorPrisma.mlPrediction.create({
     data: {
@@ -257,7 +265,13 @@ const persistJobMatchingPrediction = async ({
       input_snapshot: {
         candidate_skills: candidateSkills,
         top_n: prediction.top_n ?? null,
-        submission_id: submissionId || null
+        submission_id: submissionId || null,
+        filters: prediction.filters || {
+          min_cosine_score: JOB_MATCHING_MIN_COSINE_SCORE,
+          min_candidate_match_percentage: JOB_MATCHING_MIN_CANDIDATE_MATCH_PERCENTAGE,
+          min_matched_competencies: JOB_MATCHING_MIN_MATCHED_COMPETENCIES,
+          min_display_score: JOB_MATCHING_MIN_DISPLAY_SCORE
+        }
       },
       output_json: prediction,
       confidence: Number.isFinite(topScore) ? topScore : null
@@ -342,6 +356,7 @@ const getLatestJobMatchingPrediction = async (studentId) => {
       : Number(prediction.confidence),
     topN: output.top_n ?? inputSnapshot.top_n ?? matches.length,
     totalMatches: output.total_matches ?? matches.length,
+    filters: output.filters ?? inputSnapshot.filters ?? null,
     candidateSkills: normalizeCandidateSkills(
       inputSnapshot.candidate_skills || output.candidate_skills || []
     ),

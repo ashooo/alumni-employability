@@ -10,6 +10,7 @@ export interface SurveyFlowStatus {
   hasInitialSurvey?: boolean;
   hasEmployabilityAssessment?: boolean;
   hasEmployabilityPrediction?: boolean;
+  hasJobMatchingPrediction?: boolean;
   employmentStatus?: string | null;
   resolvedPath?: string | null;
   nextPath?: string | null;
@@ -24,6 +25,8 @@ export interface SurveyFlowStatus {
     initialSurvey?: string | null;
     employabilitySubmit?: string;
     latestPrediction?: string;
+    jobMatchingGenerate?: string;
+    latestJobMatching?: string;
   };
   readiness?: {
     initialSurvey?: boolean;
@@ -31,7 +34,12 @@ export interface SurveyFlowStatus {
     employedAssessment?: boolean;
     arimaForecast?: boolean;
     jobMatching?: boolean;
+    jobMatchingEligible?: boolean;
     extendedCompetenciesCatalog?: boolean | null;
+  };
+  jobMatchingRuntime?: {
+    ready?: boolean;
+    missingPaths?: string[];
   };
 }
 

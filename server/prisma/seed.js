@@ -5,95 +5,198 @@ const xlsx = require('xlsx');
 
 const prisma = new PrismaClient();
 
-const COMPETENCY_FILE = path.resolve(
-  __dirname,
-  '../../ml/data/competency_compilation.csv'
-);
+const COMPETENCY_FILE = path.resolve(__dirname, '../../ml/data/competency_compilation.csv');
+const ALUMNI_DATA_FILE = path.resolve(__dirname, '../../ml/data/processed/student-dataset-merged.csv');
 
-const COLUMN_KIND_MAP = {
-  KNOWLEDGE: 'KNOWLEDGE',
-  ABILITIES: 'ABILITY',
-  INTERESTS: 'INTEREST',
-  'TECHNOLOGY-SKILLS': 'TECHNOLOGY'
-};
+const FIRST_NAMES = [
+  'James', 'Mary', 'Robert', 'Patricia', 'John', 'Jennifer', 'Michael', 'Linda',
+  'David', 'Elizabeth', 'William', 'Barbara', 'Richard', 'Susan', 'Joseph', 'Jessica',
+  'Thomas', 'Sarah', 'Christopher', 'Karen', 'Charles', 'Nancy', 'Daniel', 'Lisa',
+  'Matthew', 'Betty', 'Anthony', 'Margaret', 'Donald', 'Sandra', 'Mark', 'Ashley',
+  'Paul', 'Dorothy', 'Steven', 'Kimberly', 'Andrew', 'Emily', 'Kenneth', 'Donna',
+  'Joshua', 'Michelle', 'Kevin', 'Carol', 'Brian', 'Amanda', 'George', 'Melissa',
+  'Edward', 'Deborah'
+];
 
-const SOFT_SKILL_NAMES = new Set([
-  'Active Learning', 'Active Listening', 'Complex Problem Solving', 'Coordination',
-  'Critical Thinking', 'Instructing', 'Judgment and Decision Making', 'Learning Strategies',
-  'Management of Financial Resources', 'Management of Material Resources',
-  'Management of Personnel Resources', 'Monitoring', 'Negotiation', 'Persuasion',
-  'Reading Comprehension', 'Service Orientation', 'Social Perceptiveness', 'Speaking',
-  'Time Management', 'Writing'
-]);
+const LAST_NAMES = [
+  'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis',
+  'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson',
+  'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson',
+  'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker',
+  'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill', 'Flores',
+  'Green', 'Adams', 'Nelson', 'Baker', 'Hall', 'Rivera', 'Campbell', 'Mitchell',
+  'Carter', 'Roberts'
+];
 
-const HARD_SKILL_NAMES = new Set([
-  'Equipment Maintenance', 'Equipment Selection', 'Installation', 'Mathematics',
-  'Operation and Control', 'Operations Analysis', 'Operations Monitoring', 'Programming',
-  'Quality Control Analysis', 'Repairing', 'Science', 'Systems Analysis', 'Systems Evaluation',
-  'Technology Design', 'Troubleshooting'
-]);
+async function clearData() {
+  console.log('Clearing existing alumni data for a fresh start...');
+  // Delete in order of dependencies
+  await prisma.employmentOutcome.deleteMany({});
+  await prisma.mlPrediction.deleteMany({});
+  await prisma.surveyAnswer.deleteMany({});
+  await prisma.submissionCompetency.deleteMany({});
+  await prisma.surveySubmission.deleteMany({});
+  await prisma.academicSnapshot.deleteMany({});
+  await prisma.alumniProfile.deleteMany({});
+  await prisma.user.deleteMany({ where: { role: 'ALUMNI' } });
+}
 
 async function seedCompetencies() {
   console.log('Seeding competencies...');
-  
-  if (!fs.existsSync(COMPETENCY_FILE)) {
-    console.warn(`Competency compilation file not found at ${COMPETENCY_FILE}. Skipping.`);
-    return;
-  }
-
+  if (!fs.existsSync(COMPETENCY_FILE)) return;
   const workbook = xlsx.readFile(COMPETENCY_FILE);
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = xlsx.utils.sheet_to_json(sheet);
-
   const uniqueRecords = new Map();
+  const COLUMN_KIND_MAP = { KNOWLEDGE: 'KNOWLEDGE', ABILITIES: 'ABILITY', INTERESTS: 'INTEREST', 'TECHNOLOGY-SKILLS': 'TECHNOLOGY' };
+  const SOFT_SKILLS = new Set(['Active Learning', 'Active Listening', 'Complex Problem Solving', 'Coordination', 'Critical Thinking', 'Instructing', 'Judgment and Decision Making', 'Learning Strategies', 'Management of Financial Resources', 'Management of Material Resources', 'Management of Personnel Resources', 'Monitoring', 'Negotiation', 'Persuasion', 'Reading Comprehension', 'Service Orientation', 'Social Perceptiveness', 'Speaking', 'Time Management', 'Writing']);
+  const HARD_SKILLS = new Set(['Equipment Maintenance', 'Equipment Selection', 'Installation', 'Mathematics', 'Operation and Control', 'Operations Analysis', 'Operations Monitoring', 'Programming', 'Quality Control Analysis', 'Repairing', 'Science', 'Systems Analysis', 'Systems Evaluation', 'Technology Design', 'Troubleshooting']);
 
   for (const row of rows) {
-    // Process categorized columns
     for (const [columnName, kind] of Object.entries(COLUMN_KIND_MAP)) {
       const val = String(row[columnName] || '').trim();
       if (val && val.length <= 150) {
         const key = `${kind}:${val.toLowerCase()}`;
-        if (!uniqueRecords.has(key)) {
-          uniqueRecords.set(key, { name: val, kind, source: 'seed', is_active: true });
-        }
+        if (!uniqueRecords.has(key)) uniqueRecords.set(key, { name: val, kind, source: 'seed', is_active: true });
       }
     }
-
-    // Process Skills column
     const skillVal = String(row.SKILLS || '').trim();
     if (skillVal && skillVal.length <= 150) {
       let kind = null;
-      if (SOFT_SKILL_NAMES.has(skillVal)) kind = 'SOFT_SKILL';
-      else if (HARD_SKILL_NAMES.has(skillVal)) kind = 'HARD_SKILL';
-
+      if (SOFT_SKILLS.has(skillVal)) kind = 'SOFT_SKILL';
+      else if (HARD_SKILLS.has(skillVal)) kind = 'HARD_SKILL';
       if (kind) {
         const key = `${kind}:${skillVal.toLowerCase()}`;
-        if (!uniqueRecords.has(key)) {
-          uniqueRecords.set(key, { name: skillVal, kind, source: 'seed', is_active: true });
-        }
+        if (!uniqueRecords.has(key)) uniqueRecords.set(key, { name: skillVal, kind, source: 'seed', is_active: true });
       }
     }
   }
-
   const records = Array.from(uniqueRecords.values());
-  
-  // Chunking for large inserts
   const CHUNK_SIZE = 100;
   for (let i = 0; i < records.length; i += CHUNK_SIZE) {
-    const chunk = records.slice(i, i + CHUNK_SIZE);
-    await prisma.competency.createMany({
-      data: chunk,
-      skipDuplicates: true
-    });
+    await prisma.competency.createMany({ data: records.slice(i, i + CHUNK_SIZE), skipDuplicates: true });
   }
-
   console.log(`Successfully seeded ${records.length} competencies.`);
+}
+
+async function seedCollegesAndPrograms() {
+  console.log('Seeding colleges and programs...');
+  const colleges = [{ name: 'College of Computer Studies', code: 'CCS' }, { name: 'College of Business and Accountancy', code: 'CBA' }];
+  for (const c of colleges) await prisma.college.upsert({ where: { code: c.code }, update: {}, create: { name: c.name, code: c.code } });
+  const ccs = await prisma.college.findUnique({ where: { code: 'CCS' } });
+  const cba = await prisma.college.findUnique({ where: { code: 'CBA' } });
+  const programs = [
+    { name: 'Bachelor of Science in Information Technology', code: 'BSIT', college_id: ccs.id },
+    { name: 'Bachelor of Science in Computer Science', code: 'BSCS', college_id: ccs.id },
+    { name: 'Bachelor of Science in Business Administration', code: 'BSBA', college_id: cba.id },
+    { name: 'BSBA-Entrepreneurship', code: 'BSBA-ENTREP', college_id: cba.id }
+  ];
+  for (const p of programs) await prisma.program.upsert({ where: { code: p.code }, update: {}, create: { name: p.name, code: p.code, college_id: p.college_id } });
+}
+
+async function seedHistoricalAlumni() {
+  console.log('Seeding historical alumni data...');
+  if (!fs.existsSync(ALUMNI_DATA_FILE)) return;
+
+  const workbook = xlsx.readFile(ALUMNI_DATA_FILE);
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = xlsx.utils.sheet_to_json(sheet);
+  const programs = await prisma.program.findMany();
+  const programIdMap = Object.fromEntries(programs.map(p => [p.code, p.id]));
+  const defaultProgramId = programIdMap['BSIT'];
+  const degreeMap = { 'BSIT': 'BSIT', 'BSCS': 'BSCS', 'BSBA-Entrepreneurship': 'BSBA-ENTREP', 'BSBA': 'BSBA' };
+  const DEFAULT_PASSWORD_HASH = '$2b$10$LpYVvNn/Vp5C.M2Y.U8NreW.X7A7iZ6pGv9zZp5iJ1uV6n6J6M6mG';
+
+  // Historical Template
+  const historicalTemplate = await prisma.surveyTemplate.upsert({
+    where: { template_key: 'historical_import' },
+    update: {},
+    create: { template_key: 'historical_import', name: 'Historical Data Import', kind: 'FOLLOWUP', path_key: 'FOLLOWUP', is_active: false }
+  });
+
+  console.log(`Processing ${rows.length} records...`);
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    // Correct ID format: 25-0XXXX
+    const studentId = `25-${String(i + 1).padStart(5, '0')}`;
+    const firstName = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+    const lastName = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+    const programCode = degreeMap[row.Degree] || 'BSIT';
+    const programId = programIdMap[programCode] || defaultProgramId;
+    const isEmployable = row.Employability === 'Employable';
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            username: studentId,
+            password_hash: DEFAULT_PASSWORD_HASH,
+            role: 'ALUMNI',
+            email: `${studentId.replace('-', '')}@example.com`,
+            first_name: firstName,
+            last_name: lastName
+          }
+        });
+
+        const profile = await tx.alumniProfile.create({
+          data: { user_id: user.id, student_id: studentId, batch_year: parseInt(row['Year Graduated']) || 2020, current_program_id: programId }
+        });
+
+        const snapshot = await tx.academicSnapshot.create({
+          data: {
+            alumni_profile: { connect: { id: profile.id } },
+            program: { connect: { id: programId } },
+            gender: row.Gender || 'Other',
+            age: parseInt(row.Age) || 22,
+            year_graduated: parseInt(row['Year Graduated']) || 2020,
+            cgpa: parseFloat(row.CGPA) || 0,
+            prof_grade: parseFloat(row['Average Prof Grade']) || 0,
+            elec_grade: parseFloat(row['Average Elec Grade']) || 0,
+            ojt_grade: parseFloat(row['OJT Grade']) || 0,
+            leader_pos: row['Leadership POS'] === 'Yes',
+            act_member_pos: row['Act Member POS'] === 'Yes',
+            soft_skills_ave: parseFloat(row['Soft Skills Ave']) || 0,
+            hard_skills_ave: parseFloat(row['Hard Skills Ave']) || 0,
+            is_employable: isEmployable // Store the label directly
+          }
+        });
+
+        const submission = await tx.surveySubmission.create({
+          data: {
+            alumni_profile: { connect: { id: profile.id } },
+            academic_snapshot: { connect: { id: snapshot.id } },
+            template: { connect: { id: historicalTemplate.id } },
+            branch_path: 'FOLLOWUP',
+            status: 'COMPLETED',
+            submitted_at: new Date(`${row['Year Graduated'] || 2020}-01-01`)
+          }
+        });
+
+        if (row.Employability) {
+          await tx.employmentOutcome.create({
+            data: {
+              alumni_profile: { connect: { id: profile.id } },
+              submission: { connect: { id: submission.id } },
+              employment_status: isEmployable ? 'EMPLOYED' : 'UNEMPLOYED',
+              outcome_date: new Date(`${row['Year Graduated'] || 2020}-01-01`)
+            }
+          });
+        }
+      });
+    } catch (err) {
+      if (!err.message.includes('Unique constraint')) console.error(`Error seeding ${studentId}:`, err.message);
+    }
+    if ((i + 1) % 100 === 0) console.log(`Seeded ${i + 1} alumni...`);
+  }
 }
 
 async function main() {
   try {
+    await clearData();
     await seedCompetencies();
-    // Add other seeding functions here as needed
+    await seedCollegesAndPrograms();
+    await seedHistoricalAlumni();
   } catch (e) {
     console.error(e);
     process.exit(1);

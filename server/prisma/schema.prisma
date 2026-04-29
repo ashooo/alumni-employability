@@ -179,6 +179,9 @@ model AcademicSnapshot {
   ojt_grade        Decimal?  @db.Decimal(5, 2)
   leader_pos       Boolean?  @default(false)
   act_member_pos   Boolean?  @default(false)
+  soft_skills_ave  Decimal?  @db.Decimal(5, 2)
+  hard_skills_ave  Decimal?  @db.Decimal(5, 2)
+  is_employable    Boolean?  @default(false)
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 

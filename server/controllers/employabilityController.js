@@ -198,7 +198,11 @@ const submitEmployabilitySurvey = async (req, res) => {
 
     const stored = await persistEmployabilitySurvey({
       studentId: String(studentId),
-      academicData,
+      academicData: {
+        ...academicData,
+        soft_skills_ave: adjustedSoftAve,
+        hard_skills_ave: adjustedHardAve
+      },
       skillRatings,
       additionalAnswers: additionalAnswers || {},
       modelInput,

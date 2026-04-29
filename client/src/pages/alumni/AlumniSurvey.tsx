@@ -377,6 +377,7 @@ export default function AlumniSurvey() {
   );
   const [skillRatings, setSkillRatings] = useState<Record<number, number>>({});
   const [predictionResult, setPredictionResult] = useState<Prediction | null>(null);
+  const [academicProfileLoaded, setAcademicProfileLoaded] = useState(false);
 
   const syncSurveyStatus = (nextSurveyStatus: SurveyFlowStatus) => {
     setSurveyStatus(nextSurveyStatus);
@@ -560,6 +561,35 @@ export default function AlumniSurvey() {
             ...prev,
             degree_id: prev.degree_id || String(nextSurveyStatus.programId)
           }));
+        }
+
+        // Fetch academic profile from DB (auto-fill grades)
+        if (user?.username) {
+          try {
+            const academicResponse = await fetch(
+              `${API_URL}/prediction/employability/academic-profile/${user.username}`,
+              { headers }
+            );
+            if (academicResponse.ok) {
+              const profile = await academicResponse.json();
+              setAcademicData((prev) => ({
+                ...prev,
+                cgpa: String(profile.cgpa || ''),
+                prof_grade: String(profile.prof_grade || ''),
+                elec_grade: String(profile.elec_grade || ''),
+                ojt_grade: String(profile.ojt_grade || ''),
+                gender: profile.gender || prev.gender,
+                age: String(profile.age || ''),
+                year_graduated: String(profile.year_graduated || prev.year_graduated),
+                degree_id: String(profile.degree_id || prev.degree_id),
+                leader_pos: profile.leader_pos ?? prev.leader_pos,
+                act_member_pos: profile.act_member_pos ?? prev.act_member_pos
+              }));
+              setAcademicProfileLoaded(true);
+            }
+          } catch (err) {
+            console.error('Failed to fetch academic profile:', err);
+          }
         }
 
         await fetchLatestSubmission(token);
@@ -1120,10 +1150,10 @@ export default function AlumniSurvey() {
     const selectedSoftSkills = selectedCompetencies.SOFT_SKILL;
 
     const validateWizardStep = () => {
-      if (wizardStep === 1 && (!academicData.cgpa || !academicData.age || !academicData.degree_id)) {
+      if (wizardStep === 1 && !academicProfileLoaded) {
         toast({
-          title: 'Validation Error',
-          description: 'Please fill in the required academic details.'
+          title: 'Loading',
+          description: 'Academic data is still loading. Please wait.'
         });
         return false;
       }
@@ -1218,108 +1248,44 @@ export default function AlumniSurvey() {
             <div className="space-y-6 flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label>Gender</Label>
-                  <Select
-                    value={academicData.gender}
-                    onValueChange={(value) => setAcademicData((prev) => ({ ...prev, gender: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Gender" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Male">Male</SelectItem>
-                      <SelectItem value="Female">Female</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-muted-foreground">Gender</Label>
+                  <Input value={academicData.gender || 'N/A'} disabled className="bg-muted/50" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Age</Label>
+                  <Label className="text-muted-foreground">Age</Label>
+                  <Input value={academicData.age || 'N/A'} disabled className="bg-muted/50" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground">Degree Program</Label>
                   <Input
-                    type="number"
-                    placeholder="e.g. 22"
-                    value={academicData.age}
-                    onChange={(event) =>
-                      setAcademicData((prev) => ({ ...prev, age: event.target.value }))
+                    value={
+                      availableDegrees.find((d) => String(d.id) === academicData.degree_id)?.name ||
+                      academicData.degree_id ||
+                      'N/A'
                     }
+                    disabled
+                    className="bg-muted/50"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Degree Program</Label>
-                  <Select
-                    value={academicData.degree_id}
-                    onValueChange={(value) =>
-                      setAcademicData((prev) => ({ ...prev, degree_id: value }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Degree" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableDegrees.map((degree) => (
-                        <SelectItem key={degree.id} value={String(degree.id)}>
-                          {degree.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-muted-foreground">Overall CGPA</Label>
+                  <Input value={academicData.cgpa || 'N/A'} disabled className="bg-muted/50" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Overall CGPA</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="e.g. 1.25"
-                    value={academicData.cgpa}
-                    onChange={(event) =>
-                      setAcademicData((prev) => ({ ...prev, cgpa: event.target.value }))
-                    }
-                  />
+                  <Label className="text-muted-foreground">Average Prof Grade</Label>
+                  <Input value={academicData.prof_grade || 'N/A'} disabled className="bg-muted/50" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Average Prof Grade</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={academicData.prof_grade}
-                    onChange={(event) =>
-                      setAcademicData((prev) => ({ ...prev, prof_grade: event.target.value }))
-                    }
-                  />
+                  <Label className="text-muted-foreground">Average Elective Grade</Label>
+                  <Input value={academicData.elec_grade || 'N/A'} disabled className="bg-muted/50" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Average Elective Grade</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={academicData.elec_grade}
-                    onChange={(event) =>
-                      setAcademicData((prev) => ({ ...prev, elec_grade: event.target.value }))
-                    }
-                  />
+                  <Label className="text-muted-foreground">OJT Grade</Label>
+                  <Input value={academicData.ojt_grade || 'N/A'} disabled className="bg-muted/50" />
                 </div>
                 <div className="space-y-2">
-                  <Label>OJT Grade</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={academicData.ojt_grade}
-                    onChange={(event) =>
-                      setAcademicData((prev) => ({ ...prev, ojt_grade: event.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Year Graduated</Label>
-                  <Input
-                    type="number"
-                    value={academicData.year_graduated}
-                    onChange={(event) =>
-                      setAcademicData((prev) => ({
-                        ...prev,
-                        year_graduated: event.target.value
-                      }))
-                    }
-                  />
+                  <Label className="text-muted-foreground">Year Graduated</Label>
+                  <Input value={academicData.year_graduated || 'N/A'} disabled className="bg-muted/50" />
                 </div>
               </div>
               <div className="flex flex-col gap-4 pt-4 border-t">

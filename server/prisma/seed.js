@@ -4,6 +4,7 @@ const path = require('path');
 const xlsx = require('xlsx');
 
 const prisma = new PrismaClient();
+const { createPlaceholderPasswordHash } = require('../utils/refactorAuth');
 
 const COMPETENCY_FILE = path.resolve(__dirname, '../../ml/data/competency_compilation.csv');
 const ALUMNI_DATA_FILE = path.resolve(__dirname, '../../ml/data/processed/student-dataset-merged.csv');
@@ -105,7 +106,7 @@ async function seedHistoricalAlumni() {
   const programIdMap = Object.fromEntries(programs.map(p => [p.code, p.id]));
   const defaultProgramId = programIdMap['BSIT'];
   const degreeMap = { 'BSIT': 'BSIT', 'BSCS': 'BSCS', 'BSBA-Entrepreneurship': 'BSBA-ENTREP', 'BSBA': 'BSBA' };
-  const DEFAULT_PASSWORD_HASH = '$2b$10$LpYVvNn/Vp5C.M2Y.U8NreW.X7A7iZ6pGv9zZp5iJ1uV6n6J6M6mG';
+
 
   // Historical Template
   const historicalTemplate = await prisma.surveyTemplate.upsert({
@@ -127,11 +128,12 @@ async function seedHistoricalAlumni() {
     const isEmployable = row.Employability === 'Employable';
 
     try {
+      const passwordHash = await createPlaceholderPasswordHash(studentId);
       await prisma.$transaction(async (tx) => {
         const user = await tx.user.create({
           data: {
             username: studentId,
-            password_hash: DEFAULT_PASSWORD_HASH,
+            password_hash: passwordHash,
             role: 'ALUMNI',
             email: `${studentId.replace('-', '')}@example.com`,
             first_name: firstName,
@@ -140,7 +142,13 @@ async function seedHistoricalAlumni() {
         });
 
         const profile = await tx.alumniProfile.create({
-          data: { user_id: user.id, student_id: studentId, batch_year: parseInt(row['Year Graduated']) || 2020, current_program_id: programId }
+          data: {
+            user_id: user.id,
+            student_id: studentId,
+            batch_year: parseInt(row['Year Graduated']) || 2020,
+            current_program_id: programId,
+            lifecycle_status: 'PENDING'
+          }
         });
 
         const snapshot = await tx.academicSnapshot.create({

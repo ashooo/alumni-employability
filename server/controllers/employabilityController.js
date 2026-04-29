@@ -80,10 +80,6 @@ const ensureSubmissionAccess = (req, res, studentId) => {
 
 const buildModelInput = (academicData, degreeName, hardAve, softAve) => {
   return {
-    Gender: academicData.gender,
-    Age: Number.parseInt(academicData.age, 10),
-    Degree: degreeName || 'Unknown',
-    'Year Graduated': Number.parseInt(academicData.year_graduated, 10),
     CGPA: parseNumeric(academicData.cgpa),
     'Average Prof Grade': parseNumeric(academicData.prof_grade),
     'Average Elec Grade': parseNumeric(academicData.elec_grade),
@@ -95,11 +91,68 @@ const buildModelInput = (academicData, degreeName, hardAve, softAve) => {
   };
 };
 
+/**
+ * Fetch an alumni's academic snapshot from the DB.
+ * Returns the latest snapshot with program info for display on the survey.
+ */
+const getAcademicProfile = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    if (!ensureSubmissionAccess(req, res, studentId)) {
+      return;
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+
+    const alumniProfile = await refactorPrisma.alumniProfile.findFirst({
+      where: { student_id: String(studentId) },
+      include: {
+        academic_snapshots: {
+          orderBy: { created_at: 'desc' },
+          take: 1,
+          include: { program: true }
+        },
+        user: { select: { first_name: true, last_name: true } }
+      }
+    });
+
+    if (!alumniProfile) {
+      return res.status(404).json({ error: 'Alumni profile not found' });
+    }
+
+    const snapshot = alumniProfile.academic_snapshots[0];
+    if (!snapshot) {
+      return res.status(404).json({ error: 'No academic record found for this alumni' });
+    }
+
+    return res.json({
+      cgpa: Number(snapshot.cgpa) || 0,
+      prof_grade: Number(snapshot.prof_grade) || 0,
+      elec_grade: Number(snapshot.elec_grade) || 0,
+      ojt_grade: Number(snapshot.ojt_grade) || 0,
+      gender: snapshot.gender || '',
+      age: snapshot.age || 0,
+      year_graduated: snapshot.year_graduated || new Date().getFullYear(),
+      degree_id: snapshot.program_id || alumniProfile.current_program_id,
+      degree_name: snapshot.program?.name || '',
+      leader_pos: Boolean(snapshot.leader_pos),
+      act_member_pos: Boolean(snapshot.act_member_pos),
+      student_name: `${alumniProfile.user?.first_name || ''} ${alumniProfile.user?.last_name || ''}`.trim()
+    });
+  } catch (error) {
+    console.error('Get academic profile error:', error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || 'Internal server error'
+    });
+  }
+};
+
 const submitEmployabilitySurvey = async (req, res) => {
   try {
     const { studentId, academicData, skillRatings, additionalAnswers } = req.body;
 
-    if (!studentId || !academicData || !Array.isArray(skillRatings)) {
+    if (!studentId || !Array.isArray(skillRatings)) {
       return res.status(400).json({ error: 'Missing required survey data' });
     }
 
@@ -109,26 +162,46 @@ const submitEmployabilitySurvey = async (req, res) => {
 
     const refactorPrisma = requireRefactorPrisma();
 
-    const user = await refactorPrisma.user.findUnique({
-      where: { username: String(studentId) }
+    // Fetch the alumni profile + latest academic snapshot from DB (source of truth)
+    const alumniProfile = await refactorPrisma.alumniProfile.findFirst({
+      where: { student_id: String(studentId) },
+      include: {
+        user: true,
+        academic_snapshots: {
+          orderBy: { created_at: 'desc' },
+          take: 1,
+          include: { program: true }
+        }
+      }
     });
 
-    if (!user) {
-      return res.status(404).json({ error: 'User/Alumni record not found in refactor schema' });
+    if (!alumniProfile || !alumniProfile.user) {
+      return res.status(404).json({ error: 'Alumni record not found' });
     }
 
-    const degreeId = Number.parseInt(academicData.degree_id, 10);
-    if (!Number.isFinite(degreeId)) {
-      return res.status(400).json({ error: 'A valid degree/program is required' });
+    const snapshot = alumniProfile.academic_snapshots[0];
+    if (!snapshot) {
+      return res.status(404).json({ error: 'No academic record found. Contact admin.' });
     }
 
-    const program = await refactorPrisma.program.findUnique({
-      where: { id: degreeId }
-    });
-
+    const program = snapshot.program;
     if (!program) {
-      return res.status(400).json({ error: 'Selected degree/program does not exist in refactor schema' });
+      return res.status(400).json({ error: 'Program not found for academic record' });
     }
+
+    // Build academicData from DB, only leader_pos and act_member_pos come from user input
+    const dbAcademicData = {
+      cgpa: Number(snapshot.cgpa) || 0,
+      prof_grade: Number(snapshot.prof_grade) || 0,
+      elec_grade: Number(snapshot.elec_grade) || 0,
+      ojt_grade: Number(snapshot.ojt_grade) || 0,
+      gender: snapshot.gender || '',
+      age: snapshot.age || 0,
+      year_graduated: snapshot.year_graduated || new Date().getFullYear(),
+      degree_id: program.id,
+      leader_pos: academicData?.leader_pos === true || academicData?.leader_pos === 'Yes',
+      act_member_pos: academicData?.act_member_pos === true || academicData?.act_member_pos === 'Yes'
+    };
 
     const hardSkills = skillRatings.filter((skill) => skill.type === 'hard');
     const softSkills = skillRatings.filter((skill) => skill.type === 'soft');
@@ -160,7 +233,7 @@ const submitEmployabilitySurvey = async (req, res) => {
     );
 
     const modelInput = buildModelInput(
-      academicData,
+      dbAcademicData,
       program.name,
       adjustedHardAve,
       adjustedSoftAve
@@ -199,7 +272,7 @@ const submitEmployabilitySurvey = async (req, res) => {
     const stored = await persistEmployabilitySurvey({
       studentId: String(studentId),
       academicData: {
-        ...academicData,
+        ...dbAcademicData,
         soft_skills_ave: adjustedSoftAve,
         hard_skills_ave: adjustedHardAve
       },
@@ -295,6 +368,7 @@ const testPrediction = async (req, res) => {
 };
 
 module.exports = {
+  getAcademicProfile,
   submitEmployabilitySurvey,
   getLatestPrediction,
   testPrediction

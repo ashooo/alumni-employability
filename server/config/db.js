@@ -4,15 +4,6 @@ const dotenv = require('dotenv');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const refactorEnvPath = path.resolve(__dirname, '../.env.refactor');
-const refactorExamplePath = path.resolve(__dirname, '../.env.refactor.example');
-
-if (fs.existsSync(refactorEnvPath)) {
-  dotenv.config({ path: refactorEnvPath, override: false });
-} else if (fs.existsSync(refactorExamplePath)) {
-  dotenv.config({ path: refactorExamplePath, override: false });
-}
-
 let PrismaClient;
 let prismaClientLoadError = null;
 let prisma = null;
@@ -31,10 +22,10 @@ const getDatabaseSetupStatus = () => {
     };
   }
 
-  if (!process.env.DATABASE_URL_REFACTOR) {
+  if (!process.env.DATABASE_URL) {
     return {
       ready: false,
-      message: 'Set `DATABASE_URL_REFACTOR` in `server/.env.refactor` or export it before starting the server.'
+      message: 'Set `DATABASE_URL` in `server/.env` or export it before starting the server.'
     };
   }
 
@@ -55,7 +46,7 @@ const getPrisma = () => {
     prisma = new PrismaClient({
       datasources: {
         db: {
-          url: process.env.DATABASE_URL_REFACTOR
+          url: process.env.DATABASE_URL
         }
       }
     });
@@ -67,7 +58,7 @@ const getPrisma = () => {
 module.exports = {
   getPrisma,
   getDatabaseSetupStatus,
-  // Backward-compatible aliases while refactor-era controller names are still in place.
+  // Temporary aliases for backward compatibility during refactor
   getRefactorPrisma: getPrisma,
   getRefactorSetupStatus: getDatabaseSetupStatus
 };

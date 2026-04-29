@@ -2,7 +2,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { generateOTP, sendOTPEmail } = require('../config/email');
 const dns = require('node:dns').promises;
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 const { getSurveyFlowStatus } = require('../services/surveyDataService');
 const {
   normalizeUserRole,
@@ -47,7 +47,7 @@ const maskEmail = (email = '') => {
 };
 
 const requireRefactorPrisma = () => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     const error = new Error(setupStatus.message);
@@ -55,7 +55,7 @@ const requireRefactorPrisma = () => {
     throw error;
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const isPlaceholderAccount = async (user) => {

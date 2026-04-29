@@ -31,7 +31,6 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
   student_id:  ['student_id', 'studentid', 'student id', 'id'],
   first_name:  ['first_name', 'firstname', 'first name'],
   last_name:   ['last_name', 'lastname', 'last name'],
-  email:       ['email', 'email address'],
   program:     ['program', 'course', 'program name'],
   batch_year:  ['batch_year', 'batchyear', 'batch year', 'batch', 'year'],
 };
@@ -213,7 +212,7 @@ export default function AdminUsers() {
   const [showImportDetails, setShowImportDetails] = useState(false);
   const [sortKey, setSortKey] = useState<'name' | 'status' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [statusQuickFilter, setStatusQuickFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [statusQuickFilter, setStatusQuickFilter] = useState<'all' | 'active' | 'inactive'>('active');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -383,7 +382,13 @@ export default function AdminUsers() {
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && !data.error) {
-        setAlumniRecords(prev => prev.filter(a => a.student_id !== alumniToDelete));
+        setAlumniRecords(prev =>
+          prev.map(a =>
+            a.student_id === alumniToDelete
+              ? { ...a, status: 'inactive' }
+              : a
+          )
+        );
         setShowDeleteConfirm(false); setAlumniToDelete(null);
         toast({ title: 'Account Deactivated', description: 'The record is now hidden from active lists.' });
       } else throw new Error(data.error || 'Deactivation failed');

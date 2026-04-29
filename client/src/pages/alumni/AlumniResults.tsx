@@ -157,17 +157,59 @@ const getJobMatchScorePercent = (match: JobMatch) => {
   return Math.max(0, Math.min(100, Math.round(rawScore * 100)));
 };
 
-const needsJobMatchingRefresh = (prediction: JobMatchingPrediction | null) => {
-  if (!prediction?.matches?.length) {
-    return false;
+const parseNumericValue = (value: unknown) => {
+  const numeric = Number.parseFloat(String(value ?? '0'));
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return numeric;
+};
+
+const toGradePercent = (value: unknown) => {
+  const numeric = parseNumericValue(value);
+
+  // If grade is provided on a 1.0-5.0 scale, convert to percentage used by model.
+  if (numeric > 0 && numeric <= 5) {
+    return Math.max(0, Math.min(100, 100 - (numeric - 1) * 12.5));
   }
 
-  return prediction.matches.some(
-    (match) =>
-      typeof match.display_score !== 'number' ||
-      typeof match.candidate_match_percentage !== 'number' ||
-      typeof match.matched_competency_count !== 'number'
-  );
+  // If already percentage-like, keep as-is.
+  return Math.max(0, Math.min(100, numeric));
+};
+
+const toSkillPercent = (value: unknown) => {
+  const numeric = parseNumericValue(value);
+
+  // Skill sliders are 1-10 in the survey; normalize to percentage.
+  if (numeric > 0 && numeric <= 10) {
+    return Math.max(0, Math.min(100, numeric * 10));
+  }
+
+  return Math.max(0, Math.min(100, numeric));
+};
+
+const toCgpaPercent = (value: unknown) => {
+  const numeric = parseNumericValue(value);
+
+  // Lower CGPA values (closer to 1.0) are stronger in this grading system.
+  if (numeric > 0 && numeric <= 5) {
+    return Math.max(0, Math.min(100, ((5 - numeric) / 4) * 100));
+  }
+
+  return Math.max(0, Math.min(100, numeric));
+};
+
+const needsJobMatchingRefresh = (prediction: JobMatchingPrediction | null) => {
+  if (!prediction) {
+    return true;
+  }
+
+  if (!prediction.matches?.length) {
+    return true;
+  }
+
+  // Refresh once if the latest saved output came from the stricter-filter era.
+  return Boolean(prediction.filters);
 };
 
 export default function AlumniResults() {
@@ -344,11 +386,11 @@ export default function AlumniResults() {
     { label: 'Hard Skills Average', value: snapshot['Hard Skills Ave'] || 'Not provided' }
   ];
   const radarData = [
-    { skill: 'CGPA', value: (parseFloat(snapshot.CGPA) || 0) * 20 },
-    { skill: 'Prof Grade', value: (parseFloat(snapshot['Average Prof Grade']) || 0) * 20 },
-    { skill: 'Soft Skills', value: (snapshot['Soft Skills Ave'] || 0) * 20 },
-    { skill: 'Hard Skills', value: (snapshot['Hard Skills Ave'] || 0) * 20 },
-    { skill: 'OJT', value: (parseFloat(snapshot['OJT Grade']) || 0) * 20 }
+    { skill: 'CGPA', value: toCgpaPercent(snapshot.CGPA) },
+    { skill: 'Prof Grade', value: toGradePercent(snapshot['Average Prof Grade']) },
+    { skill: 'Soft Skills', value: toSkillPercent(snapshot['Soft Skills Ave']) },
+    { skill: 'Hard Skills', value: toSkillPercent(snapshot['Hard Skills Ave']) },
+    { skill: 'OJT', value: toGradePercent(snapshot['OJT Grade']) }
   ];
 
   return (
@@ -361,7 +403,10 @@ export default function AlumniResults() {
             {new Date(prediction.created_at).toLocaleDateString()}
           </p>
         </div>
-        <Button variant="outline" onClick={() => navigate('/app/alumni/survey')}>
+        <Button
+          variant="outline"
+          onClick={() => navigate('/app/alumni/survey', { state: { retake: true } })}
+        >
           Retake Assessment
         </Button>
       </div>
@@ -537,7 +582,7 @@ export default function AlumniResults() {
                       <div>
                         <p className="font-bold">{job.title}</p>
                         <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                          Quality-filtered by live job-matching model
+                          Ranked by live job-matching model
                         </p>
                       </div>
                       <span className="text-sm font-black text-primary">{scorePercent}%</span>
@@ -564,16 +609,11 @@ export default function AlumniResults() {
 
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                       <span>
-                        Candidate overlap:{' '}
+                        Overlap:{' '}
                         {Math.round(job.candidate_match_percentage || job.match_percentage || 0)}%
                       </span>
                       <span>Cosine score: {Math.round((job.cosine_score || 0) * 100)}%</span>
-                      <span>
-                        Matched skills: {job.matched_competency_count || matchedCompetencies.length}
-                      </span>
-                      <span>
-                        Role coverage: {Math.round(job.occupation_match_percentage || 0)}%
-                      </span>
+                      <span>Matched skills: {job.matched_competency_count || matchedCompetencies.length}</span>
                     </div>
                   </motion.div>
                 );
@@ -581,10 +621,9 @@ export default function AlumniResults() {
             </div>
           ) : (
             <div className="rounded-xl border border-dashed p-6 text-center">
-              <p className="font-medium">No strong job matches passed the quality filter</p>
+              <p className="font-medium">No job matches available yet</p>
               <p className="mt-2 text-sm text-muted-foreground">
-                {jobMatchingError ||
-                  'The matcher is now rejecting weak roles with low similarity or overlap for this profile.'}
+                {jobMatchingError || 'We could not load role matches for this profile yet. Please try again.'}
               </p>
             </div>
           )}

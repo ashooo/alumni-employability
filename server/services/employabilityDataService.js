@@ -1,4 +1,4 @@
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 
 const REFACTOR_TEMPLATE_KEYS = {
   EMPLOYABILITY_ASSESSMENT: 'employability_assessment',
@@ -147,7 +147,7 @@ const convertAnswer = (questionType, rawAnswer) => {
 const getQuestionKey = (questionId) => `question_${questionId}`;
 
 const requireRefactorPrisma = () => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     const error = new Error(setupStatus.message);
@@ -155,7 +155,7 @@ const requireRefactorPrisma = () => {
     throw error;
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const ensureTemplates = async (refactorPrisma) => {

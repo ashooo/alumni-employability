@@ -1,4 +1,4 @@
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 const { getJobMatchingRuntimeStatus } = require('./jobMatchingDataService');
 
 const DEFAULT_SURVEY_VERSION = 1;
@@ -92,7 +92,7 @@ const parseOptionalInt = (value) => {
 };
 
 const requireRefactorPrisma = () => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     const error = new Error(setupStatus.message);
@@ -100,7 +100,7 @@ const requireRefactorPrisma = () => {
     throw error;
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const buildEmptyCompetencyCounts = () =>

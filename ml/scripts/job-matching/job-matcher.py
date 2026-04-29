@@ -52,10 +52,6 @@ PHYSICAL_SECURITY_HINTS = {"guard", "patrol", "police", "officer", "watch"}
 TRANSPORT_HINTS = {"bridge", "lock", "tender", "traffic", "controller", "dispatcher"}
 MANUFACTURING_HINTS = {"validation", "quality", "production", "processing", "mechanical"}
 COMMON_STOPWORDS = {"and", "or", "the", "for", "with", "into", "from", "that", "this"}
-DEFAULT_MIN_COSINE_SCORE = 0.55
-DEFAULT_MIN_CANDIDATE_MATCH_PERCENTAGE = 20.0
-DEFAULT_MIN_MATCHED_COMPETENCIES = 3
-DEFAULT_MIN_DISPLAY_SCORE = 0.45
 
 
 def _normalize_text(value: str) -> str:
@@ -341,61 +337,17 @@ class JobMatcher:
             "domain_penalty": float(domain_penalty),
         }
 
-    def _calibrate_display_score(
-        self,
-        cosine_score: float,
-        rerank: Dict[str, float],
-        candidate_match_ratio: float
-    ) -> float:
-        display_score = (
-            0.45 * max(0.0, min(cosine_score, 1.0)) +
-            0.15 * max(0.0, min(rerank["token_overlap"], 1.0)) +
-            0.10 * max(0.0, min(rerank["title_overlap"], 1.0)) +
-            0.10 * max(0.0, min(rerank["core_overlap"], 1.0)) +
-            0.05 * max(0.0, min(rerank["tech_alignment"], 1.0)) +
-            0.15 * max(0.0, min(candidate_match_ratio, 1.0))
-        )
-        return float(max(0.0, min(display_score, 1.0)))
-
-    def _passes_quality_thresholds(
-        self,
-        result: Dict,
-        min_cosine_score: float,
-        min_candidate_match_percentage: float,
-        min_matched_competencies: int,
-        min_display_score: float
-    ) -> bool:
-        return (
-            result["cosine_score"] >= min_cosine_score and
-            result["candidate_match_percentage"] >= min_candidate_match_percentage and
-            result["matched_competency_count"] >= min_matched_competencies and
-            result["display_score"] >= min_display_score
-        )
-
-    def match(
-        self,
-        candidate_skills: List[str],
-        top_n: int = 10,
-        include_overlap: bool = True,
-        min_cosine_score: float = DEFAULT_MIN_COSINE_SCORE,
-        min_candidate_match_percentage: float = DEFAULT_MIN_CANDIDATE_MATCH_PERCENTAGE,
-        min_matched_competencies: int = DEFAULT_MIN_MATCHED_COMPETENCIES,
-        min_display_score: float = DEFAULT_MIN_DISPLAY_SCORE
-    ) -> List[Dict]:
+    def match(self, candidate_skills: List[str], top_n: int = 10, include_overlap: bool = True) -> List[Dict]:
         if not candidate_skills:
             raise ValueError("candidate_skills cannot be empty")
 
         top_n = max(1, int(top_n))
         candidate_embedding = self._embed_candidate(candidate_skills)
 
-        initial_k = min(
-            self.index.ntotal,
-            max(top_n, top_n * self.rerank_multiplier, top_n + 20)
-        )
+        initial_k = min(self.index.ntotal, max(top_n, top_n * self.rerank_multiplier))
         scores, indices = self.index.search(candidate_embedding, initial_k)
 
         results = []
-        candidate_term_count = max(1, len(_normalize_set(candidate_skills)))
         for cosine_score, idx in zip(scores[0], indices[0]):
             if idx < 0 or idx >= len(self.metadata):
                 continue
@@ -423,63 +375,23 @@ class JobMatcher:
 
             if include_overlap:
                 overlap = self._compute_overlap(candidate_skills, all_comp)
-                matched_count = len(overlap["matched"])
-                occupation_match_percentage = (
-                    matched_count / len(all_comp) * 100
-                    if all_comp else 0
-                )
-                candidate_match_percentage = matched_count / candidate_term_count * 100
-                display_score = self._calibrate_display_score(
-                    float(cosine_score),
-                    rerank,
-                    candidate_match_percentage / 100
-                )
-
                 result["matched_competencies"] = overlap["matched"]
                 result["missing_competencies"] = overlap["missing"]
-                result["matched_competency_count"] = matched_count
-                result["occupation_match_percentage"] = float(occupation_match_percentage)
-                result["candidate_match_percentage"] = float(candidate_match_percentage)
-                result["match_percentage"] = float(candidate_match_percentage)
-                result["display_score"] = display_score
-
-                if not self._passes_quality_thresholds(
-                    result,
-                    min_cosine_score=min_cosine_score,
-                    min_candidate_match_percentage=min_candidate_match_percentage,
-                    min_matched_competencies=min_matched_competencies,
-                    min_display_score=min_display_score
-                ):
-                    continue
+                result["match_percentage"] = (
+                    len(overlap["matched"]) / len(all_comp) * 100
+                    if all_comp else 0
+                )
 
             results.append(result)
 
         results.sort(key=lambda r: r["final_score"], reverse=True)
         return results[:top_n]
 
-    def batch_match(
-        self,
-        candidates: List[Dict[str, List[str]]],
-        top_n: int = 10,
-        min_cosine_score: float = DEFAULT_MIN_COSINE_SCORE,
-        min_candidate_match_percentage: float = DEFAULT_MIN_CANDIDATE_MATCH_PERCENTAGE,
-        min_matched_competencies: int = DEFAULT_MIN_MATCHED_COMPETENCIES,
-        min_display_score: float = DEFAULT_MIN_DISPLAY_SCORE
-    ) -> List[List[Dict]]:
+    def batch_match(self, candidates: List[Dict[str, List[str]]], top_n: int = 10) -> List[List[Dict]]:
         all_results = []
         for candidate in candidates:
             skills = candidate.get("skills", [])
-            all_results.append(
-                self.match(
-                    skills,
-                    top_n=top_n,
-                    include_overlap=True,
-                    min_cosine_score=min_cosine_score,
-                    min_candidate_match_percentage=min_candidate_match_percentage,
-                    min_matched_competencies=min_matched_competencies,
-                    min_display_score=min_display_score
-                )
-            )
+            all_results.append(self.match(skills, top_n=top_n, include_overlap=True))
         return all_results
 
 

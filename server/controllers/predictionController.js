@@ -1,8 +1,8 @@
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 const { runMlScript } = require('../utils/mlRunner');
 
 const requireRefactorPrisma = () => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     const error = new Error(setupStatus.message);
@@ -10,7 +10,7 @@ const requireRefactorPrisma = () => {
     throw error;
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const isEmployedOutcome = (status) => {

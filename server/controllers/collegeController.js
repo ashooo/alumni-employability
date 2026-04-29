@@ -1,7 +1,7 @@
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 
 const requireRefactorPrisma = () => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     const error = new Error(setupStatus.message);
@@ -9,7 +9,7 @@ const requireRefactorPrisma = () => {
     throw error;
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const parseOptionalInt = (value) => {

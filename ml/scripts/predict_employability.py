@@ -12,11 +12,15 @@ warnings.filterwarnings("ignore")
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models" / "employability"
 
 def load_artifacts():
-    # Find the pkl file (might be random_forest.pkl or logistic_regression.pkl)
-    model_paths = list(MODEL_DIR.glob("*.pkl"))
-    model_path = next((p for p in model_paths if p.name in ["logistic_regression.pkl", "random_forest.pkl"]), None)
-    
-    if not model_path:
+    # Prefer logistic regression explicitly, then fallback to random forest if needed.
+    logistic_path = MODEL_DIR / "logistic_regression.pkl"
+    random_forest_path = MODEL_DIR / "random_forest.pkl"
+
+    if logistic_path.exists():
+        model_path = logistic_path
+    elif random_forest_path.exists():
+        model_path = random_forest_path
+    else:
         raise FileNotFoundError(f"Model file not found in {MODEL_DIR}")
         
     model = joblib.load(model_path)
@@ -45,6 +49,12 @@ def predict():
         
         # Reorder columns to match training features exactly
         df = df[feature_names]
+
+        # Ensure numeric columns are coercible before scaling/conversion.
+        numeric_cols = ['Age', 'Year Graduated', 'CGPA', 'Average Prof Grade', 'Average Elec Grade', 'OJT Grade', 'Soft Skills Ave', 'Hard Skills Ave']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
         
         # Convert 1.0-5.0 grades to 50-100% scale for model compatibility
         # Conversion: 1.0 -> 100%, 3.0 -> 75%, 5.0 -> 50%
@@ -53,14 +63,14 @@ def predict():
         for col in grade_cols:
             if col in df.columns:
                 # Only convert if the value looks like it's on the 1.0-5.0 scale
-                df[col] = df[col].apply(lambda x: 100.0 - (x - 1.0) * 12.5 if x <= 5.0 else x)
+                df[col] = df[col].apply(lambda x: 100.0 - (x - 1.0) * 12.5 if 0 < x <= 5.0 else x)
                 
         # Scale 1-10 skills to 10-100 scale for model compatibility
         skill_cols = ['Soft Skills Ave', 'Hard Skills Ave']
         for col in skill_cols:
             if col in df.columns:
                 # Only convert if the value is <= 10.0
-                df[col] = df[col].apply(lambda x: x * 10.0 if x <= 10.0 else x)
+                df[col] = df[col].apply(lambda x: x * 10.0 if 0 < x <= 10.0 else x)
 
         # Apply Categorical Encoders saved during training
         for col, le in cat_encoders.items():

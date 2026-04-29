@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const fs = require('fs');
 const path = require('path');
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 const { normalizeUserRole, normalizeUserRoleEnum } = require('../utils/refactorAuth');
 
 const createHttpError = (statusCode, message) => {
@@ -11,13 +11,13 @@ const createHttpError = (statusCode, message) => {
 };
 
 const requireRefactorPrisma = () => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     throw createHttpError(503, setupStatus.message);
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const parseOptionalInt = (value) => {

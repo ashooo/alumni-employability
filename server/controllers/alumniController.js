@@ -1,5 +1,5 @@
 const { generateOTP, sendOTPEmail } = require('../config/email');
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 const {
   getSurveyDefinition,
   getSurveyResponses,
@@ -43,7 +43,7 @@ setInterval(() => {
 }, 30 * 60 * 1000);
 
 const requireRefactorPrisma = () => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     const error = new Error(setupStatus.message);
@@ -51,7 +51,7 @@ const requireRefactorPrisma = () => {
     throw error;
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const normalizeEmploymentStatus = (status) => {

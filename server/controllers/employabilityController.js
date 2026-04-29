@@ -1,4 +1,4 @@
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 const { runMlScript, resolvePythonExecutable } = require('../utils/mlRunner');
 const {
   getLatestRefactorPrediction,
@@ -45,7 +45,7 @@ const validateSelectionCount = (count, minimum, maximum, label) => {
 };
 
 const requireRefactorPrisma = () => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     const error = new Error(setupStatus.message);
@@ -53,7 +53,7 @@ const requireRefactorPrisma = () => {
     throw error;
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const ensureSubmissionAccess = (req, res, studentId) => {

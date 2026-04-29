@@ -1,4 +1,4 @@
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 
 const COMPETENCY_KIND_ALIASES = {
   SKILL: ['SOFT_SKILL', 'HARD_SKILL'],
@@ -78,7 +78,7 @@ const parseActiveFilter = (activeQuery) => {
 };
 
 const requireRefactorPrisma = (res) => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     res.status(503).json({
@@ -88,7 +88,7 @@ const requireRefactorPrisma = (res) => {
     return null;
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const getSkills = async (req, res) => {

@@ -1,6 +1,6 @@
 const xlsx = require('xlsx');
 const fs = require('fs');
-const { getRefactorPrisma, getRefactorSetupStatus } = require('../config/db');
+const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 const {
   createPlaceholderPasswordHash,
   isPlaceholderPasswordHash
@@ -10,8 +10,25 @@ const VALID_IMPORT_STATUSES = new Set(['active', 'inactive', 'graduated']);
 const EMPLOYED_STATUSES = ['EMPLOYED', 'SELF_EMPLOYED', 'FREELANCER'];
 const UNKNOWN_COLLEGE_CACHE_KEY = '__unknown__';
 
+const normalizeGenderBucket = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === 'female' || normalized === 'f' || normalized.includes('female')) {
+    return 'female';
+  }
+
+  if (normalized === 'male' || normalized === 'm' || normalized.includes('male')) {
+    return 'male';
+  }
+
+  return null;
+};
+
 const requireRefactorPrisma = () => {
-  const setupStatus = getRefactorSetupStatus();
+  const setupStatus = getDatabaseSetupStatus();
 
   if (!setupStatus.ready) {
     const error = new Error(setupStatus.message);
@@ -19,7 +36,7 @@ const requireRefactorPrisma = () => {
     throw error;
   }
 
-  return getRefactorPrisma();
+  return getPrisma();
 };
 
 const normalizeString = (value) => String(value || '').trim();
@@ -59,7 +76,9 @@ const mapImportStatusToLifecycle = (status, hasExistingUser) => {
     return 'INACTIVE';
   }
 
-  return hasExistingUser ? 'ACTIVE' : 'INACTIVE';
+  // Default unknown/blank imports to ACTIVE so newly imported alumni are usable
+  // unless the file explicitly marks them inactive/graduated.
+  return 'ACTIVE';
 };
 
 const mapEmploymentStatusFilter = (status) => {
@@ -807,6 +826,75 @@ const getBatchTrendData = async (refactorPrisma, alumniWhere) => {
     employedRows.map((row) => [row.batch_year, row._count._all || 0])
   );
 
+  const trackedYears = totalRowsDesc.map((row) => row.batch_year);
+
+  const profilesWithGender = trackedYears.length
+    ? await refactorPrisma.alumniProfile.findMany({
+        where: combineWhere(alumniWhere, {
+          batch_year: {
+            in: trackedYears
+          }
+        }),
+        select: {
+          batch_year: true,
+          employment_outcomes: {
+            where: {
+              employment_status: {
+                in: EMPLOYED_STATUSES
+              }
+            },
+            select: {
+              id: true
+            },
+            take: 1
+          },
+          academic_snapshots: {
+            orderBy: {
+              created_at: 'desc'
+            },
+            select: {
+              gender: true
+            },
+            take: 1
+          }
+        }
+      })
+    : [];
+
+  const genderBucketsByYear = new Map();
+  for (const profile of profilesWithGender) {
+    const year = profile.batch_year;
+    if (!genderBucketsByYear.has(year)) {
+      genderBucketsByYear.set(year, {
+        maleTotal: 0,
+        maleEmployed: 0,
+        femaleTotal: 0,
+        femaleEmployed: 0
+      });
+    }
+
+    const bucket = genderBucketsByYear.get(year);
+    const latestGender = profile.academic_snapshots?.[0]?.gender;
+    const gender = normalizeGenderBucket(latestGender);
+    if (!gender) {
+      continue;
+    }
+
+    const isEmployed = profile.employment_outcomes.length > 0;
+
+    if (gender === 'male') {
+      bucket.maleTotal += 1;
+      if (isEmployed) {
+        bucket.maleEmployed += 1;
+      }
+    } else if (gender === 'female') {
+      bucket.femaleTotal += 1;
+      if (isEmployed) {
+        bucket.femaleEmployed += 1;
+      }
+    }
+  }
+
   return totalRowsDesc
     .slice()
     .sort((left, right) => left.batch_year - right.batch_year)
@@ -815,8 +903,20 @@ const getBatchTrendData = async (refactorPrisma, alumniWhere) => {
       const employed = employedMap.get(row.batch_year) || 0;
       const rate =
         total === 0 ? 0 : Number(((employed / total) * 100).toFixed(1));
-      const male = Number(Math.max(0, Math.min(100, rate - 5)).toFixed(1));
-      const female = Number(Math.max(0, Math.min(100, rate + 5)).toFixed(1));
+      const genderBucket = genderBucketsByYear.get(row.batch_year) || {
+        maleTotal: 0,
+        maleEmployed: 0,
+        femaleTotal: 0,
+        femaleEmployed: 0
+      };
+      const male =
+        genderBucket.maleTotal === 0
+          ? 0
+          : Number(((genderBucket.maleEmployed / genderBucket.maleTotal) * 100).toFixed(1));
+      const female =
+        genderBucket.femaleTotal === 0
+          ? 0
+          : Number(((genderBucket.femaleEmployed / genderBucket.femaleTotal) * 100).toFixed(1));
 
       return {
         year: row.batch_year,
@@ -1366,15 +1466,19 @@ const getAnalytics = async (req, res) => {
 
     const programAggregates = await getProgramAggregates(refactorPrisma, alumniWhere);
     const trendRows = await getBatchTrendData(refactorPrisma, alumniWhere);
+    const employmentTrend =
+      trendRows.length >= 2
+        ? Number((trendRows[trendRows.length - 1].rate - trendRows[trendRows.length - 2].rate).toFixed(1))
+        : 0;
 
     return res.json({
       kpis: {
         totalAlumni,
-        totalAlumniTrend: 5,
+        totalAlumniTrend: 0,
         participationRate,
-        participationTrend: 2.1,
+        participationTrend: 0,
         employmentRate,
-        employmentTrend: 1.5,
+        employmentTrend,
         degreeAlignment
       },
       programData: programAggregates.map((row) => ({

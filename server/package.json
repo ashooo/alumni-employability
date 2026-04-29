@@ -12,9 +12,8 @@
     "prisma:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "prisma:push": "prisma db push --schema prisma/schema.prisma",
-    "legacy:sync-core": "node scripts/syncLegacyCore.js",
-    "seed:competencies": "node scripts/seedCompetencyCompilation.js"
-  },
+    "prisma:seed": "prisma db seed",
+    "seed:competencies": "node prisma/seed.js"
   "dependencies": {
     "alumni-employability": "file:..",
     "bcrypt": "^6.0.0",
@@ -24,7 +23,6 @@
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
-    "mysql2": "^3.6.0",
     "nodemailer": "^8.0.2",
     "xlsx": "^0.18.5"
   },

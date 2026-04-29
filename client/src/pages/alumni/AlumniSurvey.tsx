@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -93,6 +93,15 @@ interface Prediction {
   label: string;
   confidence: number;
   model_type?: string;
+  input_snapshot?: Record<string, unknown>;
+  submission_summary?: {
+    competencies?: Array<{
+      id: number;
+      kind: CompetencyKind;
+      score?: number | null;
+      selected?: boolean;
+    }>;
+  } | null;
 }
 
 type SurveyStage = 'initial' | 'wizard' | 'employedPending' | 'completed' | 'finished';
@@ -216,6 +225,28 @@ const createInitialViewState = (): Record<CompetencyKind, CompetencySelectionVie
   TECHNOLOGY: 'all'
 });
 
+const createInitialAcademicData = (degreeId = '') => ({
+  cgpa: '',
+  prof_grade: '',
+  elec_grade: '',
+  ojt_grade: '',
+  gender: '',
+  age: '',
+  year_graduated: new Date().getFullYear().toString(),
+  leader_pos: false,
+  act_member_pos: false,
+  degree_id: degreeId
+});
+
+const toTextValue = (value: unknown) => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return String(value);
+};
+
+const toBooleanFromYesNo = (value: unknown) => String(value).toLowerCase() === 'yes';
+
 const mapCompetencyKindToSubmissionType = (kind: CompetencyKind) => {
   switch (kind) {
     case 'HARD_SKILL':
@@ -318,6 +349,9 @@ export default function AlumniSurvey() {
   const { user, completeSurvey, updateUser } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = location.state as { retake?: boolean } | null;
+  const [retakeMode, setRetakeMode] = useState(Boolean(locationState?.retake));
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -331,18 +365,7 @@ export default function AlumniSurvey() {
   const [answers, setAnswers] = useState<Record<string, string | string[] | number>>({});
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [availableDegrees, setAvailableDegrees] = useState<Degree[]>([]);
-  const [academicData, setAcademicData] = useState({
-    cgpa: '',
-    prof_grade: '',
-    elec_grade: '',
-    ojt_grade: '',
-    gender: '',
-    age: '',
-    year_graduated: new Date().getFullYear().toString(),
-    leader_pos: false,
-    act_member_pos: false,
-    degree_id: ''
-  });
+  const [academicData, setAcademicData] = useState(createInitialAcademicData);
   const [selectedCompetencies, setSelectedCompetencies] = useState<Record<CompetencyKind, number[]>>(
     createInitialSelectionState
   );
@@ -361,6 +384,70 @@ export default function AlumniSurvey() {
       survey: nextSurveyStatus,
       surveyCompleted: Boolean(nextSurveyStatus.completed)
     });
+  };
+
+  const startRetakeWizard = ({
+    programId,
+    decisionQuestionId,
+    employmentAnswer,
+    latestPrediction,
+    competenciesCatalog
+  }: {
+    programId?: number | null;
+    decisionQuestionId?: number | null;
+    employmentAnswer?: string;
+    latestPrediction?: Prediction | null;
+    competenciesCatalog?: Competency[];
+  }) => {
+    const nextDegreeId = programId ? String(programId) : '';
+    const nextAnswers =
+      decisionQuestionId && employmentAnswer
+        ? { [String(decisionQuestionId)]: employmentAnswer }
+        : {};
+    const snapshot = latestPrediction?.input_snapshot || {};
+    const catalogIds = new Set((competenciesCatalog || []).map((competency) => competency.id));
+    const prefilledSelections = createInitialSelectionState();
+    const prefilledRatings: Record<number, number> = {};
+
+    for (const competency of latestPrediction?.submission_summary?.competencies || []) {
+      if (competency.selected === false || !prefilledSelections[competency.kind]) {
+        continue;
+      }
+
+      if (catalogIds.size > 0 && !catalogIds.has(competency.id)) {
+        continue;
+      }
+
+      prefilledSelections[competency.kind].push(competency.id);
+      if (
+        (competency.kind === 'HARD_SKILL' || competency.kind === 'SOFT_SKILL') &&
+        competency.score !== null &&
+        competency.score !== undefined
+      ) {
+        prefilledRatings[competency.id] = competency.score;
+      }
+    }
+
+    setWizardStep(1);
+    setPredictionResult(null);
+    setSelectedCompetencies(prefilledSelections);
+    setCompetencySearch(createInitialSearchState());
+    setCompetencyView(createInitialViewState());
+    setSkillRatings(prefilledRatings);
+    setAcademicData({
+      cgpa: toTextValue(snapshot.CGPA),
+      prof_grade: toTextValue(snapshot['Average Prof Grade']),
+      elec_grade: toTextValue(snapshot['Average Elec Grade']),
+      ojt_grade: toTextValue(snapshot['OJT Grade']),
+      gender: toTextValue(snapshot.Gender),
+      age: toTextValue(snapshot.Age),
+      year_graduated: toTextValue(snapshot['Year Graduated']) || new Date().getFullYear().toString(),
+      leader_pos: toBooleanFromYesNo(snapshot['Leadership POS']),
+      act_member_pos: toBooleanFromYesNo(snapshot['Act Member POS']),
+      degree_id: nextDegreeId
+    });
+    setAnswers(nextAnswers);
+    setSurveyStage('wizard');
   };
 
   const fetchSurveyStatus = async (token: string) => {
@@ -456,12 +543,16 @@ export default function AlumniSurvey() {
         const nextSurveyStatus: SurveyFlowStatus = await statusResponse.json();
         syncSurveyStatus(nextSurveyStatus);
 
-        if (competenciesResponse.ok) {
-          setAvailableCompetencies(await competenciesResponse.json());
+        const competenciesData: Competency[] = competenciesResponse.ok
+          ? await competenciesResponse.json()
+          : [];
+        if (competenciesData.length > 0) {
+          setAvailableCompetencies(competenciesData);
         }
 
-        if (degreesResponse.ok) {
-          setAvailableDegrees(await degreesResponse.json());
+        const degreesData: Degree[] = degreesResponse.ok ? await degreesResponse.json() : [];
+        if (degreesData.length > 0) {
+          setAvailableDegrees(degreesData);
         }
 
         if (nextSurveyStatus.programId) {
@@ -500,12 +591,37 @@ export default function AlumniSurvey() {
                 [String(decisionQuestion.id)]: employmentAnswer
               }));
             }
+
+            const canRetakeAssessment =
+              retakeMode &&
+              (
+                nextSurveyStatus.employmentStatus === 'UNEMPLOYED' ||
+                nextSurveyStatus.hasEmployabilityPrediction ||
+                nextSurveyStatus.hasEmployabilityAssessment
+              );
+
+            if (canRetakeAssessment) {
+              const latestPredictionForRetake = nextSurveyStatus.hasEmployabilityPrediction
+                ? await fetchLatestPrediction(token)
+                : null;
+
+              startRetakeWizard({
+                programId: nextSurveyStatus.programId,
+                decisionQuestionId: decisionQuestion?.id || null,
+                employmentAnswer,
+                latestPrediction: latestPredictionForRetake,
+                competenciesCatalog: competenciesData
+              });
+              return;
+            }
           }
         }
 
         let latestPrediction: Prediction | null = null;
-        if (nextSurveyStatus.hasEmployabilityPrediction) {
+        if (nextSurveyStatus.hasEmployabilityPrediction && !retakeMode) {
           latestPrediction = await fetchLatestPrediction(token);
+        } else if (retakeMode) {
+          setPredictionResult(null);
         }
 
         setSurveyStage(resolveSurveyStage(nextSurveyStatus, Boolean(latestPrediction)));
@@ -522,7 +638,7 @@ export default function AlumniSurvey() {
     };
 
     loadPage();
-  }, [toast, updateUser, user?.username]);
+  }, [retakeMode, toast, updateUser, user?.username]);
 
   const setAnswer = (questionId: string, value: string | string[] | number) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -823,6 +939,7 @@ export default function AlumniSurvey() {
 
       setPredictionResult(result.prediction);
       completeSurvey();
+      setRetakeMode(false);
 
       const nextSurveyStatus = await fetchSurveyStatus(token);
       await fetchLatestSubmission(token);

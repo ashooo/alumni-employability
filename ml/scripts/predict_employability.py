@@ -1,3 +1,11 @@
+"""
+Employability Prediction Script
+================================
+Called by the Node.js server to predict employability for a single student.
+Reads JSON from stdin, loads model artifacts, and outputs JSON to stdout.
+
+Compatible with: LogisticRegression, RandomForestClassifier, VotingClassifier
+"""
 import sys
 import json
 import pandas as pd
@@ -5,97 +13,119 @@ import joblib
 from pathlib import Path
 import warnings
 
-# Suppress warnings for clean output
 warnings.filterwarnings("ignore")
 
-# Path to artifacts
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models" / "employability"
 
-def load_artifacts():
-    # Prefer logistic regression explicitly, then fallback to random forest if needed.
-    logistic_path = MODEL_DIR / "logistic_regression.pkl"
-    random_forest_path = MODEL_DIR / "random_forest.pkl"
+# The 8 features the model was trained on
+FEATURE_COLS = [
+    'CGPA', 'Average Prof Grade', 'Average Elec Grade', 'OJT Grade',
+    'Leadership POS', 'Act Member POS', 'Soft Skills Ave', 'Hard Skills Ave'
+]
 
-    if logistic_path.exists():
-        model_path = logistic_path
-    elif random_forest_path.exists():
-        model_path = random_forest_path
-    else:
-        raise FileNotFoundError(f"Model file not found in {MODEL_DIR}")
-        
+BINARY_COLS = ['Leadership POS', 'Act Member POS']
+
+
+def load_artifacts():
+    """Load saved model artifacts."""
+    # New unified model path
+    model_path = MODEL_DIR / "model.pkl"
+
+    # Fallback to legacy paths for backward compatibility
+    if not model_path.exists():
+        for legacy_name in ["logistic_regression.pkl", "random_forest.pkl"]:
+            legacy_path = MODEL_DIR / legacy_name
+            if legacy_path.exists():
+                model_path = legacy_path
+                break
+
+    if not model_path.exists():
+        raise FileNotFoundError(f"No model found in {MODEL_DIR}")
+
     model = joblib.load(model_path)
     scaler = joblib.load(MODEL_DIR / "scaler.pkl")
-    target_le = joblib.load(MODEL_DIR / "label_encoder.pkl")
-    cat_encoders = joblib.load(MODEL_DIR / "categorical_encoders.pkl")
-    feature_names = joblib.load(MODEL_DIR / "feature_names.pkl")
-    return model, scaler, target_le, cat_encoders, feature_names
+    label_encoder = joblib.load(MODEL_DIR / "label_encoder.pkl")
+
+    # Load feature names (fallback to hardcoded if missing)
+    feature_names_path = MODEL_DIR / "feature_names.pkl"
+    if feature_names_path.exists():
+        feature_names = joblib.load(feature_names_path)
+    else:
+        feature_names = FEATURE_COLS
+
+    return model, scaler, label_encoder, feature_names
+
+
+def prepare_input(data, feature_names):
+    """
+    Convert raw input dict into a model-ready DataFrame.
+    Handles unit conversions for grades and skill scales.
+    """
+    df = pd.DataFrame([data])
+
+    # Ensure all expected columns exist
+    for col in feature_names:
+        if col not in df.columns:
+            df[col] = 0.0
+
+    # Select and reorder
+    df = df[feature_names]
+
+    # --- Binary columns (Yes/No -> 1/0) ---
+    for col in BINARY_COLS:
+        if col in df.columns:
+            val = str(df[col].iloc[0]).strip().lower()
+            df[col] = 1 if val in ('yes', 'true', '1') else 0
+
+    # --- Numeric coercion ---
+    numeric_cols = [c for c in feature_names if c not in BINARY_COLS]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+
+    # --- Grade conversion: 1.0-5.0 GPA scale → percentage ---
+    # Formula: percentage = 100 - (grade - 1.0) * 12.5
+    grade_cols = ['Average Prof Grade', 'Average Elec Grade', 'OJT Grade']
+    for col in grade_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda x: 100.0 - (x - 1.0) * 12.5 if 0 < x <= 5.0 else x
+            )
+
+    # --- Skill scale conversion: 1-10 → 10-100 ---
+    skill_cols = ['Soft Skills Ave', 'Hard Skills Ave']
+    for col in skill_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda x: x * 10.0 if 0 < x <= 10.0 else x
+            )
+
+    return df
+
 
 def predict():
     try:
-        # Read from stdin
         input_raw = sys.stdin.read()
         if not input_raw.strip():
             return
-            
+
         data = json.loads(input_raw)
-        model, scaler, target_le, cat_encoders, feature_names = load_artifacts()
-        
-        # Expecting a dictionary or list of one dictionary
+        model, scaler, label_encoder, feature_names = load_artifacts()
+
         if isinstance(data, list):
             data = data[0]
-            
-        # Create DataFrame
-        df = pd.DataFrame([data])
-        
-        # Reorder columns to match training features exactly
-        df = df[feature_names]
 
-        # Ensure numeric columns are coercible before scaling/conversion.
-        numeric_cols = ['Age', 'Year Graduated', 'CGPA', 'Average Prof Grade', 'Average Elec Grade', 'OJT Grade', 'Soft Skills Ave', 'Hard Skills Ave']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-        
-        # Convert 1.0-5.0 grades to 50-100% scale for model compatibility
-        # Conversion: 1.0 -> 100%, 3.0 -> 75%, 5.0 -> 50%
-        # Formula: percentage = 100 - (grade - 1.0) * 12.5
-        grade_cols = ['Average Prof Grade', 'Average Elec Grade', 'OJT Grade']
-        for col in grade_cols:
-            if col in df.columns:
-                # Only convert if the value looks like it's on the 1.0-5.0 scale
-                df[col] = df[col].apply(lambda x: 100.0 - (x - 1.0) * 12.5 if 0 < x <= 5.0 else x)
-                
-        # Scale 1-10 skills to 10-100 scale for model compatibility
-        skill_cols = ['Soft Skills Ave', 'Hard Skills Ave']
-        for col in skill_cols:
-            if col in df.columns:
-                # Only convert if the value is <= 10.0
-                df[col] = df[col].apply(lambda x: x * 10.0 if 0 < x <= 10.0 else x)
+        df = prepare_input(data, feature_names)
 
-        # Apply Categorical Encoders saved during training
-        for col, le in cat_encoders.items():
-            if col in df.columns:
-                val = str(df[col].iloc[0])
-                try:
-                    df[col] = le.transform([val])[0]
-                except ValueError:
-                    # Fallback to the most frequent class or first class if unseen
-                    df[col] = le.transform([le.classes_[0]])[0]
-
-        # Apply Scaler
+        # Scale and predict
         X_scaled = scaler.transform(df)
-        
-        # Run Model
         prediction_idx = model.predict(X_scaled)[0]
         probabilities = model.predict_proba(X_scaled)[0]
-        
-        # Decode result
-        prediction_label = target_le.inverse_transform([prediction_idx])[0]
-        
-        # Check index of 'Employable' class for specific probability
-        classes = list(target_le.classes_)
+
+        # Decode
+        prediction_label = label_encoder.inverse_transform([prediction_idx])[0]
+        classes = list(label_encoder.classes_)
         employable_idx = classes.index("Employable") if "Employable" in classes else 0
-        
+
         result = {
             "status": "success",
             "employable": bool(prediction_label == "Employable"),
@@ -104,7 +134,7 @@ def predict():
             "confidence": float(max(probabilities)),
             "model_type": type(model).__name__
         }
-        
+
         print(json.dumps(result))
 
     except Exception as e:
@@ -112,6 +142,7 @@ def predict():
             "status": "error",
             "message": str(e)
         }))
+
 
 if __name__ == "__main__":
     predict()

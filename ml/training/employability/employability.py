@@ -194,65 +194,56 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le):
     print(rf_importance.to_string(index=False))
 
     # ---------------------------------------------------------------
-    # Model Selection Decision
+    # Always Build Soft Voting Ensemble
     # ---------------------------------------------------------------
     print("\n" + "=" * 60)
-    print("MODEL SELECTION")
+    print("SOFT VOTING ENSEMBLE")
     print("=" * 60)
 
-    f1_diff = abs(lr_f1 - rf_f1)
-    print(f"LR F1: {lr_f1:.4f}  |  RF F1: {rf_f1:.4f}  |  Diff: {f1_diff:.4f}")
-
-    if lr_f1 > rf_f1 + ENSEMBLE_THRESHOLD:
-        # LR wins decisively
-        chosen_model = lr_model
-        model_type = 'LogisticRegression'
-        rationale = f"LR wins by {f1_diff:.4f} (>{ENSEMBLE_THRESHOLD}). Using LR only."
-        print(f"[OK] {rationale}")
-
-    elif rf_f1 > lr_f1 + ENSEMBLE_THRESHOLD:
-        # RF wins decisively
-        chosen_model = rf_model
-        model_type = 'RandomForestClassifier'
-        rationale = f"RF wins by {f1_diff:.4f} (>{ENSEMBLE_THRESHOLD}). Using RF only."
-        print(f"[OK] {rationale}")
-
+    # Weight the better-performing model slightly higher
+    if lr_f1 >= rf_f1:
+        weights = [1.2, 1.0]
     else:
-        # Both within threshold -> ensemble
-        # Weight the better model slightly higher
-        if lr_f1 >= rf_f1:
-            weights = [1.2, 1.0]
-        else:
-            weights = [1.0, 1.2]
+        weights = [1.0, 1.2]
 
-        ensemble = VotingClassifier(
-            estimators=[('lr', lr_model), ('rf', rf_model)],
-            voting='soft',
-            weights=weights
-        )
-        # VotingClassifier needs to be fitted (even though sub-models are fitted)
-        ensemble.fit(X_train_scaled, y_train)
+    ensemble = VotingClassifier(
+        estimators=[('lr', lr_model), ('rf', rf_model)],
+        voting='soft',
+        weights=weights
+    )
+    ensemble.fit(X_train_scaled, y_train)
 
-        ens_pred = ensemble.predict(X_test_scaled)
-        ens_proba = ensemble.predict_proba(X_test_scaled)
-        ens_f1 = f1_score(y_test, ens_pred, average='weighted')
-        ens_auc = roc_auc_score(y_test, ens_proba[:, 1])
-        ens_acc = accuracy_score(y_test, ens_pred)
+    ens_pred = ensemble.predict(X_test_scaled)
+    ens_proba = ensemble.predict_proba(X_test_scaled)
+    ens_f1 = f1_score(y_test, ens_pred, average='weighted')
+    ens_auc = roc_auc_score(y_test, ens_proba[:, 1])
+    ens_acc = accuracy_score(y_test, ens_pred)
 
-        print(f"Models within {ENSEMBLE_THRESHOLD} -> building soft voting ensemble")
-        print(f"Ensemble weights: LR={weights[0]}, RF={weights[1]}")
-        print(f"Ensemble F1: {ens_f1:.4f}  |  AUC: {ens_auc:.4f}  |  Accuracy: {ens_acc:.4f}")
-        print(classification_report(y_test, ens_pred, target_names=le.classes_))
+    print(f"Ensemble weights: LR={weights[0]}, RF={weights[1]}")
+    print(f"Ensemble F1: {ens_f1:.4f}  |  AUC: {ens_auc:.4f}  |  Accuracy: {ens_acc:.4f}")
+    print(classification_report(y_test, ens_pred, target_names=le.classes_))
 
-        # Check disagreements
-        disagreements = np.sum(lr_pred != rf_pred)
-        print(f"Prediction disagreements between LR and RF: {disagreements}/{len(y_test)} ({disagreements/len(y_test)*100:.1f}%)")
+    # Disagreement analysis
+    disagreements = np.sum(lr_pred != rf_pred)
+    print(f"Prediction disagreements between LR and RF: {disagreements}/{len(y_test)} ({disagreements/len(y_test)*100:.1f}%)")
 
-        chosen_model = ensemble
-        model_type = 'VotingClassifier'
-        lr_f1, rf_f1 = ens_f1, ens_f1  # update for report
-        rationale = f"Both within {ENSEMBLE_THRESHOLD}. Ensemble F1={ens_f1:.4f}, weights={weights}"
-        print(f"[OK] {rationale}")
+    # ---------------------------------------------------------------
+    # Side-by-Side Comparison
+    # ---------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("MODEL COMPARISON (All Three)")
+    print("=" * 60)
+    print(f"{'Model':<25} {'F1':>8} {'AUC':>8} {'Accuracy':>10}")
+    print("-" * 55)
+    print(f"{'Logistic Regression':<25} {lr_f1:>8.4f} {lr_auc:>8.4f} {lr_acc:>10.4f}")
+    print(f"{'Random Forest':<25} {rf_f1:>8.4f} {rf_auc:>8.4f} {rf_acc:>10.4f}")
+    print(f"{'Soft Voting Ensemble':<25} {ens_f1:>8.4f} {ens_auc:>8.4f} {ens_acc:>10.4f}")
+
+    # Select ensemble as final model
+    chosen_model = ensemble
+    model_type = 'VotingClassifier'
+    rationale = f"Soft Voting Ensemble selected. LR weight={weights[0]}, RF weight={weights[1]}. Ensemble F1={ens_f1:.4f}"
+    print(f"\n[OK] {rationale}")
 
     # ---------------------------------------------------------------
     # Optimal Threshold Analysis
@@ -278,8 +269,10 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le):
         'features': FEATURE_COLS,
         'model_type': model_type,
         'selection_rationale': rationale,
+        'ensemble_weights': weights,
         'lr_metrics': {'f1': round(lr_f1, 4), 'auc': round(lr_auc, 4), 'accuracy': round(lr_acc, 4), 'best_params': lr_grid.best_params_},
         'rf_metrics': {'f1': round(rf_f1, 4), 'auc': round(rf_auc, 4), 'accuracy': round(rf_acc, 4), 'best_params': rf_grid.best_params_},
+        'ensemble_metrics': {'f1': round(ens_f1, 4), 'auc': round(ens_auc, 4), 'accuracy': round(ens_acc, 4)},
         'final_metrics': {
             'f1': round(f1_score(y_test, final_pred, average='weighted'), 4),
             'auc': round(roc_auc_score(y_test, final_proba), 4),

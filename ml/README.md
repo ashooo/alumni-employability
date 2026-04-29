@@ -8,20 +8,19 @@ This folder is split into two responsibilities:
 ## Deployment Runtime (`scripts`)
 
 - `scripts/predict_api.py` - ARIMA forecast runtime script
-- `scripts/predict_employability.py` - employability model prediction runtime script
+- `scripts/predict_employability.py` - employability ensemble voting classifier runtime script
 - `scripts/job-matching/job-matcher.py` - job matching runtime matcher using prebuilt artifacts
 
 ## Offline / Training (`training`)
 
 - `training/arima/test_model.py` - offline ARIMA validation script
-- `training/employability/employability.py` - train employability model artifacts
-- `training/employability/retrain_pipeline.py` - DB-driven retraining pipeline
-- `training/employability/label_dataset.py` - one-time labeling script
-- `training/employability/merge_dataset.py` - one-time student dataset merge
-- `training/job-matcher/merge_dataset.py` - one-time O*NET preprocessing
-- `training/job-matcher/index_builder.py` - one-time FAISS/ONNX asset builder
+- `training/employability/employability.py` - main DB-driven retraining pipeline for the ensemble model
+- `training/employability/db_utils.py` - database connectivity helpers for training
+- `training/job-matcher/merge_dataset.py` - O*NET preprocessing
+- `training/job-matcher/index_builder.py` - FAISS/ONNX asset builder
 - `training/job-matcher/job_matcher.py` - prototype/training matcher
 - `training/job-matcher/jobert.py` - raw JobBERT embedding/index experimentation
+- `training/notebooks/` - Jupyter notebooks for experimentation (ARIMA, etc.)
 
 ## Artifacts
 

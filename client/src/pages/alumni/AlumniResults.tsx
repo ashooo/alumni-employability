@@ -225,15 +225,18 @@ export default function AlumniResults() {
     let isActive = true;
 
     const fetchLatestPrediction = async () => {
-      if (!user?.username) {
+      const token = getToken();
+      if (!user?.username || !token) {
         if (isActive) {
           setLoading(false);
+          if (!token && user?.username) {
+            setJobMatchingError('Authentication token missing. Please log in again.');
+          }
         }
         return;
       }
 
       try {
-        const token = getToken();
         const predictionResponse = await fetch(
           `${API_URL}/prediction/employability/latest/${user.username}`,
           {
@@ -258,7 +261,7 @@ export default function AlumniResults() {
         setLoading(false);
 
         const jobHeaders = {
-          Authorization: `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         };
 

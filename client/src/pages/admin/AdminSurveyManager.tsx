@@ -1,282 +1,417 @@
-import { useState } from 'react';
-import { Plus, Edit2, Trash2, GripVertical, Save, X, ListPlus } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, Edit2, Trash2, Copy, Save, X, Loader2, ChevronLeft, GripVertical, Search, ToggleLeft, ToggleRight, ListPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { surveyQuestions } from '@/data/mockData';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Card, CardContent } from '@/components/ui/card';
 
-interface Question {
-  id: string;
-  text: string;
-  type: string;
-  required: boolean;
-  options?: string[];
-  scaleRange?: { min: number; max: number };
-  version: number;
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
+
+const KINDS = ['INITIAL','EMPLOYED','UNEMPLOYED','FOLLOWUP','GENERAL'] as const;
+const PATHS = ['INITIAL','EMPLOYED','UNEMPLOYED','FOLLOWUP'] as const;
+const Q_TYPES = ['TEXT','TEXTAREA','NUMBER','BOOLEAN','DATE','SINGLE_SELECT','MULTI_SELECT','SCALE'] as const;
+
+interface Template {
+  id: number; template_key: string; name: string; description: string | null;
+  kind: string; path_key: string; is_followup: boolean; is_active: boolean;
+  question_count: number; submission_count: number;
+  created_at: string; updated_at: string;
+}
+interface Option { id: number; option_value: string; option_label: string; display_order: number; }
+interface TQuestion {
+  link_id: number; question_id: number; display_order: number; is_required: boolean;
+  section_key: string | null; question_key: string; question_text: string;
+  help_text: string | null; question_type: string; is_active: boolean; options: Option[];
+}
+interface TemplateDetail extends Omit<Template,'question_count'> {
+  submission_count: number; questions: TQuestion[];
 }
 
-export default function AdminSurveyManager() {
-  const [categories, setCategories] = useState(surveyQuestions as any[]);
-  const [editQ, setEditQ] = useState<Question | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newCat, setNewCat] = useState('');
-  const [showAddCat, setShowAddCat] = useState(false);
-  const { toast } = useToast();
+const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
 
-  const [newQ, setNewQ] = useState<Partial<Question> & { category: string }>({ 
-    text: '', 
-    type: 'text', 
-    required: true, 
-    category: '',
-    options: ['Option 1'],
-    scaleRange: { min: 1, max: 5 }
+async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const r = await fetch(`${API}/admin/survey${path}`, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error((e as any).error || r.statusText); }
+  return r.json();
+}
+
+const kindColor: Record<string,string> = {
+  INITIAL: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+  EMPLOYED: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+  UNEMPLOYED: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
+  FOLLOWUP: 'bg-violet-500/10 text-violet-600 border-violet-500/20',
+  GENERAL: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
+};
+
+export default function AdminSurveyManager() {
+  const { toast } = useToast();
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<TemplateDetail | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [showAddQ, setShowAddQ] = useState(false);
+  const [showEditQ, setShowEditQ] = useState<TQuestion | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [kindFilter, setKindFilter] = useState('all');
+
+  // create form
+  const [cf, setCf] = useState({ name: '', description: '', kind: 'GENERAL', path_key: 'INITIAL', template_key: '' });
+  // new question form
+  const [nq, setNq] = useState({ question_text: '', question_type: 'TEXT', help_text: '', section_key: '', is_required: true, options: [''] as string[] });
+  // edit question form
+  const [eq, setEq] = useState({ question_text: '', question_type: '', help_text: '', is_required: true, section_key: '', options: [''] as string[] });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setTemplates(await api<Template[]>('/templates')); } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally { setLoading(false); }
+  }, [toast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openTemplate = async (id: number) => {
+    try {
+      const t = await api<TemplateDetail>(`/templates/${id}`);
+      setSelected(t);
+    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+  };
+
+  const handleCreate = async () => {
+    if (!cf.name.trim()) return;
+    setSaving(true);
+    try {
+      await api('/templates', { method: 'POST', body: JSON.stringify(cf) });
+      toast({ title: 'Template Created' });
+      setShowCreate(false);
+      setCf({ name: '', description: '', kind: 'GENERAL', path_key: 'INITIAL', template_key: '' });
+      load();
+    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+    finally { setSaving(false); }
+  };
+
+  const handleToggle = async (t: Template) => {
+    try {
+      await api(`/templates/${t.id}/activate`, { method: 'PUT', body: JSON.stringify({ is_active: !t.is_active }) });
+      toast({ title: t.is_active ? 'Deactivated' : 'Activated' });
+      load();
+      if (selected?.id === t.id) openTemplate(t.id);
+    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+  };
+
+  const handleClone = async (t: Template) => {
+    try {
+      await api(`/templates/${t.id}/clone`, { method: 'POST', body: JSON.stringify({}) });
+      toast({ title: 'Template Cloned' });
+      load();
+    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+  };
+
+  const handleDelete = async (t: Template) => {
+    if (!confirm(`Delete "${t.name}"? ${t.submission_count > 0 ? 'It has submissions and will be deactivated instead.' : ''}`)) return;
+    try {
+      await api(`/templates/${t.id}`, { method: 'DELETE' });
+      toast({ title: 'Template Deleted' });
+      if (selected?.id === t.id) setSelected(null);
+      load();
+    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+  };
+
+  const handleAddQuestion = async () => {
+    if (!nq.question_text.trim() || !selected) return;
+    setSaving(true);
+    try {
+      const q = await api<any>('/questions', { method: 'POST', body: JSON.stringify({
+        question_text: nq.question_text, question_type: nq.question_type, help_text: nq.help_text || null,
+        options: ['SINGLE_SELECT','MULTI_SELECT'].includes(nq.question_type) ? nq.options.filter(o => o.trim()) : undefined
+      }) });
+      await api(`/templates/${selected.id}/questions`, { method: 'POST', body: JSON.stringify({
+        question_id: q.id, is_required: nq.is_required, section_key: nq.section_key || null
+      }) });
+      toast({ title: 'Question Added' });
+      setShowAddQ(false);
+      setNq({ question_text: '', question_type: 'TEXT', help_text: '', section_key: '', is_required: true, options: [''] });
+      openTemplate(selected.id);
+    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+    finally { setSaving(false); }
+  };
+
+  const handleUpdateQuestion = async () => {
+    if (!showEditQ || !selected) return;
+    setSaving(true);
+    try {
+      await api(`/questions/${showEditQ.question_id}`, { method: 'PUT', body: JSON.stringify({
+        question_text: eq.question_text, question_type: eq.question_type, help_text: eq.help_text || null,
+        options: ['SINGLE_SELECT','MULTI_SELECT'].includes(eq.question_type) ? eq.options.filter(o => o.trim()) : undefined
+      }) });
+      // update link metadata (section, required) via remove+add
+      await api(`/templates/${selected.id}/questions`, { method: 'POST', body: JSON.stringify({
+        question_id: showEditQ.question_id, is_required: eq.is_required, section_key: eq.section_key || null,
+        display_order: showEditQ.display_order
+      }) });
+      toast({ title: 'Question Updated' });
+      setShowEditQ(null);
+      openTemplate(selected.id);
+    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+    finally { setSaving(false); }
+  };
+
+  const handleRemoveQuestion = async (q: TQuestion) => {
+    if (!selected || !confirm(`Remove "${q.question_text}" from this template?`)) return;
+    try {
+      await api(`/templates/${selected.id}/questions/${q.question_id}`, { method: 'DELETE' });
+      toast({ title: 'Question Removed' });
+      openTemplate(selected.id);
+    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+  };
+
+  const filtered = templates.filter(t => {
+    if (kindFilter !== 'all' && t.kind !== kindFilter) return false;
+    if (search && !t.name.toLowerCase().includes(search.toLowerCase()) && !t.template_key.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
   });
 
-  const handleSave = () => {
-    toast({ title: 'Survey Saved', description: 'Survey structure has been updated successfully.' });
-  };
-
-  const handleDeleteQ = (catId: string, qId: string) => {
-    setCategories(prev => prev.map(c => c.id === catId ? { ...c, questions: c.questions.filter((q: any) => q.id !== qId) } : c));
-    toast({ title: 'Question Deleted' });
-  };
-
-  const handleAddCategory = () => {
-    if (!newCat.trim()) return;
-    setCategories(prev => [...prev, { id: `cat-${Date.now()}`, category: newCat, questions: [] }]);
-    setNewCat('');
-    setShowAddCat(false);
-    toast({ title: 'Category Added' });
-  };
-
-  const handleAddQuestion = () => {
-    // Validation
-    if (!newQ.text?.trim() || !newQ.category) {
-      toast({ 
-        title: "Missing Information", 
-        description: "Please provide a question and select a category.",
-        variant: "destructive"
-      });
-      return;
+  // Group questions by section_key
+  const groupBySection = (questions: TQuestion[]) => {
+    const groups: Record<string, TQuestion[]> = {};
+    for (const q of questions) {
+      const key = q.section_key || 'general';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(q);
     }
-    
-    // Construct the object
-    const preparedQuestion: Question = {
-      id: `q-${Date.now()}`,
-      text: newQ.text.trim(),
-      type: newQ.type || 'text',
-      required: !!newQ.required,
-      version: 2,
-      ...( ['select', 'dropdown', 'checkbox'].includes(newQ.type!) && { options: [...(newQ.options || [])] }),
-      ...( newQ.type === 'scale' && { scaleRange: { ...newQ.scaleRange! } })
-    };
-
-    // Update State
-    setCategories(prev => prev.map(c => {
-      if (c.id === newQ.category) {
-        return {
-          ...c,
-          questions: [...(c.questions || []), preparedQuestion]
-        };
-      }
-      return c;
-    }));
-
-    // Reset and Close
-    setShowAdd(false);
-    setNewQ({ 
-      text: '', 
-      type: 'text', 
-      required: true, 
-      category: '', 
-      options: ['Option 1'], 
-      scaleRange: { min: 1, max: 5 } 
-    });
-    
-    toast({ title: 'Question Added' });
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   };
 
-  const updateOption = (idx: number, val: string, isEdit = false) => {
-    if (isEdit && editQ) {
-      const opts = [...(editQ.options || [])];
-      opts[idx] = val;
-      setEditQ({ ...editQ, options: opts });
-    } else {
-      const opts = [...(newQ.options || [])];
-      opts[idx] = val;
-      setNewQ({ ...newQ, options: opts });
-    }
-  };
+  const sectionLabel = (key: string) => key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  // ─── Detail view ────────────────────────────────────────────────────────
+  if (selected) {
+    const sections = groupBySection(selected.questions);
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setSelected(null)}><ChevronLeft className="h-5 w-5" /></Button>
+          <div className="flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-2xl font-display font-bold">{selected.name}</h1>
+              <Badge variant="outline" className={kindColor[selected.kind] || ''}>{selected.kind}</Badge>
+              <Badge variant="outline">{selected.path_key}</Badge>
+              <Badge variant={selected.is_active ? 'default' : 'secondary'}>{selected.is_active ? 'Active' : 'Inactive'}</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">{selected.description || 'No description'} · Key: <code className="text-xs">{selected.template_key}</code></p>
+          </div>
+          <Button variant="outline" onClick={() => setShowAddQ(true)} className="gap-1"><Plus className="h-4 w-4" /> Add Question</Button>
+        </div>
+
+        {sections.length === 0 ? (
+          <Card className="glass-card"><CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">No questions yet. Click "Add Question" to get started.</p>
+          </CardContent></Card>
+        ) : (
+          <Accordion type="multiple" defaultValue={sections.map(([k]) => k)}>
+            {sections.map(([sectionKey, questions]) => (
+              <AccordionItem key={sectionKey} value={sectionKey} className="glass-card mb-3 overflow-hidden border">
+                <AccordionTrigger className="px-6 py-4 hover:no-underline">
+                  <div className="flex items-center gap-3">
+                    <span className="font-display font-semibold text-left">{sectionLabel(sectionKey)}</span>
+                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{questions.length} questions</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-6 pb-4">
+                  <div className="space-y-2">
+                    {questions.map((q) => (
+                      <div key={q.link_id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 group">
+                        <GripVertical className="h-4 w-4 text-muted-foreground" />
+                        <div className="flex-1 flex flex-col text-left">
+                          <span className="text-sm font-medium">{q.question_text}</span>
+                          {q.help_text && <span className="text-[10px] text-muted-foreground">{q.help_text}</span>}
+                          {q.options.length > 0 && <span className="text-[10px] text-muted-foreground">Options: {q.options.map(o => o.option_label).join(', ')}</span>}
+                        </div>
+                        <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded uppercase">{q.question_type}</span>
+                        {q.is_required && <span className="text-xs text-primary font-medium">Required</span>}
+                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100" onClick={() => {
+                          setShowEditQ(q);
+                          setEq({ question_text: q.question_text, question_type: q.question_type, help_text: q.help_text || '',
+                            is_required: q.is_required, section_key: q.section_key || '',
+                            options: q.options.length > 0 ? q.options.map(o => o.option_label) : [''] });
+                        }}><Edit2 className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 text-destructive"
+                          onClick={() => handleRemoveQuestion(q)}><Trash2 className="h-3 w-3" /></Button>
+                      </div>
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        )}
+
+        {/* Add question dialog */}
+        <Dialog open={showAddQ} onOpenChange={setShowAddQ}>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader><DialogTitle className="font-display">Add Question</DialogTitle></DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2"><Label>Question Text</Label>
+                <Input value={nq.question_text} onChange={e => setNq({...nq, question_text: e.target.value})} placeholder="e.g. What is your current job title?" /></div>
+              <div className="space-y-2"><Label>Section</Label>
+                <Input value={nq.section_key} onChange={e => setNq({...nq, section_key: e.target.value})} placeholder="e.g. employment_details" /></div>
+              <div className="space-y-2"><Label>Type</Label>
+                <Select value={nq.question_type} onValueChange={v => setNq({...nq, question_type: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{Q_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                </Select></div>
+              <div className="space-y-2"><Label>Help Text</Label>
+                <Input value={nq.help_text} onChange={e => setNq({...nq, help_text: e.target.value})} placeholder="Optional guidance" /></div>
+              {['SINGLE_SELECT','MULTI_SELECT'].includes(nq.question_type) && (
+                <div className="space-y-3 p-3 bg-muted/40 rounded-lg border border-dashed">
+                  <Label className="text-xs font-bold flex items-center gap-1"><ListPlus className="h-3 w-3"/>Options</Label>
+                  {nq.options.map((opt, i) => (
+                    <div key={i} className="flex gap-2">
+                      <Input value={opt} onChange={e => { const o = [...nq.options]; o[i] = e.target.value; setNq({...nq, options: o}); }} placeholder={`Option ${i+1}`} />
+                      <Button variant="ghost" size="icon" onClick={() => setNq({...nq, options: nq.options.filter((_, idx) => idx !== i)})}><X className="h-4 w-4" /></Button>
+                    </div>))}
+                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setNq({...nq, options: [...nq.options, '']})}>+ Add Option</Button>
+                </div>)}
+              <div className="flex items-center gap-2 pt-2"><Switch checked={nq.is_required} onCheckedChange={v => setNq({...nq, is_required: v})} /><Label>Required</Label></div>
+            </div>
+            <DialogFooter className="pt-4"><Button onClick={handleAddQuestion} disabled={saving} className="w-full">
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Create Question</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit question dialog */}
+        <Dialog open={!!showEditQ} onOpenChange={() => setShowEditQ(null)}>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader><DialogTitle className="font-display">Edit Question</DialogTitle></DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2"><Label>Question Text</Label>
+                <Input value={eq.question_text} onChange={e => setEq({...eq, question_text: e.target.value})} /></div>
+              <div className="space-y-2"><Label>Section</Label>
+                <Input value={eq.section_key} onChange={e => setEq({...eq, section_key: e.target.value})} /></div>
+              <div className="space-y-2"><Label>Type</Label>
+                <Select value={eq.question_type} onValueChange={v => setEq({...eq, question_type: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{Q_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                </Select></div>
+              <div className="space-y-2"><Label>Help Text</Label>
+                <Input value={eq.help_text} onChange={e => setEq({...eq, help_text: e.target.value})} /></div>
+              {['SINGLE_SELECT','MULTI_SELECT'].includes(eq.question_type) && (
+                <div className="space-y-3 p-3 bg-muted/40 rounded-lg border border-dashed">
+                  <Label className="text-xs font-bold">Options</Label>
+                  {eq.options.map((opt, i) => (
+                    <div key={i} className="flex gap-2">
+                      <Input value={opt} onChange={e => { const o = [...eq.options]; o[i] = e.target.value; setEq({...eq, options: o}); }} />
+                      <Button variant="ghost" size="icon" onClick={() => setEq({...eq, options: eq.options.filter((_, idx) => idx !== i)})}><X className="h-4 w-4" /></Button>
+                    </div>))}
+                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setEq({...eq, options: [...eq.options, '']})}>+ Add Option</Button>
+                </div>)}
+              <div className="flex items-center gap-2 pt-2"><Switch checked={eq.is_required} onCheckedChange={v => setEq({...eq, is_required: v})} /><Label>Required</Label></div>
+            </div>
+            <DialogFooter className="pt-4"><Button onClick={handleUpdateQuestion} disabled={saving} className="w-full">
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Save Changes</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  // ─── List view ──────────────────────────────────────────────────────────
+  if (loading) return <div className="flex items-center justify-center min-h-[400px]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold">Tracer Survey Manager</h1>
-          <p className="text-muted-foreground text-sm">Manage survey sections and questions</p>
+          <h1 className="text-2xl font-display font-bold">Survey Manager</h1>
+          <p className="text-muted-foreground text-sm">Manage survey templates and their questions</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowAddCat(true)}>Add Category</Button>
-          <Button variant="outline" onClick={() => setShowAdd(true)} className="gap-1"><Plus className="h-4 w-4" /> Add Question</Button>
-          <Button onClick={handleSave} className="gap-1"><Save className="h-4 w-4" /> Save</Button>
+        <Button onClick={() => setShowCreate(true)} className="gap-1"><Plus className="h-4 w-4" /> New Template</Button>
+      </div>
+
+      <div className="glass-card p-4">
+        <div className="flex gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search templates..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+          </div>
+          <Select value={kindFilter} onValueChange={setKindFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Kinds" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Kinds</SelectItem>
+              {KINDS.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      <Accordion type="multiple" defaultValue={categories.map(c => c.id)}>
-        {categories.map(cat => (
-          <AccordionItem key={cat.id} value={cat.id} className="glass-card mb-3 overflow-hidden border">
-            <AccordionTrigger className="px-6 py-4 hover:no-underline">
-              <div className="flex items-center gap-3">
-                <span className="font-display font-semibold text-left">{cat.category}</span>
-                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{cat.questions.length} questions</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {filtered.map(t => (
+          <Card key={t.id} className="glass-card cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all" onClick={() => openTemplate(t.id)}>
+            <CardContent className="pt-6 space-y-3">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1 flex-1 min-w-0">
+                  <h3 className="font-display font-semibold truncate">{t.name}</h3>
+                  <p className="text-xs text-muted-foreground truncate font-mono">{t.template_key}</p>
+                </div>
+                <div className="flex gap-1 shrink-0 ml-2" onClick={e => e.stopPropagation()}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleToggle(t)} title={t.is_active ? 'Deactivate' : 'Activate'}>
+                    {t.is_active ? <ToggleRight className="h-4 w-4 text-success" /> : <ToggleLeft className="h-4 w-4" />}
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(t)} title="Clone"><Copy className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(t)} title="Delete"><Trash2 className="h-3 w-3" /></Button>
+                </div>
               </div>
-            </AccordionTrigger>
-            <AccordionContent className="px-6 pb-4">
-              <div className="space-y-2">
-                {cat.questions.map((q: any) => (
-                  <div key={q.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 group">
-                    <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
-                    <div className="flex-1 flex flex-col text-left">
-                        <span className="text-sm font-medium">{q.text}</span>
-                        {q.options && <span className="text-[10px] text-muted-foreground">Options: {q.options.join(', ')}</span>}
-                        {q.scaleRange && <span className="text-[10px] text-muted-foreground">Scale: {q.scaleRange.min} to {q.scaleRange.max}</span>}
-                    </div>
-                    <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded uppercase">{q.type}</span>
-                    {q.required && <span className="text-xs text-primary font-medium">Required</span>}
-                    <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100" onClick={() => setEditQ(q)}><Edit2 className="h-3 w-3" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 text-destructive" onClick={() => handleDeleteQ(cat.id, q.id)}><Trash2 className="h-3 w-3" /></Button>
-                  </div>
-                ))}
-                {cat.questions.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No questions in this category yet.</p>}
+              <div className="flex gap-2 flex-wrap">
+                <Badge variant="outline" className={kindColor[t.kind] || ''}>{t.kind}</Badge>
+                <Badge variant="outline">{t.path_key}</Badge>
+                <Badge variant={t.is_active ? 'default' : 'secondary'} className="text-[10px]">{t.is_active ? 'Active' : 'Inactive'}</Badge>
               </div>
-            </AccordionContent>
-          </AccordionItem>
+              <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
+                <span>{t.question_count} questions</span>
+                <span>{t.submission_count} submissions</span>
+              </div>
+            </CardContent>
+          </Card>
         ))}
-      </Accordion>
+        {filtered.length === 0 && (
+          <div className="col-span-full text-center py-12 text-muted-foreground">No templates found.</div>
+        )}
+      </div>
 
-      {/* Add question dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle className="font-display">Add Question</DialogTitle></DialogHeader>
+      {/* Create template dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle className="font-display">Create Survey Template</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Select value={newQ.category} onValueChange={v => setNewQ({ ...newQ, category: v })}>
-                <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                <SelectContent>{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.category}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Question Text</Label>
-              <Input value={newQ.text} onChange={e => setNewQ({ ...newQ, text: e.target.value })} placeholder="e.g. What is your current job title?" />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Type</Label>
-              <Select value={newQ.type} onValueChange={v => setNewQ({ ...newQ, type: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {['text', 'select', 'dropdown', 'checkbox', 'scale', 'number'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {['select', 'dropdown', 'checkbox'].includes(newQ.type!) && (
-              <div className="space-y-3 p-3 bg-muted/40 rounded-lg border border-dashed">
-                <Label className="text-xs font-bold flex items-center gap-1"><ListPlus className="h-3 w-3"/> Configure Options</Label>
-                {newQ.options?.map((opt, i) => (
-                  <div key={i} className="flex gap-2">
-                    <Input value={opt} onChange={e => updateOption(i, e.target.value)} placeholder={`Option ${i+1}`} />
-                    <Button variant="ghost" size="icon" onClick={() => setNewQ({...newQ, options: newQ.options?.filter((_, idx) => idx !== i)})}>
-                        <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setNewQ({...newQ, options: [...(newQ.options || []), `Option ${(newQ.options?.length || 0) + 1}`]})}>+ Add Option</Button>
-              </div>
-            )}
-
-            {newQ.type === 'scale' && (
-              <div className="p-3 bg-muted/40 rounded-lg border border-dashed flex gap-4">
-                <div className="flex-1 space-y-1">
-                    <Label className="text-[10px] uppercase">Min Value</Label>
-                    <Input type="number" value={newQ.scaleRange?.min} onChange={e => setNewQ({...newQ, scaleRange: {...newQ.scaleRange!, min: parseInt(e.target.value)}})} />
-                </div>
-                <div className="flex-1 space-y-1">
-                    <Label className="text-[10px] uppercase">Max Value</Label>
-                    <Input type="number" value={newQ.scaleRange?.max} onChange={e => setNewQ({...newQ, scaleRange: {...newQ.scaleRange!, max: parseInt(e.target.value)}})} />
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-2"><Switch checked={newQ.required} onCheckedChange={v => setNewQ({ ...newQ, required: v })} /><Label>Mark as Required</Label></div>
-          </div>
-          <DialogFooter className="pt-4">
-            <Button onClick={handleAddQuestion} className="w-full">Create Question</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit dialog */}
-      <Dialog open={!!editQ} onOpenChange={() => setEditQ(null)}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle className="font-display">Edit Question</DialogTitle></DialogHeader>
-          {editQ && (
-            <div className="space-y-4 py-2">
-              <div className="space-y-2"><Label>Question Text</Label><Input value={editQ.text} onChange={e => setEditQ({ ...editQ, text: e.target.value })} /></div>
-              
-              {editQ.options && (
-                <div className="space-y-2 p-3 bg-muted/40 rounded-lg border">
-                   <Label className="text-xs font-bold">Options</Label>
-                   {editQ.options.map((opt, i) => (
-                     <div key={i} className="flex gap-2">
-                        <Input value={opt} onChange={e => updateOption(i, e.target.value, true)} />
-                        <Button variant="ghost" size="icon" onClick={() => setEditQ({...editQ, options: editQ.options?.filter((_, idx) => idx !== i)})}><X className="h-4 w-4"/></Button>
-                     </div>
-                   ))}
-                   <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setEditQ({...editQ, options: [...(editQ.options || []), "New Option"]})}>+ Add Option</Button>
-                </div>
-              )}
-
-              {editQ.scaleRange && (
-                <div className="flex gap-4 p-3 bg-muted/40 rounded-lg border">
-                    <div className="flex-1 space-y-1"><Label className="text-[10px] uppercase">Min</Label><Input type="number" value={editQ.scaleRange.min} onChange={e => setEditQ({...editQ, scaleRange: {...editQ.scaleRange!, min: parseInt(e.target.value)}})} /></div>
-                    <div className="flex-1 space-y-1"><Label className="text-[10px] uppercase">Max</Label><Input type="number" value={editQ.scaleRange.max} onChange={e => setEditQ({...editQ, scaleRange: {...editQ.scaleRange!, max: parseInt(e.target.value)}})} /></div>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 pt-2"><Switch checked={editQ.required} onCheckedChange={v => setEditQ({ ...editQ, required: v })} /><Label>Required</Label></div>
-            </div>
-          )}
-          <DialogFooter className="pt-4">
-            <Button className="w-full" onClick={() => { 
-              setCategories(prev => prev.map(c => ({...c, questions: c.questions.map((q:any) => q.id === editQ?.id ? editQ : q)})));
-              setEditQ(null); 
-              toast({ title: 'Question Updated' }); 
-            }}>Save Changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add category dialog */}
-      <Dialog open={showAddCat} onOpenChange={setShowAddCat}>
-        <DialogContent>
-          <DialogHeader><DialogTitle className="font-display">Add Category</DialogTitle></DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label>Category Name</Label>
-              <Input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="e.g. Personal Information" />
+            <div className="space-y-2"><Label>Name *</Label>
+              <Input value={cf.name} onChange={e => setCf({...cf, name: e.target.value})} placeholder="e.g. Employed Alumni Survey" /></div>
+            <div className="space-y-2"><Label>Template Key</Label>
+              <Input value={cf.template_key} onChange={e => setCf({...cf, template_key: e.target.value})} placeholder="Auto-generated if empty" /></div>
+            <div className="space-y-2"><Label>Description</Label>
+              <Input value={cf.description} onChange={e => setCf({...cf, description: e.target.value})} placeholder="Brief description" /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2"><Label>Kind</Label>
+                <Select value={cf.kind} onValueChange={v => setCf({...cf, kind: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{KINDS.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
+                </Select></div>
+              <div className="space-y-2"><Label>Path</Label>
+                <Select value={cf.path_key} onValueChange={v => setCf({...cf, path_key: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{PATHS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
+                </Select></div>
             </div>
           </div>
-          <DialogFooter className="pt-4">
-            <Button className="w-full" onClick={handleAddCategory}>Add Category</Button>
-          </DialogFooter>
+          <DialogFooter className="pt-4"><Button onClick={handleCreate} disabled={saving} className="w-full">
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Create Template</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

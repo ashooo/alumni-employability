@@ -4,6 +4,7 @@ const path = require('path');
 const xlsx = require('xlsx');
 
 const prisma = new PrismaClient();
+const bcrypt = require('bcrypt');
 const { createPlaceholderPasswordHash } = require('../utils/refactorAuth');
 
 const COMPETENCY_FILE = path.resolve(__dirname, '../../ml/data/competency_compilation.csv');
@@ -30,16 +31,69 @@ const LAST_NAMES = [
 ];
 
 async function clearData() {
-  console.log('Clearing existing alumni data for a fresh start...');
-  // Delete in order of dependencies
-  await prisma.employmentOutcome.deleteMany({});
+  console.log('Clearing existing data for a fresh start...');
+  
+  // Delete in order of dependencies to avoid foreign key violations
   await prisma.mlPrediction.deleteMany({});
+  await prisma.followupSchedule.deleteMany({});
+  await prisma.employmentOutcome.deleteMany({});
   await prisma.surveyAnswer.deleteMany({});
   await prisma.submissionCompetency.deleteMany({});
+  
+  // Handle self-referencing foreign keys in SurveySubmission
+  await prisma.surveySubmission.updateMany({
+    data: { 
+      trigger_submission_id: null,
+      parent_submission_id: null 
+    }
+  });
   await prisma.surveySubmission.deleteMany({});
+  
   await prisma.academicSnapshot.deleteMany({});
   await prisma.alumniProfile.deleteMany({});
-  await prisma.user.deleteMany({ where: { role: 'ALUMNI' } });
+  
+  // Also clear audit logs that might reference users
+  await prisma.auditLog.deleteMany({});
+  await prisma.userNotification.deleteMany({});
+  await prisma.notification.deleteMany({});
+  
+  await prisma.user.deleteMany({ 
+    where: { 
+      role: { in: ['ALUMNI', 'ADMIN', 'SUPERADMIN'] } 
+    } 
+  });
+}
+
+async function seedAdmins() {
+  console.log('Seeding administrative accounts...');
+  const adminHash = await bcrypt.hash('admin123', 10);
+  const superHash = await bcrypt.hash('superadmin123', 10);
+
+  await prisma.user.upsert({
+    where: { username: 'admin' },
+    update: { password_hash: adminHash, role: 'ADMIN' },
+    create: {
+      username: 'admin',
+      password_hash: adminHash,
+      role: 'ADMIN',
+      first_name: 'Admin',
+      last_name: 'User',
+      email: 'admin@example.com'
+    }
+  });
+
+  await prisma.user.upsert({
+    where: { username: 'superadmin' },
+    update: { password_hash: superHash, role: 'SUPERADMIN' },
+    create: {
+      username: 'superadmin',
+      password_hash: superHash,
+      role: 'SUPERADMIN',
+      first_name: 'Super',
+      last_name: 'Admin',
+      email: 'superadmin@example.com'
+    }
+  });
 }
 
 async function seedCompetencies() {
@@ -202,6 +256,7 @@ async function seedHistoricalAlumni() {
 async function main() {
   try {
     await clearData();
+    await seedAdmins();
     await seedCompetencies();
     await seedCollegesAndPrograms();
     await seedHistoricalAlumni();

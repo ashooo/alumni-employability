@@ -20,56 +20,68 @@ const reportTypes = [
   'Skills Assessment Summary',
 ];
 
-// ── PLP Green Palette (ARGB) ──────────────────────────────────────────────────
-const G1 = 'FF013C06'; // school name row  – darkest
-const G2 = 'FF014A07'; // address / dept rows
-const G3 = 'FF016008'; // report title row
-const G4 = 'FF013504'; // date row         – near-black
+// ── Colors ────────────────────────────────────────────────────────────────────
+const NAVY_ARGB    = 'FF1B3A6B';
+const WHITE_ARGB   = 'FFFFFFFF';
+const BLACK_ARGB   = 'FF1A1A1A';
+const GRAY_ARGB    = 'FF555555';
+const DIVIDER_ARGB = 'FFB8B8B8';
+const ROW_ALT_ARGB = 'FFF7F7F7'; // very subtle alternating row
 
-// ── Logo paths (from /public/) ────────────────────────────────────────────────
-const LOGO_LEFT_PATH  = '/plp_logo.png';
-const LOGO_RIGHT_PATH = '/ccs_logo.png';
+// ── Logo paths ────────────────────────────────────────────────────────────────
+const LOGO_SEAL_PATH  = '/seal_logo.png';
+const LOGO_PASIG_PATH = '/pasig_logo.png';
+const LOGO_PLP_PATH   = '/plp_logo.png';
 
 async function fetchImage(path: string): Promise<ArrayBuffer> {
   const res = await fetch(path);
   return res.arrayBuffer();
 }
 
+/** Normalize snake_case / UPPER_CASE API values to human-readable strings. */
+function normalizeStr(val: string): string {
+  return val.replace(/_/g, ' ').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
+}
+
+// ── Defaults ──────────────────────────────────────────────────────────────────
 const defaultHeader = {
-  schoolName: 'Pamantasan ng Lungsod ng Pasig',
-  address:    'Alkalde Jose St. Kapasigan, Pasig City',
-  department: 'College of Computer Studies',
-  showLogos:  true,
+  office:     'College of Computer Studies',
+  address:    'Alkalde Jose St. Kapasigan, Pasig City, Philippines 1600',
+  contact:    '628-1014 Loc. 106',
+  email:      'ccs@plpasig.edu.ph',
+  showHeader: true,
 };
 
-// ── Layout constants ──────────────────────────────────────────────────────────
-const LOGO_COL_WIDTH   = 14;   // Excel width units for each logo column
-const LOGO_SIZE_PX     = 85;   // left (PLP) logo size in pixels
-const LOGO_RIGHT_SIZE  = 68;   // right (CCS) logo size — slightly smaller
-const ROW_HEIGHTS      = [30, 16, 20, 24, 15] as const; // pts for rows 1-5
+// ── Layout ────────────────────────────────────────────────────────────────────
+const LOGO_COL_W   = 13;   // Excel col width per logo column
+const DATA_COL_MIN = 20;
+const MIN_TOTAL_W  = 85;
 
-// Minimum width (in Excel units) for each inner data column when there are few columns.
-// This prevents the header text area from being too narrow for logos + text to coexist.
-const MIN_DATA_COL_WIDTH = 22;
-// Minimum *total* inner-data width (sum of all data col widths) in Excel units.
-// At ~7px per unit this keeps the header text area at least ~700px wide.
-const MIN_TOTAL_DATA_WIDTH = 80; // units — roughly equivalent to ~6 standard columns
+// Row heights in points
+const RH = {
+  navy:      24,  // 1 — navy university name band
+  office:    21,  // 2 — office / dept
+  address:   15,  // 3 — address
+  contact:   14,  // 4 — phone + email
+  separator:  4,  // 5 — gray rule
+  date:      12,  // 6 — generated date
+  header:    22,  // 7 — column headers
+} as const;
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 function HeaderModal({
-  header, onChange, onClose, onReset, reportType,
+  header, onChange, onClose, onReset,
 }: {
   header: typeof defaultHeader;
   onChange: (h: typeof defaultHeader) => void;
   onClose: () => void;
   onReset: () => void;
-  reportType: string;
 }) {
-  const field = (id: keyof typeof defaultHeader, label: string, ph: string) => (
+  const field = (id: keyof typeof defaultHeader, label: string, ph: string, type = 'text') => (
     <div className="space-y-1">
       <Label htmlFor={id}>{label}</Label>
       <Input
-        id={id}
+        id={id} type={type}
         value={header[id] as string}
         onChange={e => onChange({ ...header, [id]: e.target.value })}
         placeholder={ph}
@@ -82,41 +94,47 @@ function HeaderModal({
       <div className="bg-background rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Customize Export Header</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
-        {field('schoolName', 'School / University Name', 'e.g. Pamantasan ng Lungsod ng Pasig')}
-        {field('address',    'Address',                  'e.g. Alkalde Jose St. Kapasigan, Pasig City')}
-        {field('department', 'Department / College',     'e.g. College of Computer Studies')}
+        {field('office',  'Office / Department', 'e.g. College of Computer Studies')}
+        {field('address', 'Address',             'e.g. Alkalde Jose St. Kapasigan, Pasig City, Philippines 1600')}
+        {field('contact', 'Contact Number',      'e.g. 628-1014 Loc. 106', 'tel')}
+        {field('email',   'Email Address',       'e.g. ccs@plpasig.edu.ph', 'email')}
 
         <div className="flex items-center gap-2">
-          <input type="checkbox" id="showLogos" checked={header.showLogos}
-            onChange={e => onChange({ ...header, showLogos: e.target.checked })}
+          <input type="checkbox" id="showHeader" checked={header.showHeader}
+            onChange={e => onChange({ ...header, showHeader: e.target.checked })}
             className="h-4 w-4 cursor-pointer" />
-          <Label htmlFor="showLogos" className="cursor-pointer">Show logos in Excel export</Label>
+          <Label htmlFor="showHeader" className="cursor-pointer">Show header in export</Label>
         </div>
 
         {/* Live preview */}
-        <div className="rounded-lg overflow-hidden border text-center text-xs leading-5">
-          <div className="py-1.5 font-bold tracking-wide uppercase" style={{ background: '#013C06', color: '#fff' }}>
-            {header.schoolName || '—'}
+        <div className="rounded-lg overflow-hidden border bg-white shadow-sm text-xs">
+          <div className="flex items-stretch">
+            <div className="flex items-center justify-center gap-1.5 px-2 py-2 bg-white border-r border-gray-200 min-w-[96px]">
+              {['SEAL', 'PASIG', 'PLP'].map(l => (
+                <div key={l} className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[5px] text-gray-500 font-bold">{l}</div>
+              ))}
+            </div>
+            <div className="flex-1 text-center">
+              <div className="py-1 font-bold tracking-widest uppercase text-white text-[8px]" style={{ background: '#1B3A6B' }}>
+                Pamantasan ng Lungsod ng Pasig
+              </div>
+              <div className="pt-0.5 font-bold text-black text-[9px]">{header.office || '—'}</div>
+              <div className="text-gray-500 text-[7px]">📍 {header.address || '—'}</div>
+              <div className="pb-1 text-gray-500 text-[7px]">📞 {header.contact || '—'}  ✉ {header.email || '—'}</div>
+            </div>
           </div>
-          <div className="py-1 italic" style={{ background: '#014A07', color: '#fff' }}>
-            {header.address || '—'}
-          </div>
-          <div className="py-1 font-semibold uppercase" style={{ background: '#014A07', color: '#fff' }}>
-            {header.department || '—'}
-          </div>
-          <div className="py-1.5 font-semibold" style={{ background: '#016008', color: '#fff' }}>
-            Alumni Tracer: {reportType || '<Report Type>'} Report
-          </div>
-          <div className="py-1 italic" style={{ background: '#013504', color: '#ccc' }}>
-            Generated on: {new Date().toLocaleDateString()}
-          </div>
+          <div className="h-px bg-gray-300" />
         </div>
 
         <div className="flex justify-between pt-2">
-          <Button variant="ghost" size="sm" onClick={onReset} className="text-xs text-muted-foreground">Reset to defaults</Button>
+          <Button variant="ghost" size="sm" onClick={onReset} className="text-xs text-muted-foreground">
+            Reset to defaults
+          </Button>
           <Button size="sm" onClick={onClose}>Done</Button>
         </div>
       </div>
@@ -135,6 +153,7 @@ export default function AdminReports() {
   const [header, setHeader]           = useState(defaultHeader);
   const { toast } = useToast();
 
+  // ── Fetch report data ───────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!reportType) return;
     setIsLoading(true);
@@ -152,7 +171,19 @@ export default function AdminReports() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Failed to fetch');
-      setReportData(await res.json());
+      const raw: any[] = await res.json();
+
+      // Normalize all string values coming from the API
+      const normalized = raw.map(row => {
+        const out: Record<string, any> = {};
+        for (const key of Object.keys(row)) {
+          const v = row[key];
+          out[key] = typeof v === 'string' ? normalizeStr(v) : v;
+        }
+        return out;
+      });
+
+      setReportData(normalized);
       setShowPreview(true);
       toast({ title: 'Report Generated', description: 'Preview ready.' });
     } catch {
@@ -162,6 +193,7 @@ export default function AdminReports() {
     }
   };
 
+  // ── Export ──────────────────────────────────────────────────────────────────
   const handleExport = async (format: 'Excel' | 'CSV') => {
     if (!reportData.length) {
       toast({ title: 'Export Failed', description: 'No data to export.', variant: 'destructive' });
@@ -171,13 +203,10 @@ export default function AdminReports() {
     const dateStr  = new Date().toLocaleDateString();
     const fileName = `${reportType.replace(/\s+/g, '_')}_Report`;
     const dataCols = Object.keys(reportData[0]);
+    const dateLabel = `Generated on: ${dateStr}`;
+    const univName  = 'PAMANTASAN NG LUNGSOD NG PASIG';
 
-    const line1 = header.schoolName.toUpperCase();
-    const line2 = header.address;
-    const line3 = header.department.toUpperCase();
-    const line4 = `Alumni Tracer: ${reportType} Report`;
-    const line5 = `Generated on: ${dateStr}`;
-
+    // ── EXCEL ─────────────────────────────────────────────────────────────────
     if (format === 'Excel') {
       try {
         const wb = new ExcelJS.Workbook();
@@ -185,200 +214,178 @@ export default function AdminReports() {
         wb.created = new Date();
         const ws = wb.addWorksheet(reportType.substring(0, 31));
 
-        // ── Column structure ─────────────────────────────────────────────────
-        // Col 1          → left logo holder  (blank, wide)
-        // Cols 2 … N+1   → actual data columns
-        // Col N+2        → right logo holder (blank, wide)
-        const numData    = dataCols.length;
-        const totalCols  = numData + 2;
-        const COL_LOGO_L     = 1;
-        const COL_LOGO_R     = totalCols;
-        const COL_DATA_START = 2;
-        const COL_DATA_END   = numData + 1;
+        const numData        = dataCols.length;
+        const LOGO_COLS      = 3;
+        const COL_DATA_START = LOGO_COLS + 1;
+        const totalCols      = LOGO_COLS + numData;
 
-        // ── Compute per-column widths, enforcing a minimum total ─────────────
-        // First pass: natural widths
-        const naturalWidths = dataCols.map(c => Math.max(c.length + 8, MIN_DATA_COL_WIDTH));
-        const naturalTotal  = naturalWidths.reduce((a, b) => a + b, 0);
+        // Column widths
+        const rawWidths = dataCols.map(c => Math.max(c.length + 10, DATA_COL_MIN));
+        const rawTotal  = rawWidths.reduce((a, b) => a + b, 0);
+        const colWidths = rawWidths.map(w =>
+          rawTotal < MIN_TOTAL_W ? w + (MIN_TOTAL_W - rawTotal) / numData : w,
+        );
+        for (let c = 1; c <= LOGO_COLS; c++) ws.getColumn(c).width = LOGO_COL_W;
+        for (let i = 0; i < numData; i++)    ws.getColumn(COL_DATA_START + i).width = colWidths[i];
 
-        // If the natural total is below our minimum, distribute the extra width
-        // evenly across all data columns so the header text area stays wide enough.
-        const dataColWidths = naturalWidths.slice();
-        if (naturalTotal < MIN_TOTAL_DATA_WIDTH) {
-          const deficit    = MIN_TOTAL_DATA_WIDTH - naturalTotal;
-          const perColBonus = deficit / numData;
-          for (let i = 0; i < numData; i++) {
-            dataColWidths[i] = naturalWidths[i] + perColBonus;
-          }
-        }
-
-        // Apply widths
-        ws.getColumn(COL_LOGO_L).width = LOGO_COL_WIDTH;
-        for (let i = 0; i < numData; i++) {
-          ws.getColumn(COL_DATA_START + i).width = dataColWidths[i];
-        }
-        ws.getColumn(COL_LOGO_R).width = LOGO_COL_WIDTH;
-
-        // ── Helper: add a merged letterhead row ──────────────────────────────
-        const addLetterheadRow = (
-          text: string,
-          bgArgb: string,
-          bold: boolean,
-          fontSize: number,
-          rowHeight: number,
-          italic = false,
-        ) => {
-          const row = ws.addRow(Array(totalCols).fill(''));
-          row.height = rowHeight;
-          ws.mergeCells(row.number, 1, row.number, totalCols);
-          const cell     = row.getCell(1);
-          cell.value     = text;
-          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
-          cell.font      = { bold, italic, size: fontSize, name: 'Arial', color: { argb: 'FFFFFFFF' } };
-          for (let c = 1; c <= totalCols; c++) {
-            row.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
-          }
-          return row;
+        // Helper: fill a cell range in a row
+        const fill = (row: ExcelJS.Row, from: number, to: number, argb: string) => {
+          for (let c = from; c <= to; c++)
+            row.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
         };
 
-        // ── Letterhead rows 1–5 ──────────────────────────────────────────────
-        addLetterheadRow(line1, G1, true,  15, ROW_HEIGHTS[0]);
-        addLetterheadRow(line2, G2, false, 10, ROW_HEIGHTS[1], true);
-        addLetterheadRow(line3, G2, true,  12, ROW_HEIGHTS[2]);
-        addLetterheadRow(line4, G3, true,  12, ROW_HEIGHTS[3]);
-        addLetterheadRow(line5, G4, false,  9, ROW_HEIGHTS[4], true);
+        if (header.showHeader) {
+          // ── Row 1: Navy band — university name, centered over data cols ──────
+          const r1 = ws.addRow(Array(totalCols).fill(''));
+          r1.height = RH.navy;
+          fill(r1, 1, LOGO_COLS, WHITE_ARGB);
+          ws.mergeCells(r1.number, COL_DATA_START, r1.number, totalCols);
+          const c1 = r1.getCell(COL_DATA_START);
+          c1.value     = univName;
+          c1.font      = { bold: true, size: 13, name: 'Calibri', color: { argb: WHITE_ARGB } };
+          c1.alignment = { horizontal: 'center', vertical: 'middle' };
+          fill(r1, COL_DATA_START, totalCols, NAVY_ARGB);
 
-        // ── Gold separator (row 6) ───────────────────────────────────────────
-        const sepRow = ws.addRow(Array(totalCols).fill(''));
-        sepRow.height = 4;
-        ws.mergeCells(sepRow.number, 1, sepRow.number, totalCols);
-        for (let c = 1; c <= totalCols; c++) {
-          sepRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD700' } };
+          // ── Row 2: Office name ───────────────────────────────────────────────
+          const r2 = ws.addRow(Array(totalCols).fill(''));
+          r2.height = RH.office;
+          fill(r2, 1, LOGO_COLS, WHITE_ARGB);
+          ws.mergeCells(r2.number, COL_DATA_START, r2.number, totalCols);
+          const c2 = r2.getCell(COL_DATA_START);
+          c2.value     = header.office;
+          c2.font      = { bold: true, size: 12, name: 'Calibri', color: { argb: BLACK_ARGB } };
+          c2.alignment = { horizontal: 'center', vertical: 'middle' };
+          fill(r2, COL_DATA_START, totalCols, WHITE_ARGB);
+
+          // ── Row 3: Address ───────────────────────────────────────────────────
+          const r3 = ws.addRow(Array(totalCols).fill(''));
+          r3.height = RH.address;
+          fill(r3, 1, LOGO_COLS, WHITE_ARGB);
+          ws.mergeCells(r3.number, COL_DATA_START, r3.number, totalCols);
+          const c3 = r3.getCell(COL_DATA_START);
+          c3.value     = `\uD83D\uDCCD ${header.address}`;
+          c3.font      = { size: 9, name: 'Calibri', color: { argb: GRAY_ARGB } };
+          c3.alignment = { horizontal: 'center', vertical: 'middle' };
+          fill(r3, COL_DATA_START, totalCols, WHITE_ARGB);
+
+          // ── Row 4: Contact + Email ───────────────────────────────────────────
+          const r4 = ws.addRow(Array(totalCols).fill(''));
+          r4.height = RH.contact;
+          fill(r4, 1, LOGO_COLS, WHITE_ARGB);
+          ws.mergeCells(r4.number, COL_DATA_START, r4.number, totalCols);
+          const c4 = r4.getCell(COL_DATA_START);
+          c4.value     = `\u260E ${header.contact}    \u2709 ${header.email}`;
+          c4.font      = { size: 9, name: 'Calibri', color: { argb: GRAY_ARGB } };
+          c4.alignment = { horizontal: 'center', vertical: 'middle' };
+          fill(r4, COL_DATA_START, totalCols, WHITE_ARGB);
+
+          // ── Row 5: Gray separator spanning all columns ───────────────────────
+          const r5 = ws.addRow(Array(totalCols).fill(''));
+          r5.height = RH.separator;
+          ws.mergeCells(r5.number, 1, r5.number, totalCols);
+          fill(r5, 1, totalCols, DIVIDER_ARGB);
+
+          // ── Row 6: Generated date — right-aligned ────────────────────────────
+          const r6 = ws.addRow(Array(totalCols).fill(''));
+          r6.height = RH.date;
+          ws.mergeCells(r6.number, 1, r6.number, totalCols);
+          const c6 = r6.getCell(1);
+          c6.value     = dateLabel;
+          c6.font      = { italic: true, size: 8, name: 'Calibri', color: { argb: GRAY_ARGB } };
+          c6.alignment = { horizontal: 'right', vertical: 'middle' };
+          fill(r6, 1, totalCols, WHITE_ARGB);
+
+          // ── Logos ────────────────────────────────────────────────────────────
+          try {
+            const [sealBuf, pasigBuf, plpBuf] = await Promise.all([
+              fetchImage(LOGO_SEAL_PATH),
+              fetchImage(LOGO_PASIG_PATH),
+              fetchImage(LOGO_PLP_PATH),
+            ]);
+            const toEmu = (px: number) => Math.round(px * 9525);
+
+            // Fit logos within rows 1-4 total height
+            const hdrPts = RH.navy + RH.office + RH.address + RH.contact;
+            const hdrPx  = hdrPts * (96 / 72);
+            const LOGO   = Math.min(58, Math.floor(hdrPx * 0.82)); // logo size px
+            const PAD    = 4;
+            const top    = toEmu(Math.max(2, Math.round((hdrPx - LOGO) / 2)));
+
+            const imgCfg = (col: number, extraW = 0) => ({
+              tl: { nativeCol: col, nativeColOff: toEmu(PAD), nativeRow: 0, nativeRowOff: top } as any,
+              ext: { width: LOGO + extraW, height: LOGO },
+              editAs: 'oneCell',
+            } as any);
+
+            const sealId  = wb.addImage({ buffer: sealBuf,  extension: 'png' });
+            const pasigId = wb.addImage({ buffer: pasigBuf, extension: 'png' });
+            const plpId   = wb.addImage({ buffer: plpBuf,   extension: 'png' });
+
+            ws.addImage(sealId,  imgCfg(0));       // col 1 — seal (circular)
+            ws.addImage(pasigId, imgCfg(1, 10));   // col 2 — pasig wordmark (wider)
+            ws.addImage(plpId,   imgCfg(2));        // col 3 — plp seal (circular)
+          } catch (e) {
+            console.warn('Logo load error:', e);
+          }
         }
 
-        // ── Column header row (row 7) ────────────────────────────────────────
-        const hdrRow = ws.addRow(['', ...dataCols, '']);
-        hdrRow.height = 22;
-        for (const c of [COL_LOGO_L, COL_LOGO_R]) {
-          hdrRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B5E20' } };
-        }
-        for (let i = COL_DATA_START; i <= COL_DATA_END; i++) {
-          const cell = hdrRow.getCell(i);
-          cell.font      = { bold: true, size: 11, name: 'Arial', color: { argb: 'FFFFFFFF' } };
-          cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B5E20' } };
+        // ── Column header row ─────────────────────────────────────────────────
+        const hdrRow = ws.addRow([...Array(LOGO_COLS).fill(''), ...dataCols]);
+        hdrRow.height = RH.header;
+        fill(hdrRow, 1, LOGO_COLS, NAVY_ARGB);
+        for (let i = 0; i < numData; i++) {
+          const cell = hdrRow.getCell(COL_DATA_START + i);
+          cell.font      = { bold: true, size: 11, name: 'Calibri', color: { argb: WHITE_ARGB } };
+          cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY_ARGB } };
           cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
           cell.border    = {
-            top:    { style: 'thin',   color: { argb: 'FF388E3C' } },
-            bottom: { style: 'medium', color: { argb: 'FFFFD700' } },
-            left:   { style: 'thin',   color: { argb: 'FF388E3C' } },
-            right:  { style: 'thin',   color: { argb: 'FF388E3C' } },
+            left:  { style: 'thin', color: { argb: 'FF2E5090' } },
+            right: { style: 'thin', color: { argb: 'FF2E5090' } },
           };
         }
 
-        // ── Data rows ────────────────────────────────────────────────────────
-        reportData.forEach((rowObj, rowIdx) => {
+        // ── Data rows — clean, centered, simple alternating bg ─────────────────
+        reportData.forEach((rowObj, idx) => {
           const values = dataCols.map(c => rowObj[c]);
-          const dr     = ws.addRow(['', ...values, '']);
-          const isEven = rowIdx % 2 === 1;
-          const rowBg  = isEven ? 'FFE8F5E9' : 'FFFFFFFF';
-
-          for (const c of [COL_LOGO_L, COL_LOGO_R]) {
-            dr.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
-          }
+          const dr     = ws.addRow([...Array(LOGO_COLS).fill(''), ...values]);
+          const bg     = idx % 2 === 1 ? ROW_ALT_ARGB : WHITE_ARGB;
+          fill(dr, 1, LOGO_COLS, bg);
           for (let i = 0; i < numData; i++) {
-            const cell  = dr.getCell(COL_DATA_START + i);
-            const val   = values[i];
-            const isNum = typeof val === 'number';
-            cell.alignment = { horizontal: isNum ? 'right' : 'left', vertical: 'middle' };
-            cell.font      = { size: 10, name: 'Arial', color: { argb: 'FF1A1A1A' } };
-            cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+            const cell = dr.getCell(COL_DATA_START + i);
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            cell.font      = { size: 10, name: 'Calibri', color: { argb: BLACK_ARGB } };
+            cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
             cell.border    = {
-              top:    { style: 'hair', color: { argb: 'FFBDBDBD' } },
-              bottom: { style: 'hair', color: { argb: 'FFBDBDBD' } },
-              left:   { style: 'hair', color: { argb: 'FFBDBDBD' } },
-              right:  { style: 'hair', color: { argb: 'FFBDBDBD' } },
+              bottom: { style: 'hair', color: { argb: 'FFDDDDDD' } },
+              left:   { style: 'hair', color: { argb: 'FFDDDDDD' } },
+              right:  { style: 'hair', color: { argb: 'FFDDDDDD' } },
             };
           }
         });
 
         // ── Totals row ────────────────────────────────────────────────────────
-        const totDataVals = dataCols.map((c, i) => {
+        const totVals = dataCols.map((c, i) => {
           if (i === 0) return 'TOTAL';
           const vals = reportData.map(r => r[c]);
-          if (vals.every(v => typeof v === 'number')) return (vals as number[]).reduce((a, b) => a + b, 0);
-          return '';
+          return vals.every(v => typeof v === 'number')
+            ? (vals as number[]).reduce((a, b) => a + b, 0)
+            : '';
         });
-        const totRow = ws.addRow(['', ...totDataVals, '']);
+        const totRow = ws.addRow([...Array(LOGO_COLS).fill(''), ...totVals]);
         totRow.height = 20;
-
-        for (const c of [COL_LOGO_L, COL_LOGO_R]) {
-          totRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: G1 } };
-        }
+        fill(totRow, 1, LOGO_COLS, NAVY_ARGB);
         for (let i = 0; i < numData; i++) {
           const cell = totRow.getCell(COL_DATA_START + i);
-          const val  = totDataVals[i];
-          cell.font      = { bold: true, size: 11, name: 'Arial', color: { argb: 'FFFFFFFF' } };
-          cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: G1 } };
-          cell.alignment = {
-            horizontal: i === 0 ? 'left' : (typeof val === 'number' ? 'right' : 'left'),
-            vertical:   'middle',
-          };
-          cell.border = {
-            top:    { style: 'medium', color: { argb: 'FFFFD700' } },
-            bottom: { style: 'medium', color: { argb: 'FFFFD700' } },
-            left:   { style: 'thin',   color: { argb: 'FF388E3C' } },
-            right:  { style: 'thin',   color: { argb: 'FF388E3C' } },
+          cell.font      = { bold: true, size: 11, name: 'Calibri', color: { argb: WHITE_ARGB } };
+          cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY_ARGB } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.border    = {
+            top:   { style: 'medium', color: { argb: DIVIDER_ARGB } },
+            left:  { style: 'thin',   color: { argb: 'FF2E5090' } },
+            right: { style: 'thin',   color: { argb: 'FF2E5090' } },
           };
         }
 
-        // ── Logos ─────────────────────────────────────────────────────────────
-        if (header.showLogos) {
-          try {
-            const [leftBuf, rightBuf] = await Promise.all([
-              fetchImage(LOGO_LEFT_PATH),
-              fetchImage(LOGO_RIGHT_PATH),
-            ]);
-            const leftId  = wb.addImage({ buffer: leftBuf,  extension: 'png' });
-            const rightId = wb.addImage({ buffer: rightBuf, extension: 'png' });
-
-            const toEmu = (px: number) => Math.round(px * 9525);
-
-            const headerPtTotal = ROW_HEIGHTS.reduce((a, b) => a + b, 0);
-            const headerPx      = headerPtTotal * (96 / 72);
-            const PAD_PX        = 8;
-
-            // Left (PLP) logo — full size, vertically centered
-            const leftTopPx = Math.max(4, Math.round((headerPx - LOGO_SIZE_PX) / 2));
-            ws.addImage(leftId, {
-              tl: {
-                nativeCol:    0,
-                nativeColOff: toEmu(PAD_PX),
-                nativeRow:    0,
-                nativeRowOff: toEmu(leftTopPx),
-              } as any,
-              ext:    { width: LOGO_SIZE_PX, height: LOGO_SIZE_PX },
-              editAs: 'oneCell',
-            } as any);
-
-            // Right (CCS) logo — slightly smaller, vertically centered independently
-            const rightTopPx = Math.max(4, Math.round((headerPx - LOGO_RIGHT_SIZE) / 2));
-            ws.addImage(rightId, {
-              tl: {
-                nativeCol:    totalCols - 1,
-                nativeColOff: toEmu(PAD_PX),
-                nativeRow:    0,
-                nativeRowOff: toEmu(rightTopPx),
-              } as any,
-              ext:    { width: LOGO_RIGHT_SIZE, height: LOGO_RIGHT_SIZE },
-              editAs: 'oneCell',
-            } as any);
-
-          } catch (imgErr) {
-            console.warn('Logo images could not be loaded:', imgErr);
-          }
-        }
-
-        // ── Download ──────────────────────────────────────────────────────────
         const buffer = await wb.xlsx.writeBuffer();
         saveAs(
           new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
@@ -391,19 +398,27 @@ export default function AdminReports() {
         toast({ title: 'Export Error', description: 'Failed to generate Excel.', variant: 'destructive' });
       }
 
+    // ── CSV ───────────────────────────────────────────────────────────────────
     } else {
-      // ── CSV ───────────────────────────────────────────────────────────────
       try {
-        const letterhead = [line1, line2, line3, line4, line5, ''].map(l => `"${l}"`).join('\n');
-        const dataRows   = reportData.map(row =>
+        const letterhead = [
+          'PAMANTASAN NG LUNGSOD NG PASIG',
+          header.office,
+          header.address,
+          `${header.contact}  |  ${header.email}`,
+          dateLabel,
+          '',
+        ].map(l => `"${l}"`).join('\n');
+
+        const dataRows = reportData.map(row =>
           dataCols.map(c => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(','),
         );
         const totRow = dataCols.map((c, i) => {
           const vals = reportData.map(r => r[c]);
           if (i === 0) return '"TOTAL"';
-          if (vals.every(v => typeof v === 'number'))
-            return `"${(vals as number[]).reduce((a, b) => a + b, 0)}"`;
-          return '""';
+          return vals.every(v => typeof v === 'number')
+            ? `"${(vals as number[]).reduce((a, b) => a + b, 0)}"`
+            : '""';
         }).join(',');
 
         const csv  = [letterhead, dataCols.map(c => `"${c}"`).join(','), ...dataRows, totRow].join('\n');
@@ -419,6 +434,7 @@ export default function AdminReports() {
     }
   };
 
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       <div>
@@ -432,7 +448,6 @@ export default function AdminReports() {
           onChange={setHeader}
           onClose={() => setModalOpen(false)}
           onReset={() => setHeader(defaultHeader)}
-          reportType={reportType}
         />
       )}
 
@@ -475,7 +490,7 @@ export default function AdminReports() {
               <TableHeader>
                 <TableRow>
                   {Object.keys(reportData[0]).map(h => (
-                    <TableHead key={h} className="whitespace-nowrap">{h}</TableHead>
+                    <TableHead key={h} className="whitespace-nowrap text-center">{h}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
@@ -483,7 +498,7 @@ export default function AdminReports() {
                 {reportData.map((row, ri) => (
                   <TableRow key={ri}>
                     {Object.values(row).map((v: any, ci) => (
-                      <TableCell key={ci}>{v}</TableCell>
+                      <TableCell key={ci} className="text-center">{v}</TableCell>
                     ))}
                   </TableRow>
                 ))}

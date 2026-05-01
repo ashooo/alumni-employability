@@ -22,15 +22,14 @@ const superAdminNav = [
 ];
 
 const alumniNav = [
-  { title: 'My Submissions', url: '/app/alumni/submissions', icon: FileCheck },
-  { title: 'Change Password', url: '/app/alumni/change-password', icon: Lock },
-  { title: 'Tracer Survey', url: '/app/alumni/survey', icon: ClipboardCheck },
   { title: 'Dashboard', url: '/app/alumni/dashboard', icon: LayoutDashboard },
+  { title: 'Tracer Survey', url: '/app/alumni/survey', icon: ClipboardCheck },
   { title: 'Results & Jobs', url: '/app/alumni/results', icon: Star },
-  { title: 'My Profile', url: '/app/alumni/profile', icon: User },
+  { title: 'My Submissions', url: '/app/alumni/submissions', icon: FileCheck },
 ];
 
 const sharedNav = [
+  { title: 'My Profile', url: '/app/alumni/profile', icon: User },
   { title: 'System Overview', url: '/app/overview', icon: Home },
   { title: 'Model Simulator', url: '/app/model-simulator', icon: Brain },
   { title: 'Help / Guide', url: '/app/help', icon: HelpCircle },

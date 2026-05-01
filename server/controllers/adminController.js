@@ -416,6 +416,74 @@ const mapAlumniRecord = (profile) => ({
   email: profile.user?.email || null
 });
 
+const syncAcademicData = async (tx, profileId, programId, data) => {
+  const {
+    gender, age, yearGraduated, cgpa, profGrade, elecGrade, ojtGrade,
+    leaderPos, actMemberPos, softSkillsAve, hardSkillsAve, isEmployable
+  } = data;
+
+  // 1. Upsert AcademicSnapshot
+  const snapshot = await tx.academicSnapshot.upsert({
+    where: { 
+      // We assume one primary snapshot per profile for simplicity in bulk import
+      // or we can find the most recent one.
+      id: (await tx.academicSnapshot.findFirst({ 
+        where: { alumni_profile_id: profileId },
+        select: { id: true }
+      }))?.id || -1
+    },
+    update: {
+      program_id: programId || undefined,
+      gender, age, year_graduated: yearGraduated || 2020,
+      cgpa, prof_grade: profGrade, elec_grade: elecGrade, ojt_grade: ojtGrade,
+      leader_pos: leaderPos, act_member_pos: actMemberPos,
+      soft_skills_ave: softSkillsAve, hard_skills_ave: hardSkillsAve,
+      is_employable: isEmployable
+    },
+    create: {
+      alumni_profile_id: profileId,
+      program_id: programId || 1, // Fallback to first program if null
+      gender, age, year_graduated: yearGraduated || 2020,
+      cgpa, prof_grade: profGrade, elec_grade: elecGrade, ojt_grade: ojtGrade,
+      leader_pos: leaderPos, act_member_pos: actMemberPos,
+      soft_skills_ave: softSkillsAve, hard_skills_ave: hardSkillsAve,
+      is_employable: isEmployable
+    }
+  });
+
+  // 2. If historical employability is provided, create a historical submission and outcome
+  // This is crucial for training the AI (ARIMA and Employability models)
+  if (isEmployable !== undefined && isEmployable !== null) {
+    const historicalTemplate = await tx.surveyTemplate.findUnique({
+      where: { template_key: 'historical_import' }
+    });
+
+    if (historicalTemplate) {
+      // Create a completed submission for this historical data
+      const submission = await tx.surveySubmission.create({
+        data: {
+          alumni_profile_id: profileId,
+          academic_snapshot_id: snapshot.id,
+          template_id: historicalTemplate.id,
+          branch_path: 'FOLLOWUP',
+          status: 'COMPLETED',
+          submitted_at: new Date(`${yearGraduated || 2020}-01-01`)
+        }
+      });
+
+      // Create employment outcome
+      await tx.employmentOutcome.create({
+        data: {
+          alumni_profile_id: profileId,
+          submission_id: submission.id,
+          employment_status: isEmployable ? 'EMPLOYED' : 'UNEMPLOYED',
+          outcome_date: new Date(`${yearGraduated || 2020}-01-01`)
+        }
+      });
+    }
+  }
+};
+
 const createImportHistoryRecord = async (tx, { filename, uploadedBy, totalRecords }) => {
   return tx.importHistory.create({
     data: {
@@ -454,6 +522,22 @@ const processImportRow = async ({
   const suffix = normalizeString(row.suffix) || null;
   const email = normalizeEmail(row.email);
   const batchYear = parseOptionalInt(row.batch_year);
+
+  // New academic fields for AI training
+  const gender = normalizeString(row.gender);
+  const age = parseOptionalInt(row.age);
+  const yearGraduated = parseOptionalInt(row.year_graduated) || batchYear;
+  const cgpa = row.cgpa ? parseFloat(row.cgpa) : null;
+  const profGrade = row.prof_grade ? parseFloat(row.prof_grade) : null;
+  const elecGrade = row.elec_grade ? parseFloat(row.elec_grade) : null;
+  const ojtGrade = row.ojt_grade ? parseFloat(row.ojt_grade) : null;
+  const leaderPos = String(row.leader_pos || '').toLowerCase() === 'yes' || row.leader_pos === true;
+  const actMemberPos = String(row.act_member_pos || '').toLowerCase() === 'yes' || row.act_member_pos === true;
+  const softSkillsAve = row.soft_skills_ave ? parseFloat(row.soft_skills_ave) : null;
+  const hardSkillsAve = row.hard_skills_ave ? parseFloat(row.hard_skills_ave) : null;
+  const isEmployable = String(row.is_employable || '').toLowerCase() === 'yes' || 
+                      String(row.is_employable || '').toLowerCase() === 'employable' || 
+                      row.is_employable === true;
 
   if (!studentId) {
     throw new Error('student_id is required');
@@ -610,7 +694,7 @@ const processImportRow = async ({
   }
 
   if (existingUser?.alumni_profile) {
-    await tx.alumniProfile.update({
+    const profile = await tx.alumniProfile.update({
       where: { id: existingUser.alumni_profile.id },
       data: {
         student_id: studentId,
@@ -619,8 +703,12 @@ const processImportRow = async ({
         lifecycle_status: lifecycleStatus
       }
     });
+    await syncAcademicData(tx, profile.id, currentProgramId, {
+      gender, age, yearGraduated, cgpa, profGrade, elecGrade, ojtGrade,
+      leaderPos, actMemberPos, softSkillsAve, hardSkillsAve, isEmployable
+    });
   } else {
-    await tx.alumniProfile.create({
+    const profile = await tx.alumniProfile.create({
       data: {
         user_id: userId,
         student_id: studentId,
@@ -628,6 +716,10 @@ const processImportRow = async ({
         current_program_id: currentProgramId,
         lifecycle_status: lifecycleStatus
       }
+    });
+    await syncAcademicData(tx, profile.id, currentProgramId, {
+      gender, age, yearGraduated, cgpa, profGrade, elecGrade, ojtGrade,
+      leaderPos, actMemberPos, softSkillsAve, hardSkillsAve, isEmployable
     });
   }
 

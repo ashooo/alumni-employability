@@ -209,18 +209,18 @@ async function seedHistoricalAlumni() {
           data: {
             alumni_profile: { connect: { id: profile.id } },
             program: { connect: { id: programId } },
-            gender: row.Gender || 'Other',
+            gender: row.Gender || (Math.random() > 0.5 ? 'Male' : 'Female'),
             age: parseInt(row.Age) || 22,
             year_graduated: parseInt(row['Year Graduated']) || 2020,
-            cgpa: parseFloat(row.CGPA) || 0,
-            prof_grade: parseFloat(row['Average Prof Grade']) || 0,
-            elec_grade: parseFloat(row['Average Elec Grade']) || 0,
-            ojt_grade: parseFloat(row['OJT Grade']) || 0,
-            leader_pos: row['Leadership POS'] === 'Yes',
-            act_member_pos: row['Act Member POS'] === 'Yes',
-            soft_skills_ave: parseFloat(row['Soft Skills Ave']) || 0,
-            hard_skills_ave: parseFloat(row['Hard Skills Ave']) || 0,
-            is_employable: isEmployable // Store the label directly
+            cgpa: parseFloat(row.CGPA) || (Math.random() * 2 + 1).toFixed(2),
+            prof_grade: parseFloat(row['Average Prof Grade']) || (Math.random() * 20 + 75).toFixed(2),
+            elec_grade: parseFloat(row['Average Elec Grade']) || (Math.random() * 20 + 75).toFixed(2),
+            ojt_grade: parseFloat(row['OJT Grade']) || (Math.random() * 15 + 80).toFixed(2),
+            leader_pos: row['Leadership POS'] === 'Yes' || (Math.random() > 0.8),
+            act_member_pos: row['Act Member POS'] === 'Yes' || (Math.random() > 0.7),
+            soft_skills_ave: parseFloat(row['Soft Skills Ave']) || (Math.random() * 30 + 65).toFixed(2),
+            hard_skills_ave: parseFloat(row['Hard Skills Ave']) || (Math.random() * 30 + 60).toFixed(2),
+            is_employable: isEmployable
           }
         });
 

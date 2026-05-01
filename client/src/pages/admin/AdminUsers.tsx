@@ -40,6 +40,18 @@ const OPTIONAL_COLUMNS: Record<string, string[]> = {
   middle_name: ['middle_name', 'middlename', 'middle name'],
   suffix:      ['suffix'],
   status:      ['status'],
+  gender:      ['gender', 'sex'],
+  age:         ['age'],
+  year_graduated: ['year_graduated', 'year graduated', 'graduated year', 'grad_year'],
+  cgpa:        ['cgpa', 'gpa', 'cumulative gpa', 'average grade'],
+  prof_grade:  ['prof_grade', 'professional grade', 'average prof grade'],
+  elec_grade:  ['elec_grade', 'elective grade', 'average elec grade'],
+  ojt_grade:   ['ojt_grade', 'ojt grade', 'internship grade'],
+  leader_pos:  ['leader_pos', 'leadership', 'leadership position', 'leadership pos'],
+  act_member_pos: ['act_member_pos', 'active member', 'member position', 'act member pos'],
+  soft_skills_ave: ['soft_skills_ave', 'soft skills', 'soft skills average', 'soft skills ave'],
+  hard_skills_ave: ['hard_skills_ave', 'hard skills', 'hard skills average', 'hard skills ave'],
+  is_employable: ['is_employable', 'employability', 'employable'],
 };
 
 const STATUS_LABEL_MAP: Record<string, string> = {
@@ -109,6 +121,18 @@ interface ParsedRow {
   program: string;
   batch_year: number;
   status?: string;
+  gender?: string;
+  age?: number;
+  year_graduated?: number;
+  cgpa?: number;
+  prof_grade?: number;
+  elec_grade?: number;
+  ojt_grade?: number;
+  leader_pos?: boolean | string;
+  act_member_pos?: boolean | string;
+  soft_skills_ave?: number;
+  hard_skills_ave?: number;
+  is_employable?: boolean | string;
   [key: string]: unknown;
 }
 
@@ -457,6 +481,18 @@ export default function AdminUsers() {
         program: get('program'),
         batch_year: Number(get('batch_year')),
         status: getOpt('status'),
+        gender: getOpt('gender'),
+        age: Number(getOpt('age')) || undefined,
+        year_graduated: Number(getOpt('year_graduated')) || undefined,
+        cgpa: Number(getOpt('cgpa')) || undefined,
+        prof_grade: Number(getOpt('prof_grade')) || undefined,
+        elec_grade: Number(getOpt('elec_grade')) || undefined,
+        ojt_grade: Number(getOpt('ojt_grade')) || undefined,
+        leader_pos: getOpt('leader_pos'),
+        act_member_pos: getOpt('act_member_pos'),
+        soft_skills_ave: Number(getOpt('soft_skills_ave')) || undefined,
+        hard_skills_ave: Number(getOpt('hard_skills_ave')) || undefined,
+        is_employable: getOpt('is_employable'),
       };
     });
 

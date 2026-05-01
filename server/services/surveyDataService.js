@@ -25,7 +25,7 @@ const DEFAULT_SURVEY_SECTIONS = [
         key: 'current_employment_status',
         text: 'Are you currently employed?',
         type: 'SINGLE_SELECT',
-        options: ['Employed', 'Unemployed', 'Self-Employed', 'Freelancer']
+        options: ['Employed', 'Unemployed', 'Self-Employed']
       },
       {
         key: 'current_job_title',
@@ -122,12 +122,12 @@ const normalizeEmploymentStatusAnswer = (value) => {
     case 'self_employed':
       return 'SELF_EMPLOYED';
     case 'freelancer':
-      return 'FREELANCER';
+      return 'SELF_EMPLOYED';
     case 'further studies':
     case 'further studying':
       return 'FURTHER_STUDYING';
     case 'other':
-      return 'OTHER';
+      return 'SELF_EMPLOYED';
     default:
       return null;
   }
@@ -323,9 +323,51 @@ const findEmploymentGatewayAnswer = (submissions) => {
   return null;
 };
 
-const getSurveyDefinition = async () => {
+const getSurveyDefinition = async (pathKey = 'INITIAL') => {
   const refactorPrisma = requireRefactorPrisma();
-  const template = await ensureDefaultSurveyTemplate();
+
+  // Normalize pathKey
+  const normalizedPath = String(pathKey || 'INITIAL').toUpperCase();
+
+  // Prefer active templates for this path that already have linked questions.
+  let template = await refactorPrisma.surveyTemplate.findFirst({
+    where: {
+      path_key: normalizedPath,
+      is_active: true,
+      template_questions: {
+        some: {}
+      }
+    },
+    orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }]
+  });
+
+  // Fallback to active path template even when still empty (for newly created drafts).
+  if (!template) {
+    template = await refactorPrisma.surveyTemplate.findFirst({
+      where: {
+        path_key: normalizedPath,
+        is_active: true
+      },
+      orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }]
+    });
+  }
+
+  if (!template && normalizedPath === 'INITIAL') {
+    template = await ensureDefaultSurveyTemplate();
+  }
+
+  // Fallback to default if no specific path template found
+  if (!template) {
+    template = await refactorPrisma.surveyTemplate.findUnique({
+      where: { template_key: DEFAULT_TEMPLATE_KEY }
+    });
+  }
+
+  if (!template) {
+    const error = new Error(`No active survey template found for path: ${normalizedPath}`);
+    error.statusCode = 404;
+    throw error;
+  }
 
   const templateWithQuestions = await refactorPrisma.surveyTemplate.findUnique({
     where: { id: template.id },
@@ -402,7 +444,7 @@ const getSurveyDefinition = async () => {
     path_key: templateWithQuestions.path_key,
     branching: {
       decision_question_key: 'current_employment_status',
-      employed_values: ['Employed', 'Self-Employed', 'Freelancer'],
+      employed_values: ['Employed', 'Self-Employed'],
       unemployed_values: ['Unemployed']
     }
   };
@@ -468,9 +510,9 @@ const ensureSubmissionProfile = async (refactorPrisma, user, studentId) => {
   });
 };
 
-const submitSurveyResponse = async ({ studentId, answers, version }) => {
+const submitSurveyResponse = async ({ studentId, answers, version, pathKey = 'INITIAL' }) => {
   const refactorPrisma = requireRefactorPrisma();
-  const { template } = await getSurveyDefinition();
+  const { template } = await getSurveyDefinition(pathKey);
 
   const user = await refactorPrisma.user.findUnique({
     where: { username: String(studentId) }
@@ -487,7 +529,7 @@ const submitSurveyResponse = async ({ studentId, answers, version }) => {
     data: {
       alumni_profile_id: alumniProfile.id,
       template_id: template.id,
-      branch_path: 'INITIAL',
+      branch_path: template.path_key || 'INITIAL',
       started_at: new Date(),
       submitted_at: new Date(),
       status: 'COMPLETED',
@@ -604,6 +646,13 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
     }
   });
 
+  // Check for active templates for specific paths
+  const activeTemplates = await refactorPrisma.surveyTemplate.findMany({
+    where: { is_active: true },
+    select: { path_key: true }
+  });
+  const availablePaths = new Set(activeTemplates.map(t => t.path_key));
+
   if (!user) {
     const error = new Error('User not found in refactor schema');
     error.statusCode = 404;
@@ -704,6 +753,13 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
         submission.branch_path === 'UNEMPLOYED'
     ) || null;
 
+  const employedSubmission =
+    submissions.find(
+      (submission) =>
+        submission.template?.path_key === 'EMPLOYED' ||
+        submission.branch_path === 'EMPLOYED'
+    ) || null;
+
   const employmentGateway = findEmploymentGatewayAnswer(submissions);
   const employmentStatus = employmentGateway?.employmentStatus || null;
   const hasInitialSurvey = Boolean(initialSubmission || employmentGateway);
@@ -775,6 +831,7 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
     resolvedPath = 'UNEMPLOYED';
 
     if (!hasEmployabilityAssessment) {
+      // The wizard handles everything: academic snapshot, skills, AND survey manager questions
       status = 'pending_unemployed_assessment';
       nextPath = 'UNEMPLOYED';
       nextStep = 'take_unemployed_assessment';
@@ -796,9 +853,19 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
     }
   } else {
     resolvedPath = 'EMPLOYED';
-    status = 'pending_employed_survey';
-    nextPath = 'EMPLOYED';
-    nextStep = 'employed_survey_pending_implementation';
+    const hasEmployedSurvey = Boolean(employedSubmission);
+    const needsEmployedSurvey = availablePaths.has('EMPLOYED') && !hasEmployedSurvey;
+
+    if (needsEmployedSurvey) {
+      status = 'pending_employed_survey';
+      nextPath = 'EMPLOYED';
+      nextStep = 'take_employed_survey';
+    } else {
+      status = 'completed';
+      nextPath = null;
+      nextStep = 'view_results';
+      requiresSurvey = false;
+    }
   }
 
   const competencyCounts = includeCatalogSummary

@@ -191,9 +191,27 @@ const toggleTemplateActive = async (templateId, isActive) => {
     throw err;
   }
 
-  return prisma.surveyTemplate.update({
-    where: { id },
-    data: { is_active: Boolean(isActive) }
+  if (!Boolean(isActive)) {
+    return prisma.surveyTemplate.update({
+      where: { id },
+      data: { is_active: false }
+    });
+  }
+
+  return prisma.$transaction(async (tx) => {
+    // Keep only one active template per path.
+    await tx.surveyTemplate.updateMany({
+      where: {
+        path_key: existing.path_key,
+        id: { not: id }
+      },
+      data: { is_active: false }
+    });
+
+    return tx.surveyTemplate.update({
+      where: { id },
+      data: { is_active: true }
+    });
   });
 };
 

@@ -13,8 +13,8 @@ import {
   CartesianGrid,
   Cell
 } from 'recharts';
-import { 
-  AlertTriangle, Star, Briefcase, TrendingUp, Loader2, Target, 
+import {
+  AlertTriangle, Star, Briefcase, TrendingUp, Loader2, Target,
   ChevronDown, ChevronUp, Info, Lightbulb, Zap, Award
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
@@ -208,10 +208,10 @@ const getJobMatchScorePercent = (match: JobMatch) => {
     typeof match.display_score === 'number'
       ? match.display_score
       : typeof match.final_score === 'number'
-      ? match.final_score
-      : typeof match.score === 'number'
-        ? match.score
-        : null;
+        ? match.final_score
+        : typeof match.score === 'number'
+          ? match.score
+          : null;
 
   if (rawScore === null) {
     return 0;
@@ -531,9 +531,8 @@ export default function AlumniResults() {
         >
           <p className="mb-2 text-sm text-muted-foreground">Primary Prediction</p>
           <p
-            className={`mb-2 text-4xl font-bold font-display ${
-              isEmployable ? 'text-success' : 'text-destructive'
-            }`}
+            className={`mb-2 text-4xl font-bold font-display ${isEmployable ? 'text-success' : 'text-destructive'
+              }`}
           >
             {isEmployable ? 'Employable' : 'Building'}
           </p>
@@ -638,9 +637,9 @@ export default function AlumniResults() {
       </AnimatePresence>
 
       <div className="flex justify-center">
-        <Button 
-          variant="ghost" 
-          size="sm" 
+        <Button
+          variant="ghost"
+          size="sm"
           className="gap-2 text-primary hover:bg-primary/10"
           onClick={() => setShowEmployabilityDetails(!showEmployabilityDetails)}
         >
@@ -652,86 +651,76 @@ export default function AlumniResults() {
         </Button>
       </div>
 
-        <div className="glass-card border-l-4 border-l-primary p-6 bg-primary/5">
-          <div className="flex items-start gap-3">
-            <Info className="h-5 w-5 text-primary mt-0.5" />
-            <p className="text-sm leading-relaxed">
-              <strong>Your AI-Matched Career Paths:</strong> We've analyzed your academic performance and verified competencies to identify these top roles. 
-              <span className="block mt-1 font-bold text-primary">Click the blue role buttons below to instantly find open positions on LinkedIn.</span>
-            </p>
-          </div>
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+        <div className="glass-card p-6 shadow-xl">
+          <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
+            <TrendingUp className="h-5 w-5 text-primary" /> Relative Feature Strength
+          </h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <RadarChart data={radarData}>
+              <PolarGrid stroke="hsl(var(--border))" />
+              <PolarAngleAxis dataKey="skill" tick={{ fontSize: 12 }} />
+              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
+              <Radar
+                name="Your Profile"
+                dataKey="value"
+                stroke="hsl(var(--primary))"
+                fill="hsl(var(--primary))"
+                fillOpacity={0.4}
+                strokeWidth={3}
+              />
+              <Tooltip />
+            </RadarChart>
+          </ResponsiveContainer>
+          <p className="mt-4 text-center text-xs italic text-muted-foreground">
+            Radar view of normalized core features.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-          <div className="glass-card p-6 shadow-xl">
-            <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
-              <TrendingUp className="h-5 w-5 text-primary" /> Relative Feature Strength
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="hsl(var(--border))" />
-                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 12 }} />
-                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
-                <Radar
-                  name="Your Profile"
-                  dataKey="value"
-                  stroke="hsl(var(--primary))"
-                  fill="hsl(var(--primary))"
-                  fillOpacity={0.4}
-                  strokeWidth={3}
-                />
-                <Tooltip />
-              </RadarChart>
-            </ResponsiveContainer>
-            <p className="mt-4 text-center text-xs italic text-muted-foreground">
-              Radar view of normalized core features.
-            </p>
-          </div>
-
-          <div className="glass-card p-6 shadow-xl">
-            <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
-              <Target className="h-5 w-5 text-primary" /> Skill Competency Breakdown
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={barData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'hsl(var(--background))', 
-                    borderColor: 'hsl(var(--border))',
-                    borderRadius: '8px'
-                  }}
-                />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                  {barData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            <p className="mt-4 text-center text-xs italic text-muted-foreground">
-              Performance metrics across key academic and skill categories.
-            </p>
-          </div>
+        <div className="glass-card p-6 shadow-xl">
+          <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
+            <Target className="h-5 w-5 text-primary" /> Skill Competency Breakdown
+          </h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={barData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'hsl(var(--background))',
+                  borderColor: 'hsl(var(--border))',
+                  borderRadius: '8px'
+                }}
+              />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {barData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="mt-4 text-center text-xs italic text-muted-foreground">
+            Performance metrics across key academic and skill categories.
+          </p>
         </div>
+      </div>
 
-        <div className="glass-card p-6 shadow-lg">
-          <h3 className="mb-4 text-lg font-display font-bold">Detailed Academic Record</h3>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-4 md:grid-cols-4">
-            {academicSummary.map((item) => (
-              <div key={item.label} className="space-y-1">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  {item.label}
-                </p>
-                <p className="text-sm font-semibold">{item.value}</p>
-              </div>
-            ))}
-          </div>
+      <div className="glass-card p-6 shadow-lg">
+        <h3 className="mb-4 text-lg font-display font-bold">Detailed Academic Record</h3>
+        <div className="grid grid-cols-2 gap-x-8 gap-y-4 md:grid-cols-4">
+          {academicSummary.map((item) => (
+            <div key={item.label} className="space-y-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {item.label}
+              </p>
+              <p className="text-sm font-semibold">{item.value}</p>
+            </div>
+          ))}
         </div>
+      </div>
 
-        <div className="pt-8 space-y-6">
+      <div className="pt-8 space-y-6">
         <div className="flex items-center gap-2">
           <Briefcase className="h-6 w-6 text-primary" />
           <h2 className="text-2xl font-display font-bold">Market Alignment & Job Matching</h2>
@@ -821,11 +810,10 @@ export default function AlumniResults() {
                             key={site.name}
                             variant="outline"
                             size="sm"
-                            className={`h-9 text-[11px] font-bold shadow-sm transition-all ${
-                              site.name === 'LinkedIn'
-                                ? 'bg-[#0A66C2] text-white border-[#0A66C2] hover:bg-[#004182] hover:border-[#004182]'
-                                : 'bg-background hover:bg-primary hover:text-primary-foreground'
-                            }`}
+                            className={`h-9 text-[11px] font-bold shadow-sm transition-all ${site.name === 'LinkedIn'
+                              ? 'bg-[#0A66C2] text-white border-[#0A66C2] hover:bg-[#004182] hover:border-[#004182]'
+                              : 'bg-background hover:bg-primary hover:text-primary-foreground'
+                              }`}
                             onClick={() => {
                               const location = "Manila";
                               const url = new URL(site.base_url);
@@ -859,11 +847,10 @@ export default function AlumniResults() {
                                     key={site.name}
                                     variant="ghost"
                                     size="sm"
-                                    className={`h-6 px-2 text-[9px] font-bold ${
-                                      site.name === 'LinkedIn'
-                                        ? 'text-[#0A66C2] hover:bg-[#0A66C2]/10'
-                                        : 'text-muted-foreground hover:text-primary'
-                                    }`}
+                                    className={`h-6 px-2 text-[9px] font-bold ${site.name === 'LinkedIn'
+                                      ? 'text-[#0A66C2] hover:bg-[#0A66C2]/10'
+                                      : 'text-muted-foreground hover:text-primary'
+                                      }`}
                                     onClick={() => {
                                       const location = "Manila";
                                       const url = new URL(site.base_url);
@@ -902,9 +889,9 @@ export default function AlumniResults() {
                     </div>
 
                     {/* ── Deep dive toggle ── */}
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       className="mt-auto h-8 w-full gap-2 border border-dashed border-muted-foreground/20 text-xs font-semibold hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-all"
                       onClick={() => setExpandedJobIndex(expandedJobIndex === index ? null : index)}
                     >

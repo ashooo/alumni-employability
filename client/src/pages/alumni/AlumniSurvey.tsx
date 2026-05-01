@@ -1,5 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Bell, Briefcase, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Bell, Briefcase, AlertTriangle, ClipboardList } from 'lucide-react';
 import { useAuth, type SurveyFlowStatus } from '@/contexts/AuthContext';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
@@ -104,7 +104,12 @@ interface Prediction {
   } | null;
 }
 
-type SurveyStage = 'initial' | 'wizard' | 'employedPending' | 'completed' | 'finished';
+type SurveyStage =
+  | 'initial'
+  | 'wizard'
+  | 'employedSurvey'
+  | 'completed'
+  | 'finished';
 
 interface CompetencyStepConfig {
   step: number;
@@ -127,7 +132,8 @@ const WIZARD_STEPS = [
   { step: 5, label: 'Abilities' },
   { step: 6, label: 'Interests' },
   { step: 7, label: 'Technology Skills' },
-  { step: 8, label: 'Skill Proficiency' }
+  { step: 8, label: 'Skill Proficiency' },
+  { step: 9, label: 'Additional Questions' }
 ];
 
 const TECHNOLOGY_VISIBLE_LIMIT = 120;
@@ -238,15 +244,6 @@ const createInitialAcademicData = (degreeId = '') => ({
   degree_id: degreeId
 });
 
-const toTextValue = (value: unknown) => {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  return String(value);
-};
-
-const toBooleanFromYesNo = (value: unknown) => String(value).toLowerCase() === 'yes';
-
 const mapCompetencyKindToSubmissionType = (kind: CompetencyKind) => {
   switch (kind) {
     case 'HARD_SKILL':
@@ -293,38 +290,57 @@ const getDecisionQuestion = (categories: Category[], decisionQuestionKey: string
   return categories[0]?.questions[0] || null;
 };
 
-const getGatewayCategories = (survey: Category[], decisionQuestionKey: string) => {
-  const gatewayCategory = survey.find((category) =>
-    category.questions.some((question) => question.question_key === decisionQuestionKey)
+const getGatewayCategories = (survey: Category[], decisionQuestionKey: string): Category[] => {
+  const category = survey.find((cat) =>
+    cat.questions.some((q) => q.question_key === decisionQuestionKey)
   );
+  
+  if (!category) return survey.slice(0, 1);
 
-  return gatewayCategory ? [gatewayCategory] : survey.slice(0, 1);
+  // Return a virtual category that ONLY contains the decision question
+  return [{
+    ...category,
+    questions: category.questions.filter((q) => q.question_key === decisionQuestionKey)
+  }];
 };
+
+const countAnswerableQuestions = (survey: Category[], decisionQuestionKey: string) =>
+  survey.reduce(
+    (total, category) =>
+      total + category.questions.filter((question) => question.question_key !== decisionQuestionKey).length,
+    0
+  );
 
 const resolveSurveyStage = (
   surveyStatus: SurveyFlowStatus,
   hasPrediction: boolean
 ): SurveyStage => {
+  // Unemployed path — full wizard (academic + skills + survey manager questions + prediction)
   if (surveyStatus.status === 'pending_unemployed_assessment') {
     return 'wizard';
   }
 
+  // Employed path — survey manager questions only, no models
   if (surveyStatus.status === 'pending_employed_survey') {
-    return 'employedPending';
+    return 'employedSurvey';
   }
 
+  // Has prediction result — show it
   if (surveyStatus.completed && hasPrediction) {
     return 'finished';
   }
 
+  // Completed or waiting
   if (
     surveyStatus.completed ||
+    surveyStatus.status === 'completed' ||
     surveyStatus.status === 'assessment_submitted_prediction_missing' ||
     surveyStatus.status === 'completed_awaiting_followup'
   ) {
     return 'completed';
   }
 
+  // Default — show employment gateway
   return 'initial';
 };
 
@@ -385,70 +401,6 @@ export default function AlumniSurvey() {
       survey: nextSurveyStatus,
       surveyCompleted: Boolean(nextSurveyStatus.completed)
     });
-  };
-
-  const startRetakeWizard = ({
-    programId,
-    decisionQuestionId,
-    employmentAnswer,
-    latestPrediction,
-    competenciesCatalog
-  }: {
-    programId?: number | null;
-    decisionQuestionId?: number | null;
-    employmentAnswer?: string;
-    latestPrediction?: Prediction | null;
-    competenciesCatalog?: Competency[];
-  }) => {
-    const nextDegreeId = programId ? String(programId) : '';
-    const nextAnswers =
-      decisionQuestionId && employmentAnswer
-        ? { [String(decisionQuestionId)]: employmentAnswer }
-        : {};
-    const snapshot = latestPrediction?.input_snapshot || {};
-    const catalogIds = new Set((competenciesCatalog || []).map((competency) => competency.id));
-    const prefilledSelections = createInitialSelectionState();
-    const prefilledRatings: Record<number, number> = {};
-
-    for (const competency of latestPrediction?.submission_summary?.competencies || []) {
-      if (competency.selected === false || !prefilledSelections[competency.kind]) {
-        continue;
-      }
-
-      if (catalogIds.size > 0 && !catalogIds.has(competency.id)) {
-        continue;
-      }
-
-      prefilledSelections[competency.kind].push(competency.id);
-      if (
-        (competency.kind === 'HARD_SKILL' || competency.kind === 'SOFT_SKILL') &&
-        competency.score !== null &&
-        competency.score !== undefined
-      ) {
-        prefilledRatings[competency.id] = competency.score;
-      }
-    }
-
-    setWizardStep(1);
-    setPredictionResult(null);
-    setSelectedCompetencies(prefilledSelections);
-    setCompetencySearch(createInitialSearchState());
-    setCompetencyView(createInitialViewState());
-    setSkillRatings(prefilledRatings);
-    setAcademicData({
-      cgpa: toTextValue(snapshot.CGPA),
-      prof_grade: toTextValue(snapshot['Average Prof Grade']),
-      elec_grade: toTextValue(snapshot['Average Elec Grade']),
-      ojt_grade: toTextValue(snapshot['OJT Grade']),
-      gender: toTextValue(snapshot.Gender),
-      age: toTextValue(snapshot.Age),
-      year_graduated: toTextValue(snapshot['Year Graduated']) || new Date().getFullYear().toString(),
-      leader_pos: toBooleanFromYesNo(snapshot['Leadership POS']),
-      act_member_pos: toBooleanFromYesNo(snapshot['Act Member POS']),
-      degree_id: nextDegreeId
-    });
-    setAnswers(nextAnswers);
-    setSurveyStage('wizard');
   };
 
   const fetchSurveyStatus = async (token: string) => {
@@ -596,7 +548,8 @@ export default function AlumniSurvey() {
 
         const resolvedCollegeId = nextSurveyStatus.collegeId || profileData?.college_id || null;
         if (resolvedCollegeId) {
-          const surveyResponse = await fetch(`${API_URL}/alumni/survey/college/${resolvedCollegeId}`, {
+          const fetchPath = nextSurveyStatus.nextPath || 'INITIAL';
+          const surveyResponse = await fetch(`${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=${fetchPath}`, {
             headers
           });
 
@@ -604,12 +557,15 @@ export default function AlumniSurvey() {
             const surveyData: SurveyDefinitionResponse = await surveyResponse.json();
             const nextDecisionQuestionKey =
               surveyData.branching?.decision_question_key || 'current_employment_status';
-            const gatewayCategories = getGatewayCategories(
-              surveyData.survey || [],
-              nextDecisionQuestionKey
-            );
+            const fullSurveyCategories = surveyData.survey || [];
+            const gatewayCategories = getGatewayCategories(fullSurveyCategories, nextDecisionQuestionKey);
+            const nextStage = resolveSurveyStage(nextSurveyStatus, false);
 
-            setCategories(gatewayCategories);
+            if (nextStage === 'initial') {
+              setCategories(gatewayCategories);
+            } else {
+              setCategories(fullSurveyCategories);
+            }
             setSurveyVersion(surveyData.version || 1);
             setDecisionQuestionKey(nextDecisionQuestionKey);
 
@@ -631,17 +587,15 @@ export default function AlumniSurvey() {
               );
 
             if (canRetakeAssessment) {
-              const latestPredictionForRetake = nextSurveyStatus.hasEmployabilityPrediction
-                ? await fetchLatestPrediction(token)
-                : null;
-
-              startRetakeWizard({
-                programId: nextSurveyStatus.programId,
-                decisionQuestionId: decisionQuestion?.id || null,
-                employmentAnswer,
-                latestPrediction: latestPredictionForRetake,
-                competenciesCatalog: competenciesData
-              });
+              // Retake always restarts at employment gateway so alumni can switch path.
+              setWizardStep(1);
+              setPredictionResult(null);
+              setSelectedCompetencies(createInitialSelectionState());
+              setCompetencySearch(createInitialSearchState());
+              setCompetencyView(createInitialViewState());
+              setSkillRatings({});
+              setAnswers({});
+              setSurveyStage('initial');
               return;
             }
           }
@@ -676,6 +630,86 @@ export default function AlumniSurvey() {
 
   const getCompetenciesByKind = (kind: CompetencyKind) =>
     availableCompetencies.filter((competency) => competency.kind === kind);
+
+  const renderSurveyCategory = (category: Category, isCompact = false) => {
+    return (
+      <div key={category.id} className="space-y-6">
+        <div className="flex flex-col gap-1">
+          <h3 className="text-lg font-display font-semibold border-b pb-2">{category.name}</h3>
+          {category.description && (
+            <p className="text-sm text-muted-foreground italic">{category.description}</p>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          {category.questions
+            .filter(q => surveyStage === 'initial' || q.question_key !== decisionQuestionKey)
+            .map((question) => (
+            <div key={question.id} className="space-y-3">
+              <Label className="text-base font-medium">
+                {question.text}
+                {question.required && <span className="ml-1 text-destructive">*</span>}
+              </Label>
+              
+              {question.type === 'select' && (
+                <Select
+                  value={String(answers[String(question.id)] || '')}
+                  onValueChange={(value) => setAnswer(String(question.id), value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(question.options || []).map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {(question.type === 'text' || question.type === 'textarea') && (
+                <Input
+                  value={String(answers[String(question.id)] || '')}
+                  onChange={(e) => setAnswer(String(question.id), e.target.value)}
+                  placeholder="Type your answer here..."
+                />
+              )}
+
+              {question.type === 'number' && (
+                <Input
+                  type="number"
+                  value={String(answers[String(question.id)] || '')}
+                  onChange={(e) => setAnswer(String(question.id), e.target.value)}
+                  placeholder="0"
+                />
+              )}
+
+              {question.type === 'scale' && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Min ({question.scale_min})</span>
+                    <span>Max ({question.scale_max})</span>
+                  </div>
+                  <Slider
+                    min={question.scale_min || 1}
+                    max={question.scale_max || 5}
+                    step={1}
+                    value={[Number(answers[String(question.id)]) || question.scale_min || 1]}
+                    onValueChange={(value) => setAnswer(String(question.id), value[0])}
+                  />
+                  <div className="text-center font-bold text-primary">
+                    {answers[String(question.id)] || question.scale_min || 1}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const toggleCompetencySelection = (kind: CompetencyKind, competencyId: number, max?: number) => {
     const selectedIds = selectedCompetencies[kind];
@@ -876,6 +910,8 @@ export default function AlumniSurvey() {
     setSubmitting(true);
     try {
       const token = getToken();
+
+      // Submit ONLY the employment gateway answer
       const response = await fetch(`${API_URL}/alumni/survey/submit/${user.username}`, {
         method: 'POST',
         headers: {
@@ -889,38 +925,135 @@ export default function AlumniSurvey() {
               question_id: decisionQuestion.id,
               answer_text: selectedAnswer
             }
-          ]
+          ],
+          pathKey: 'INITIAL'
         })
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to submit employment gateway');
+        throw new Error(errorData.error || 'Failed to submit employment status');
       }
 
       const nextSurveyStatus = await fetchSurveyStatus(token);
       await fetchLatestSubmission(token);
 
-      if (nextSurveyStatus.status === 'pending_unemployed_assessment') {
-        setSurveyStage('wizard');
-        toast({
-          title: 'Unemployed path selected',
-          description: 'Continue with the employability assessment.'
-        });
-      } else if (nextSurveyStatus.status === 'pending_employed_survey') {
-        setSurveyStage('employedPending');
-        toast({
-          title: 'Employment path recorded',
-          description: 'Your employed path has been saved. The dedicated employed survey is next.'
-        });
-      } else {
-        setSurveyStage(resolveSurveyStage(nextSurveyStatus, Boolean(predictionResult)));
+      // If employed, fetch the EMPLOYED survey template for the next stage
+      if (nextSurveyStatus.status === 'pending_employed_survey') {
+        const resolvedCollegeId = nextSurveyStatus.collegeId || surveyStatus?.collegeId || null;
+        if (resolvedCollegeId) {
+          const surveyResponse = await fetch(
+            `${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=EMPLOYED`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (surveyResponse.ok) {
+            const surveyData: SurveyDefinitionResponse = await surveyResponse.json();
+            const pathSurvey = surveyData.survey || [];
+            if (countAnswerableQuestions(pathSurvey, decisionQuestionKey) > 0) {
+              setCategories(pathSurvey);
+            } else {
+              const fallbackResponse = await fetch(
+                `${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=INITIAL`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              if (fallbackResponse.ok) {
+                const fallbackData: SurveyDefinitionResponse = await fallbackResponse.json();
+                setCategories(fallbackData.survey || []);
+              } else {
+                setCategories(pathSurvey);
+              }
+            }
+          }
+        }
       }
+
+      // If unemployed, fetch the UNEMPLOYED survey template (will be shown as wizard step 9)
+      if (nextSurveyStatus.status === 'pending_unemployed_assessment') {
+        const resolvedCollegeId = nextSurveyStatus.collegeId || surveyStatus?.collegeId || null;
+        if (resolvedCollegeId) {
+          const surveyResponse = await fetch(
+            `${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=UNEMPLOYED`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (surveyResponse.ok) {
+            const surveyData: SurveyDefinitionResponse = await surveyResponse.json();
+            const pathSurvey = surveyData.survey || [];
+            if (countAnswerableQuestions(pathSurvey, decisionQuestionKey) > 0) {
+              setCategories(pathSurvey);
+            } else {
+              const fallbackResponse = await fetch(
+                `${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=INITIAL`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              if (fallbackResponse.ok) {
+                const fallbackData: SurveyDefinitionResponse = await fallbackResponse.json();
+                setCategories(fallbackData.survey || []);
+              } else {
+                setCategories(pathSurvey);
+              }
+            }
+          }
+        }
+      }
+
+      setSurveyStage(resolveSurveyStage(nextSurveyStatus, Boolean(predictionResult)));
     } catch (error) {
       console.error('Initial survey submit error:', error);
       toast({
         title: 'Submission Error',
         description: error instanceof Error ? error.message : 'Failed to submit your survey answer.',
+        variant: 'destructive'
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Employed path: submit survey manager answers, store them, no ML models
+  const handleEmployedSurveySubmit = async () => {
+    if (!user?.username) return;
+
+    setSubmitting(true);
+    try {
+      const token = getToken();
+
+      const allAnswers = Object.entries(answers).map(([id, val]) => ({
+        question_id: parseInt(id),
+        answer_text: Array.isArray(val) ? null : String(val),
+        answer_options: Array.isArray(val) ? val : null
+      }));
+
+      const response = await fetch(`${API_URL}/alumni/survey/submit/${user.username}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          version: surveyVersion,
+          answers: allAnswers,
+          pathKey: 'EMPLOYED'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to submit survey');
+      }
+
+      const nextSurveyStatus = await fetchSurveyStatus(token);
+      setSurveyStatus(nextSurveyStatus);
+      setSurveyStage(resolveSurveyStage(nextSurveyStatus, false));
+
+      toast({
+        title: 'Survey Complete',
+        description: 'Thank you! Your employment information has been recorded.'
+      });
+    } catch (error) {
+      console.error('Employed survey submit error:', error);
+      toast({
+        title: 'Submission Error',
+        description: error instanceof Error ? error.message : 'Failed to submit survey.',
         variant: 'destructive'
       });
     } finally {
@@ -999,27 +1132,57 @@ export default function AlumniSurvey() {
     );
   }
 
-  if (surveyStage === 'employedPending') {
+  if (surveyStage === 'employedSurvey') {
     return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="glass-card p-8 text-center space-y-4">
-          <Briefcase className="mx-auto h-14 w-14 text-primary" />
-          <h1 className="text-2xl font-display font-bold">Employment Path Recorded</h1>
-          <p className="text-muted-foreground">
-            Your answer has been saved as <strong>{mapEmploymentStatusToAnswer(surveyStatus?.employmentStatus)}</strong>.
-            The dedicated employed survey flow is still pending implementation, so there is nothing else to answer here yet.
-          </p>
-          {latestSubmission && (
-            <p className="text-sm text-muted-foreground">
-              Latest submission: {new Date(latestSubmission.completed_at).toLocaleString()}
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <Briefcase className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-display font-bold">Employment Details</h1>
+            <p className="text-muted-foreground text-sm">
+              Please provide details about your current employment and career alignment.
             </p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {categories.some((category) => category.questions.length > 0) ? (
+            categories
+              .filter((category) => category.questions.length > 0)
+              .map((category) => (
+              <motion.div
+                key={category.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="glass-card p-6"
+              >
+                {renderSurveyCategory(category)}
+              </motion.div>
+              ))
+          ) : (
+            <div className="glass-card p-12 text-center space-y-4">
+              <CheckCircle2 className="mx-auto h-12 w-12 text-success" />
+              <h3 className="text-xl font-bold">Ready to Complete</h3>
+              <p className="text-muted-foreground">
+                No additional questions are required for your employment status. Click below to finish.
+              </p>
+            </div>
           )}
-          <div className="flex justify-center gap-3 pt-2">
-            <Button variant="outline" onClick={() => navigate('/app/alumni/dashboard')}>
-              Back to Dashboard
+        </div>
+
+        <div className="glass-card p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="text-sm text-muted-foreground">
+            <p>Your answers help us improve our curriculum and job matching services.</p>
+          </div>
+          <div className="flex gap-3 w-full md:w-auto">
+            <Button variant="outline" onClick={() => navigate('/app/alumni/dashboard')} className="flex-1 md:flex-none">
+              Dashboard
             </Button>
-            <Button onClick={() => navigate('/app/alumni/submissions')}>
-              View Submissions
+            <Button onClick={handleEmployedSurveySubmit} disabled={submitting} className="flex-1 md:flex-none min-w-[160px]">
+              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {submitting ? 'Saving...' : 'Complete Survey'}
             </Button>
           </div>
         </div>
@@ -1324,9 +1487,14 @@ export default function AlumniSurvey() {
           {competencyStepConfig && renderCompetencySelectionStep(competencyStepConfig)}
 
           {wizardStep === 8 && (
-            <div className="space-y-6 flex-1">
-              <h3 className="text-xl font-semibold">Rate your Proficiency (1-10)</h3>
-              <div className="space-y-8 max-w-2xl mx-auto">
+            <div className="space-y-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-2">
+                <h3 className="text-xl font-semibold">Rate your Proficiency (1-10)</h3>
+                <p className="text-sm text-muted-foreground">
+                  How proficient do you feel in the skills you selected? (1 = Beginner, 10 = Expert)
+                </p>
+              </div>
+              <div className="space-y-8 pt-4 max-w-2xl mx-auto">
                 {[...selectedHardSkills, ...selectedSoftSkills].map((id) => {
                   const skill = availableCompetencies.find((entry) => entry.id === id);
                   if (!skill) {
@@ -1351,6 +1519,36 @@ export default function AlumniSurvey() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 9 && (
+            <div className="space-y-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-2">
+                <h3 className="text-xl font-semibold">Additional Tracer Questions</h3>
+                <p className="text-sm text-muted-foreground">
+                  Please answer these final questions to help us improve our curriculum and alumni support.
+                </p>
+              </div>
+              <div className="space-y-8 pt-4">
+                {categories.some((category) =>
+                  category.questions.some((question) => question.question_key !== decisionQuestionKey)
+                ) ? (
+                  categories
+                    .filter((category) =>
+                      category.questions.some((question) => question.question_key !== decisionQuestionKey)
+                    )
+                    .map((category) => (
+                    <div key={category.id} className="space-y-4">
+                      {renderSurveyCategory(category)}
+                    </div>
+                    ))
+                ) : (
+                  <div className="p-8 text-center border-2 border-dashed rounded-lg bg-muted/30">
+                    <p className="text-muted-foreground">No additional questions defined for this path. You can proceed to generate your prediction.</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1429,80 +1627,58 @@ export default function AlumniSurvey() {
   }
 
   const selectedGatewayAnswer = answers[String(decisionQuestion.id)] || '';
-  const initialProgress = selectedGatewayAnswer ? 100 : 0;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-display font-bold">Survey Path Check</h1>
-        <p className="text-muted-foreground text-sm">
-          Step 1 asks for your employment status so we can open the right survey path.
+    <div className="max-w-3xl mx-auto space-y-8">
+      <div className="text-center space-y-4 max-w-2xl mx-auto">
+        <div className="inline-flex p-3 rounded-2xl bg-primary/10 mb-2">
+          <ClipboardList className="h-8 w-8 text-primary" />
+        </div>
+        <h1 className="text-3xl font-display font-bold">Alumni Tracer Survey</h1>
+        <p className="text-muted-foreground">
+          Welcome back! To help us improve our services and support your career growth, 
+          please provide your current employment status.
         </p>
       </div>
 
-      <div>
-        <div className="flex justify-between text-xs text-muted-foreground mb-2">
-          <span>Employment gateway</span>
-          <span>{Math.round(initialProgress)}%</span>
-        </div>
-        <Progress value={initialProgress} className="h-2" />
+      <div className="grid grid-cols-1 gap-6">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-8 border-primary/20 shadow-xl shadow-primary/5"
+        >
+          {renderSurveyCategory(gatewayCategory)}
+          
+          <div className="mt-8 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-6">
+            <div className="flex items-start gap-3">
+              <div className="mt-1 p-1 rounded-full bg-blue-500/20">
+                <div className="h-2 w-2 rounded-full bg-blue-400" />
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Your response determines whether you'll proceed to the 
+                <span className="text-primary font-medium ml-1">Employability Assessment & Skill Matching</span>.
+              </p>
+            </div>
+            
+            <Button 
+              size="lg" 
+              onClick={handleInitialSubmit} 
+              disabled={submitting || !selectedGatewayAnswer} 
+              className="w-full sm:w-auto min-w-[180px] h-12"
+            >
+              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {submitting ? 'Processing...' : 'Continue'}
+              {!submitting && <ArrowRight className="ml-2 h-4 w-4" />}
+            </Button>
+          </div>
+        </motion.div>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        className="glass-card p-6"
-      >
-        <h3 className="mb-2 text-lg font-display font-semibold">{gatewayCategory.name}</h3>
-        {gatewayCategory.description && (
-          <p className="mb-4 text-sm text-muted-foreground">{gatewayCategory.description}</p>
-        )}
-
-        <div className="space-y-3">
-          <Label className="text-base">
-            {decisionQuestion.text}
-            {decisionQuestion.required && <span className="ml-1 text-destructive">*</span>}
-          </Label>
-          <Select
-            value={String(selectedGatewayAnswer)}
-            onValueChange={(value) => setAnswer(String(decisionQuestion.id), value)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select your current status" />
-            </SelectTrigger>
-            <SelectContent>
-              {(decisionQuestion.options || []).map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-sm text-muted-foreground">
-            Unemployed alumni will continue to the employability assessment. Employed alumni will be
-            routed to the employed path once it is ready.
-          </p>
-        </div>
-
-        {latestSubmission && (
-          <div className="mt-4 rounded-lg border bg-muted/20 p-4 text-sm">
-            <p className="font-medium">Latest survey submission</p>
-            <p className="text-muted-foreground">
-              {new Date(latestSubmission.completed_at).toLocaleString()}
-            </p>
-          </div>
-        )}
-
-        <div className="mt-8 flex justify-between">
-          <Button variant="outline" onClick={() => navigate('/app/alumni/dashboard')}>
-            Back to Dashboard
-          </Button>
-          <Button onClick={handleInitialSubmit} disabled={submitting}>
-            {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {submitting ? 'Saving...' : 'Continue'}
-          </Button>
-        </div>
-      </motion.div>
+      <div className="flex justify-center">
+        <Button variant="ghost" onClick={() => navigate('/app/alumni/dashboard')} className="text-muted-foreground hover:text-primary">
+          Cancel and return to dashboard
+        </Button>
+      </div>
     </div>
   );
 }

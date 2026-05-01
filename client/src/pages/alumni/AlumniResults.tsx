@@ -525,6 +525,11 @@ export default function AlumniResults() {
           Retake Assessment
         </Button>
       </div>
+      <div className="flex justify-end">
+        <Button variant="secondary" onClick={() => navigate('/app/alumni/jobs')}>
+          Open Job Recommendations
+        </Button>
+      </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <motion.div

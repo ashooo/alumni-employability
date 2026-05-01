@@ -1,5 +1,5 @@
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar} from '@/components/ui/sidebar';
-import { GraduationCap, LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Lock, ShieldCheck, ScrollText } from 'lucide-react';
+import { GraduationCap, LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Briefcase, Lock, ShieldCheck, ScrollText } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
@@ -24,7 +24,8 @@ const superAdminNav = [
 const alumniNav = [
   { title: 'Dashboard', url: '/app/alumni/dashboard', icon: LayoutDashboard },
   { title: 'Tracer Survey', url: '/app/alumni/survey', icon: ClipboardCheck },
-  { title: 'Results & Jobs', url: '/app/alumni/results', icon: Star },
+  { title: 'Employability Results', url: '/app/alumni/results', icon: Star },
+  { title: 'Job Recommendations', url: '/app/alumni/jobs', icon: Briefcase },
   { title: 'My Submissions', url: '/app/alumni/submissions', icon: FileCheck },
 ];
 

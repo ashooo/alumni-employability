@@ -86,6 +86,7 @@ interface JobMatch {
   title_overlap?: number;
   tech_alignment?: number;
   domain_penalty?: number;
+  top_alternates?: string[];
 }
 
 interface JobMatchingPrediction {
@@ -718,6 +719,35 @@ export default function AlumniResults() {
                           className="mt-4 pt-4 border-t border-dashed"
                         >
                           <div className="space-y-4">
+                            {job.top_alternates && job.top_alternates.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
+                                  <Briefcase className="h-3 w-3" /> Specific Roles for You
+                                </p>
+                                <div className="grid grid-cols-1 gap-2">
+                                  {job.top_alternates.map((role) => (
+                                    <div 
+                                      key={role} 
+                                      className="flex items-center justify-between rounded-lg border border-primary/10 bg-primary/5 px-3 py-2 transition-all hover:border-primary/30"
+                                    >
+                                      <span className="text-[11px] font-semibold text-primary/90">{role}</span>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="h-6 px-2 text-[9px] text-muted-foreground hover:text-primary"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          // Future: window.open(`https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(role)}`, '_blank');
+                                        }}
+                                      >
+                                        Explore <Zap className="ml-1 h-2 w-2" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-2">
                                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Scoring Matrix</p>

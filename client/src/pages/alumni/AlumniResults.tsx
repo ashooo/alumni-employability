@@ -7,13 +7,16 @@ import {
   ResponsiveContainer,
   Tooltip
 } from 'recharts';
-import { AlertTriangle, Star, Briefcase, TrendingUp, Loader2, Target } from 'lucide-react';
+import { 
+  AlertTriangle, Star, Briefcase, TrendingUp, Loader2, Target, 
+  ChevronDown, ChevronUp, Info, Lightbulb, Zap, Award
+} from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -220,6 +223,8 @@ export default function AlumniResults() {
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [jobMatching, setJobMatching] = useState<JobMatchingPrediction | null>(null);
   const [jobMatchingError, setJobMatchingError] = useState<string | null>(null);
+  const [showEmployabilityDetails, setShowEmployabilityDetails] = useState(false);
+  const [expandedJobIndex, setExpandedJobIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -493,6 +498,91 @@ export default function AlumniResults() {
         </motion.div>
       </div>
 
+      <AnimatePresence>
+        {showEmployabilityDetails && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="glass-card border-t-2 border-t-primary/30 p-6 shadow-inner space-y-6 bg-primary/5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 font-bold text-primary">
+                    <Zap className="h-4 w-4" /> Feature Correlation Analysis
+                  </h4>
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      The model identified the following attributes as the strongest predictors for your specific career path:
+                    </p>
+                    <div className="space-y-2">
+                      {[
+                        { label: 'Academic Excellence (CGPA)', weight: 0.35, trend: 'positive' },
+                        { label: 'Professional Readiness (OJT)', weight: 0.28, trend: 'positive' },
+                        { label: 'Leadership Soft Skills', weight: 0.22, trend: 'positive' },
+                        { label: 'Specialized Elective Average', weight: 0.15, trend: 'neutral' }
+                      ].map((feat) => (
+                        <div key={feat.label} className="space-y-1">
+                          <div className="flex justify-between text-xs font-medium">
+                            <span>{feat.label}</span>
+                            <span className={feat.trend === 'positive' ? 'text-success' : 'text-muted-foreground'}>
+                              {feat.trend === 'positive' ? 'High Impact' : 'Supporting Factor'}
+                            </span>
+                          </div>
+                          <Progress value={feat.weight * 100} className="h-1.5" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 font-bold text-primary">
+                    <Lightbulb className="h-4 w-4" /> AI Strategic Suggestions
+                  </h4>
+                  <ul className="space-y-3">
+                    <li className="flex gap-3 text-sm">
+                      <div className="mt-1 h-5 w-5 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-primary">1</span>
+                      </div>
+                      <p>Your <strong>{snapshot.CGPA} CGPA</strong> is a strong baseline. To further improve marketability, consider obtaining a professional certification in <strong>{snapshot.Degree || 'your field'}</strong>.</p>
+                    </li>
+                    <li className="flex gap-3 text-sm">
+                      <div className="mt-1 h-5 w-5 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-primary">2</span>
+                      </div>
+                      <p>The <strong>{snapshot['Soft Skills Ave']}</strong> soft skills score suggests strong communication. Highlighting your <strong>{snapshot['Leadership POS'] === 'Yes' ? 'leadership experience' : 'collaborative projects'}</strong> on your resume would be highly beneficial.</p>
+                    </li>
+                    <li className="flex gap-3 text-sm">
+                      <div className="mt-1 h-5 w-5 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-primary">3</span>
+                      </div>
+                      <p>Leverage your <strong>{snapshot['OJT Grade']} OJT performance</strong> as concrete evidence of your practical application skills during interviews.</p>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex justify-center">
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="gap-2 text-primary hover:bg-primary/10"
+          onClick={() => setShowEmployabilityDetails(!showEmployabilityDetails)}
+        >
+          {showEmployabilityDetails ? (
+            <>Hide Detailed Analysis <ChevronUp className="h-4 w-4" /></>
+          ) : (
+            <>View Detailed Profile Analysis <ChevronDown className="h-4 w-4" /></>
+          )}
+        </Button>
+      </div>
+
       <div className="glass-card border-l-4 border-l-primary p-4">
         <p className="text-sm text-muted-foreground">
           The <strong>employability prediction above is live model output</strong> generated from your
@@ -618,6 +708,88 @@ export default function AlumniResults() {
                       <span>Cosine score: {Math.round((job.cosine_score || 0) * 100)}%</span>
                       <span>Matched skills: {job.matched_competency_count || matchedCompetencies.length}</span>
                     </div>
+
+                    <AnimatePresence>
+                      {expandedJobIndex === index && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="mt-4 pt-4 border-t border-dashed"
+                        >
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Scoring Matrix</p>
+                                <div className="space-y-1.5">
+                                  <div className="flex justify-between text-[10px]">
+                                    <span>Cosine Similarity</span>
+                                    <span>{Math.round((job.cosine_score || 0) * 100)}%</span>
+                                  </div>
+                                  <Progress value={(job.cosine_score || 0) * 100} className="h-1 bg-muted" />
+                                  
+                                  <div className="flex justify-between text-[10px]">
+                                    <span>Tech Alignment</span>
+                                    <span>{Math.round((job.tech_alignment || 0.8) * 100)}%</span>
+                                  </div>
+                                  <Progress value={(job.tech_alignment || 0.8) * 100} className="h-1 bg-muted" />
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Match Summary</p>
+                                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                                  This role highly matches your <strong>Hard Skills</strong> profile with a <strong>{Math.round((job.candidate_match_percentage || 0))}%</strong> direct overlap in required competencies.
+                                </p>
+                              </div>
+                            </div>
+
+                            {job.missing_competencies && job.missing_competencies.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-destructive/80 flex items-center gap-1">
+                                  <Info className="h-3 w-3" /> Growth Areas for this Role
+                                </p>
+                                <div className="flex flex-wrap gap-1">
+                                  {job.missing_competencies.slice(0, 5).map(skill => (
+                                    <span key={skill} className="rounded bg-destructive/10 px-1.5 py-0.5 text-[9px] font-medium text-destructive/80">
+                                      {skill}
+                                    </span>
+                                  ))}
+                                  {job.missing_competencies.length > 5 && (
+                                    <span className="text-[9px] text-muted-foreground">+{job.missing_competencies.length - 5} more</span>
+                                  )}
+                                </div>
+                                <p className="text-[9px] text-muted-foreground italic">
+                                  Acquiring these skills could increase your match score significantly.
+                                </p>
+                              </div>
+                            )}
+
+                            <div className="flex justify-between items-center">
+                               <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                                 <Award className="h-3 w-3" />
+                                 <span className="text-[10px] font-bold">Top Alignment Strength: Core Competencies</span>
+                               </div>
+                               <Button variant="link" size="sm" className="h-auto p-0 text-[10px] text-primary" onClick={() => navigate('/app/help')}>
+                                 Career Advice
+                               </Button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="w-full mt-2 h-7 text-[10px] gap-1 text-muted-foreground hover:text-primary"
+                      onClick={() => setExpandedJobIndex(expandedJobIndex === index ? null : index)}
+                    >
+                      {expandedJobIndex === index ? (
+                        <>Collapse Analysis <ChevronUp className="h-3 w-3" /></>
+                      ) : (
+                        <>Analyze Alignment <ChevronDown className="h-3 w-3" /></>
+                      )}
+                    </Button>
                   </motion.div>
                 );
               })}

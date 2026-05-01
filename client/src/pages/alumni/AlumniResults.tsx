@@ -18,6 +18,41 @@ import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+const JOB_SITES = [
+  {
+    name: "Indeed",
+    base_url: "https://www.indeed.com/jobs",
+    query_param: "q",
+    location_param: "l",
+  },
+  {
+    name: "Glassdoor",
+    base_url: "https://www.glassdoor.com/Job/jobs.htm",
+    query_param: "sc.keyword",
+    location_param: "locKeyword",
+  },
+  {
+    name: "Monster",
+    base_url: "https://www.monster.com/jobs/search/",
+    query_param: "q",
+    location_param: "where",
+  },
+  {
+    name: "ZipRecruiter",
+    base_url: "https://www.ziprecruiter.com/jobs-search",
+    query_param: "search",
+    location_param: "location",
+  }
+];
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -731,17 +766,38 @@ export default function AlumniResults() {
                                       className="flex items-center justify-between rounded-lg border border-primary/10 bg-primary/5 px-3 py-2 transition-all hover:border-primary/30"
                                     >
                                       <span className="text-[11px] font-semibold text-primary/90">{role}</span>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="sm" 
-                                        className="h-6 px-2 text-[9px] text-muted-foreground hover:text-primary"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          // Future: window.open(`https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(role)}`, '_blank');
-                                        }}
-                                      >
-                                        Explore <Zap className="ml-1 h-2 w-2" />
-                                      </Button>
+                                      
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button 
+                                            variant="ghost" 
+                                            size="sm" 
+                                            className="h-6 px-2 text-[9px] text-muted-foreground hover:text-primary"
+                                          >
+                                            Explore <Zap className="ml-1 h-2 w-2" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-48">
+                                          <DropdownMenuLabel className="text-[10px]">Search for this role on:</DropdownMenuLabel>
+                                          <DropdownMenuSeparator />
+                                          {JOB_SITES.map((site) => (
+                                            <DropdownMenuItem 
+                                              key={site.name}
+                                              className="text-xs cursor-pointer"
+                                              onClick={() => {
+                                                const location = user?.address || "Manila";
+                                                const url = new URL(site.base_url);
+                                                url.searchParams.append(site.query_param, role);
+                                                url.searchParams.append(site.location_param, location);
+                                                window.open(url.toString(), '_blank');
+                                              }}
+                                            >
+                                              <Briefcase className="mr-2 h-3 w-3" />
+                                              {site.name}
+                                            </DropdownMenuItem>
+                                          ))}
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
                                   ))}
                                 </div>

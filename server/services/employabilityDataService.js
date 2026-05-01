@@ -546,7 +546,11 @@ const getLatestRefactorPrediction = async (studentId) => {
     },
     include: {
       alumni_profile: true,
-      academic_snapshot: true,
+      academic_snapshot: {
+        include: {
+          program: true
+        }
+      },
       submission: {
         include: {
           survey_answers: {
@@ -644,7 +648,8 @@ const getLatestRefactorPrediction = async (studentId) => {
           elec_grade: prediction.academic_snapshot.elec_grade,
           ojt_grade: prediction.academic_snapshot.ojt_grade,
           leader_pos: prediction.academic_snapshot.leader_pos,
-          act_member_pos: prediction.academic_snapshot.act_member_pos
+          act_member_pos: prediction.academic_snapshot.act_member_pos,
+          degree_name: prediction.academic_snapshot.program?.name || null
         }
       : null,
     submission_summary: prediction.submission

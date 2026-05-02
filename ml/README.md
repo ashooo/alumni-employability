@@ -7,7 +7,7 @@ This folder is split into two responsibilities:
 
 ## Deployment Runtime (`scripts`)
 
-- `scripts/predict_api.py` - ARIMA forecast runtime script
+- `scripts/predict_employment_rate.py` - ARIMA forecast runtime script
 - `scripts/predict_employability.py` - employability ensemble voting classifier runtime script
 - `scripts/job-matching/job-matcher.py` - job matching runtime matcher using prebuilt artifacts
 

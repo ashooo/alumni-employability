@@ -33,7 +33,7 @@ def main():
         actual_rates = df.set_index('year')['employment_rate']
         
         # Load model
-        model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'arima_employment_model.pkl')
+        model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'arima', 'model.pkl')
         try:
             model_fit = joblib.load(model_path)
         except Exception as e:

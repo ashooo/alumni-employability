@@ -32,7 +32,7 @@ def test_arima_model():
     print(actual_rates.round(2))
     print("\n")
     
-    model_path = ml_dir / "models" / "arima_employment_model.pkl"
+    model_path = ml_dir / "models" / "arima" / "model.pkl"
     try:
         model_fit = joblib.load(model_path)
     except Exception as e:

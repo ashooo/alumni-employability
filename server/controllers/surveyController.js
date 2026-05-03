@@ -11,7 +11,8 @@ const mgmt = require('../services/surveyManagementService');
 
 const getSurvey = async (req, res) => {
   try {
-    const survey = await getSurveyDefinition();
+    const { path } = req.query;
+    const survey = await getSurveyDefinition(path);
     return res.json({ categories: survey.categories });
   } catch (error) {
     console.error('Get survey error:', error);
@@ -29,7 +30,8 @@ const getVersions = async (req, res) => {
 
 const getCollegeSurvey = async (req, res) => {
   try {
-    const survey = await getSurveyDefinition();
+    const { path } = req.query;
+    const survey = await getSurveyDefinition(path);
     return res.json({
       survey: survey.categories,
       version: survey.version,
@@ -50,7 +52,7 @@ const getCollegeSurvey = async (req, res) => {
 const submitSurveyResponseHandler = async (req, res) => {
   try {
     const { studentId } = req.params;
-    const { version, answers } = req.body;
+    const { version, answers, pathKey } = req.body;
 
     if (!studentId || !Array.isArray(answers)) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -59,7 +61,8 @@ const submitSurveyResponseHandler = async (req, res) => {
     await submitSurveyResponse({
       studentId,
       version,
-      answers
+      answers,
+      pathKey
     });
 
     return res.json({

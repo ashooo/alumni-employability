@@ -33,7 +33,7 @@ def main():
         actual_rates = df.set_index('year')['employment_rate']
         
         # Load model
-        model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'arima_employment_model.pkl')
+        model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'arima', 'model.pkl')
         try:
             model_fit = joblib.load(model_path)
         except Exception as e:
@@ -48,6 +48,10 @@ def main():
         
         # Calculate metrics using in-sample prediction if possible
         eval_df = pd.DataFrame()
+        pred_hist_df = pd.DataFrame()
+        # The first year is the ARIMA burn-in year — exclude it from metrics and
+        # from predicted/bound output to avoid misleading users.
+        first_year = int(actual_rates.index.min())
         try:
             predictions_hist = model_fit.get_prediction()
             pred_hist_df = predictions_hist.summary_frame()
@@ -58,11 +62,19 @@ def main():
             if hasattr(pred_index, 'year'):
                 pred_hist_df.index = pred_index.year
                 
-            eval_df = eval_df_temp.join(pred_hist_df['mean'].rename('Predicted'), how='inner')
+            eval_df = eval_df_temp.join(
+                pred_hist_df[['mean', 'mean_ci_lower', 'mean_ci_upper']].rename(
+                    columns={'mean': 'Predicted', 'mean_ci_lower': 'Lower', 'mean_ci_upper': 'Upper'}
+                ),
+                how='inner'
+            )
             
-            if not eval_df.empty:
-                mae = mean_absolute_error(eval_df['Actual'], eval_df['Predicted'])
-                rmse = np.sqrt(mean_squared_error(eval_df['Actual'], eval_df['Predicted']))
+            # Exclude the burn-in (first) year from metric calculation for a truer score
+            eval_df_excl = eval_df[eval_df.index != first_year]
+
+            if not eval_df_excl.empty:
+                mae = mean_absolute_error(eval_df_excl['Actual'], eval_df_excl['Predicted'])
+                rmse = np.sqrt(mean_squared_error(eval_df_excl['Actual'], eval_df_excl['Predicted']))
                 response["metrics"]["mae"] = round(float(mae), 2)
                 response["metrics"]["rmse"] = round(float(rmse), 2)
             else:
@@ -74,14 +86,22 @@ def main():
              response["metrics"]["mae"] = 0
              response["metrics"]["rmse"] = 0
 
-        # Add actual and predicted historical to response
+        # Add historical data points.
+        # Predicted rate, upper, and lower bounds are skipped for the first (burn-in)
+        # year so the chart does not show the misleading initialization gap.
         for year, rate in actual_rates.items():
             item = {
                 "year": int(year),
                 "value": round(float(rate), 2)
             }
-            if not eval_df.empty and year in eval_df.index and not pd.isna(eval_df.loc[year, 'Predicted']):
-                item["predicted"] = round(float(eval_df.loc[year, 'Predicted']), 2)
+            if int(year) != first_year and not eval_df.empty and year in eval_df.index:
+                row = eval_df.loc[year]
+                if not pd.isna(row['Predicted']):
+                    item["predicted"] = round(float(row['Predicted']), 2)
+                if not pd.isna(row['Lower']):
+                    item["lower"] = round(float(row['Lower']), 2)
+                if not pd.isna(row['Upper']):
+                    item["upper"] = round(float(row['Upper']), 2)
             response["historical"].append(item)
 
         # Predict future 3 years

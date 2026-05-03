@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Lock } from 'lucide-react';
 
 // API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -56,6 +58,7 @@ interface Program {
 export default function AlumniProfile() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [emailOtpSending, setEmailOtpSending] = useState(false);
@@ -620,6 +623,28 @@ export default function AlumniProfile() {
                 />
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Security Settings */}
+        <div className="glass-card p-6 space-y-4 lg:col-span-2">
+          <h3 className="font-display font-semibold flex items-center gap-2">
+            <Lock className="h-5 w-5 text-muted-foreground" />
+            Security Settings
+          </h3>
+          <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl border border-dashed">
+            <div>
+              <p className="text-sm font-medium">Account Password</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Regularly updating your password enhances your account security.</p>
+            </div>
+            <Button 
+              variant="outline" 
+              onClick={() => navigate('/app/alumni/change-password')}
+              className="gap-2"
+            >
+              <Lock className="h-4 w-4" />
+              Change Password
+            </Button>
           </div>
         </div>
       </div>

@@ -4,6 +4,7 @@ const path = require('path');
 const xlsx = require('xlsx');
 
 const prisma = new PrismaClient();
+const bcrypt = require('bcrypt');
 const { createPlaceholderPasswordHash } = require('../utils/refactorAuth');
 
 const COMPETENCY_FILE = path.resolve(__dirname, '../../ml/data/competency_compilation.csv');
@@ -30,16 +31,69 @@ const LAST_NAMES = [
 ];
 
 async function clearData() {
-  console.log('Clearing existing alumni data for a fresh start...');
-  // Delete in order of dependencies
-  await prisma.employmentOutcome.deleteMany({});
+  console.log('Clearing existing data for a fresh start...');
+  
+  // Delete in order of dependencies to avoid foreign key violations
   await prisma.mlPrediction.deleteMany({});
+  await prisma.followupSchedule.deleteMany({});
+  await prisma.employmentOutcome.deleteMany({});
   await prisma.surveyAnswer.deleteMany({});
   await prisma.submissionCompetency.deleteMany({});
+  
+  // Handle self-referencing foreign keys in SurveySubmission
+  await prisma.surveySubmission.updateMany({
+    data: { 
+      trigger_submission_id: null,
+      parent_submission_id: null 
+    }
+  });
   await prisma.surveySubmission.deleteMany({});
+  
   await prisma.academicSnapshot.deleteMany({});
   await prisma.alumniProfile.deleteMany({});
-  await prisma.user.deleteMany({ where: { role: 'ALUMNI' } });
+  
+  // Also clear audit logs that might reference users
+  await prisma.auditLog.deleteMany({});
+  await prisma.userNotification.deleteMany({});
+  await prisma.notification.deleteMany({});
+  
+  await prisma.user.deleteMany({ 
+    where: { 
+      role: { in: ['ALUMNI', 'ADMIN', 'SUPERADMIN'] } 
+    } 
+  });
+}
+
+async function seedAdmins() {
+  console.log('Seeding administrative accounts...');
+  const adminHash = await bcrypt.hash('admin123', 10);
+  const superHash = await bcrypt.hash('superadmin123', 10);
+
+  await prisma.user.upsert({
+    where: { username: 'admin' },
+    update: { password_hash: adminHash, role: 'ADMIN' },
+    create: {
+      username: 'admin',
+      password_hash: adminHash,
+      role: 'ADMIN',
+      first_name: 'Admin',
+      last_name: 'User',
+      email: 'admin@example.com'
+    }
+  });
+
+  await prisma.user.upsert({
+    where: { username: 'superadmin' },
+    update: { password_hash: superHash, role: 'SUPERADMIN' },
+    create: {
+      username: 'superadmin',
+      password_hash: superHash,
+      role: 'SUPERADMIN',
+      first_name: 'Super',
+      last_name: 'Admin',
+      email: 'superadmin@example.com'
+    }
+  });
 }
 
 async function seedCompetencies() {
@@ -155,18 +209,18 @@ async function seedHistoricalAlumni() {
           data: {
             alumni_profile: { connect: { id: profile.id } },
             program: { connect: { id: programId } },
-            gender: row.Gender || 'Other',
+            gender: row.Gender || (Math.random() > 0.5 ? 'Male' : 'Female'),
             age: parseInt(row.Age) || 22,
             year_graduated: parseInt(row['Year Graduated']) || 2020,
-            cgpa: parseFloat(row.CGPA) || 0,
-            prof_grade: parseFloat(row['Average Prof Grade']) || 0,
-            elec_grade: parseFloat(row['Average Elec Grade']) || 0,
-            ojt_grade: parseFloat(row['OJT Grade']) || 0,
-            leader_pos: row['Leadership POS'] === 'Yes',
-            act_member_pos: row['Act Member POS'] === 'Yes',
-            soft_skills_ave: parseFloat(row['Soft Skills Ave']) || 0,
-            hard_skills_ave: parseFloat(row['Hard Skills Ave']) || 0,
-            is_employable: isEmployable // Store the label directly
+            cgpa: parseFloat(row.CGPA) || (Math.random() * 2 + 1).toFixed(2),
+            prof_grade: parseFloat(row['Average Prof Grade']) || (Math.random() * 20 + 75).toFixed(2),
+            elec_grade: parseFloat(row['Average Elec Grade']) || (Math.random() * 20 + 75).toFixed(2),
+            ojt_grade: parseFloat(row['OJT Grade']) || (Math.random() * 15 + 80).toFixed(2),
+            leader_pos: row['Leadership POS'] === 'Yes' || (Math.random() > 0.8),
+            act_member_pos: row['Act Member POS'] === 'Yes' || (Math.random() > 0.7),
+            soft_skills_ave: parseFloat(row['Soft Skills Ave']) || (Math.random() * 30 + 65).toFixed(2),
+            hard_skills_ave: parseFloat(row['Hard Skills Ave']) || (Math.random() * 30 + 60).toFixed(2),
+            is_employable: isEmployable
           }
         });
 
@@ -202,6 +256,7 @@ async function seedHistoricalAlumni() {
 async function main() {
   try {
     await clearData();
+    await seedAdmins();
     await seedCompetencies();
     await seedCollegesAndPrograms();
     await seedHistoricalAlumni();

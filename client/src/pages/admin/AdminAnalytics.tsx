@@ -152,7 +152,8 @@ export default function AdminAnalytics() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-card p-6">
-              <h3 className="font-display font-semibold mb-4">Total Alumni per Program</h3>
+              <h3 className="font-display font-semibold mb-1">Total Alumni per Program</h3>
+              <p className="text-xs text-muted-foreground mb-4">Compares the total number of registered alumni (green) against the number who are currently employed (teal) for each academic program. Use this to identify which programs produce the most employable graduates.</p>
               {programData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={programData}>
@@ -172,7 +173,8 @@ export default function AdminAnalytics() {
             </motion.div>
 
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-card p-6">
-              <h3 className="font-display font-semibold mb-4">Yearly Employment Trend</h3>
+              <h3 className="font-display font-semibold mb-1">Yearly Employment Trend</h3>
+              <p className="text-xs text-muted-foreground mb-4">Tracks the employment rate (%) of alumni across the last 5 graduation years, broken down by overall, male, and female graduates. A rising trend indicates improving employability outcomes over time.</p>
               {trendData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={trendData}>

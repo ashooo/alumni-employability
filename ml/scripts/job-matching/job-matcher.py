@@ -8,10 +8,11 @@ Why this version:
   domain-centric overlap signals from occupation metadata.
 """
 
+import csv
 import json
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 import faiss
 import numpy as np
@@ -140,6 +141,7 @@ class JobMatcher:
             self.metadata = json.load(f)
 
         self._build_rerank_profiles()
+        self._load_alternate_titles()
 
         if use_onnx:
             self._load_onnx_model()
@@ -206,6 +208,65 @@ class JobMatcher:
             token: float(np.log((1 + total_docs) / (1 + freq)) + 1.0)
             for token, freq in token_document_frequency.items()
         }
+
+    def _load_alternate_titles(self):
+        """
+        Load alternate_titles.csv and index by standard title.
+        Expected headers: O*NET-SOC Code, Title, Alternate Title, Short Title, Source(s)
+        """
+        self.alternate_titles_map = {}
+        csv_path = self.models_dir.parent / "data" / "alternate_titles.csv"
+        
+        if not csv_path.exists():
+            # Fallback to local check if not in data dir
+            csv_path = self.models_dir / "alternate_titles.csv"
+
+        if not csv_path.exists():
+            return
+
+        try:
+            with open(csv_path, mode='r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    std_title = row.get("Title")
+                    alt_title = row.get("Alternate Title")
+                    sources = row.get("Source(s)", "")
+                    
+                    if not std_title or not alt_title:
+                        continue
+                        
+                    source_count = len([s for s in sources.split(',') if s.strip()])
+                    
+                    if std_title not in self.alternate_titles_map:
+                        self.alternate_titles_map[std_title] = []
+                    
+                    self.alternate_titles_map[std_title].append({
+                        "title": alt_title,
+                        "source_count": source_count,
+                        "tokens": _tokenize_values([alt_title])
+                    })
+        except Exception as e:
+            print(f"Warning: Failed to load alternate titles: {e}")
+
+    def _select_top_alternates(self, std_title: str, candidate_tokens: Set[str], top_k: int = 3) -> List[str]:
+        alternates = self.alternate_titles_map.get(std_title, [])
+        if not alternates:
+            return []
+
+        scored = []
+        for alt in alternates:
+            # Score based on token overlap with candidate skills (primary)
+            overlap = len(alt["tokens"] & candidate_tokens)
+            # Popularity bonus (secondary)
+            popularity = alt["source_count"] * 0.1
+            # Penalty for very long titles to keep UI clean
+            length_penalty = len(alt["title"]) * 0.005
+            
+            score = overlap + popularity - length_penalty
+            scored.append((score, alt["title"]))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [item[1] for item in scored[:top_k]]
 
     def _weighted_token_overlap(self, query_tokens: set, doc_tokens: set) -> float:
         if not query_tokens:
@@ -381,6 +442,10 @@ class JobMatcher:
                     len(overlap["matched"]) / len(all_comp) * 100
                     if all_comp else 0
                 )
+
+            # Add Top 3 Alternate Titles
+            candidate_tokens = _tokenize_values(candidate_skills)
+            result["top_alternates"] = self._select_top_alternates(result["title"], candidate_tokens, top_k=3)
 
             results.append(result)
 

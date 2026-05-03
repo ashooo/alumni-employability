@@ -494,7 +494,8 @@ const updateEmploymentRecord = async (req, res) => {
 
 const getCollegeSurvey = async (req, res) => {
   try {
-    const survey = await getSurveyDefinition();
+    const { path } = req.query;
+    const survey = await getSurveyDefinition(path);
     res.json({
       survey: survey.categories,
       version: survey.version,
@@ -513,7 +514,7 @@ const getCollegeSurvey = async (req, res) => {
 const submitSurveyResponse = async (req, res) => {
   try {
     const { studentId } = req.params;
-    const { version, answers } = req.body;
+    const { version, answers, pathKey } = req.body;
 
     if (!studentId || !Array.isArray(answers)) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -526,7 +527,8 @@ const submitSurveyResponse = async (req, res) => {
     await persistSurveyResponse({
       studentId,
       version,
-      answers
+      answers,
+      pathKey
     });
 
     res.json({

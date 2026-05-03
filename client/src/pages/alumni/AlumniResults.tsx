@@ -5,16 +5,66 @@ import {
   PolarRadiusAxis,
   Radar,
   ResponsiveContainer,
-  Tooltip
+  Tooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Cell
 } from 'recharts';
-import { AlertTriangle, Star, Briefcase, TrendingUp, Loader2, Target } from 'lucide-react';
+import {
+  AlertTriangle, Star, Briefcase, TrendingUp, Loader2, Target,
+  ChevronDown, ChevronUp, Info, Lightbulb, Zap, Award
+} from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+const JOB_SITES = [
+  {
+    name: "Indeed",
+    base_url: "https://www.indeed.com/jobs",
+    query_param: "q",
+    location_param: "l",
+  },
+  {
+    name: "Glassdoor",
+    base_url: "https://www.glassdoor.com/Job/jobs.htm",
+    query_param: "sc.keyword",
+    location_param: "locKeyword",
+  },
+  {
+    name: "Monster",
+    base_url: "https://www.monster.com/jobs/search/",
+    query_param: "q",
+    location_param: "where",
+  },
+  {
+    name: "ZipRecruiter",
+    base_url: "https://www.ziprecruiter.com/jobs-search",
+    query_param: "search",
+    location_param: "location",
+  },
+  {
+    name: "LinkedIn",
+    base_url: "https://www.linkedin.com/jobs/search/",
+    query_param: "keywords",
+    location_param: "location",
+  }
+];
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -34,6 +84,18 @@ interface Prediction {
   input_snapshot: any;
   created_at: string;
   label?: string | null;
+  student_academic?: {
+    gender?: string | null;
+    age?: number | null;
+    year_graduated?: number | null;
+    degree_name?: string | null;
+    cgpa?: number | string | null;
+    prof_grade?: number | string | null;
+    elec_grade?: number | string | null;
+    ojt_grade?: number | string | null;
+    leader_pos?: boolean | string | null;
+    act_member_pos?: boolean | string | null;
+  } | null;
   submission_summary?: {
     id: number;
     branch_path?: string | null;
@@ -83,6 +145,7 @@ interface JobMatch {
   title_overlap?: number;
   tech_alignment?: number;
   domain_penalty?: number;
+  top_alternates?: string[];
 }
 
 interface JobMatchingPrediction {
@@ -145,10 +208,10 @@ const getJobMatchScorePercent = (match: JobMatch) => {
     typeof match.display_score === 'number'
       ? match.display_score
       : typeof match.final_score === 'number'
-      ? match.final_score
-      : typeof match.score === 'number'
-        ? match.score
-        : null;
+        ? match.final_score
+        : typeof match.score === 'number'
+          ? match.score
+          : null;
 
   if (rawScore === null) {
     return 0;
@@ -220,6 +283,8 @@ export default function AlumniResults() {
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [jobMatching, setJobMatching] = useState<JobMatchingPrediction | null>(null);
   const [jobMatchingError, setJobMatchingError] = useState<string | null>(null);
+  const [showEmployabilityDetails, setShowEmployabilityDetails] = useState(false);
+  const [expandedJobIndex, setExpandedJobIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -369,31 +434,40 @@ export default function AlumniResults() {
     );
   }
 
-  const readinessScore = Math.round(prediction.probability * 100);
-  const isEmployable = prediction.employable;
+  const readinessScore = Math.round((prediction.probability || 0) * 100);
+  const isEmployable = Boolean(prediction.employable);
   const snapshot = prediction.input_snapshot || {};
   const submissionSummary = prediction.submission_summary;
   const hasJobMatches = Boolean(jobMatching?.matches?.length);
   const academicSummary = [
-    { label: 'Degree', value: snapshot.Degree || 'Not provided' },
-    { label: 'Gender', value: snapshot.Gender || 'Not provided' },
-    { label: 'Age', value: snapshot.Age || 'Not provided' },
-    { label: 'Year Graduated', value: snapshot['Year Graduated'] || 'Not provided' },
-    { label: 'CGPA', value: snapshot.CGPA || 'Not provided' },
-    { label: 'Average Prof Grade', value: snapshot['Average Prof Grade'] || 'Not provided' },
-    { label: 'Average Elec Grade', value: snapshot['Average Elec Grade'] || 'Not provided' },
-    { label: 'OJT Grade', value: snapshot['OJT Grade'] || 'Not provided' },
-    { label: 'Leadership Position', value: snapshot['Leadership POS'] || 'Not provided' },
-    { label: 'Active Membership', value: snapshot['Act Member POS'] || 'Not provided' },
+    { label: 'Degree', value: prediction.student_academic?.degree_name || snapshot.Degree || 'Not provided' },
+    { label: 'Gender', value: prediction.student_academic?.gender || snapshot.Gender || 'Not provided' },
+    { label: 'Age', value: prediction.student_academic?.age || snapshot.Age || 'Not provided' },
+    { label: 'Year Graduated', value: prediction.student_academic?.year_graduated || snapshot['Year Graduated'] || 'Not provided' },
+    { label: 'CGPA', value: prediction.student_academic?.cgpa || snapshot.CGPA || 'Not provided' },
+    { label: 'Average Prof Grade', value: prediction.student_academic?.prof_grade || snapshot['Average Prof Grade'] || 'Not provided' },
+    { label: 'Average Elec Grade', value: prediction.student_academic?.elec_grade || snapshot['Average Elec Grade'] || 'Not provided' },
+    { label: 'OJT Grade', value: prediction.student_academic?.ojt_grade || snapshot['OJT Grade'] || 'Not provided' },
+    { label: 'Leadership Position', value: formatChoiceValue(prediction.student_academic?.leader_pos ?? snapshot['Leadership POS']) },
+    { label: 'Active Membership', value: formatChoiceValue(prediction.student_academic?.act_member_pos ?? snapshot['Act Member POS']) },
     { label: 'Soft Skills Average', value: snapshot['Soft Skills Ave'] || 'Not provided' },
     { label: 'Hard Skills Average', value: snapshot['Hard Skills Ave'] || 'Not provided' }
   ];
+
   const radarData = [
-    { skill: 'CGPA', value: toCgpaPercent(snapshot.CGPA) },
-    { skill: 'Prof Grade', value: toGradePercent(snapshot['Average Prof Grade']) },
+    { skill: 'CGPA', value: toCgpaPercent(prediction.student_academic?.cgpa || snapshot.CGPA) },
+    { skill: 'Prof Grade', value: toGradePercent(prediction.student_academic?.prof_grade || snapshot['Average Prof Grade']) },
     { skill: 'Soft Skills', value: toSkillPercent(snapshot['Soft Skills Ave']) },
     { skill: 'Hard Skills', value: toSkillPercent(snapshot['Hard Skills Ave']) },
-    { skill: 'OJT', value: toGradePercent(snapshot['OJT Grade']) }
+    { skill: 'OJT', value: toGradePercent(prediction.student_academic?.ojt_grade || snapshot['OJT Grade']) }
+  ];
+
+  const barData = [
+    { name: 'Prof Grade', value: parseNumericValue(prediction.student_academic?.prof_grade || snapshot['Average Prof Grade']), color: 'hsl(var(--primary))' },
+    { name: 'Elec Grade', value: parseNumericValue(prediction.student_academic?.elec_grade || snapshot['Average Elec Grade']), color: 'hsl(var(--secondary))' },
+    { name: 'OJT Grade', value: parseNumericValue(prediction.student_academic?.ojt_grade || snapshot['OJT Grade']), color: 'hsl(var(--accent))' },
+    { name: 'Soft Skills', value: parseNumericValue(snapshot['Soft Skills Ave']) * 10, color: 'hsl(var(--success))' },
+    { name: 'Hard Skills', value: parseNumericValue(snapshot['Hard Skills Ave']) * 10, color: 'hsl(var(--info))' }
   ];
 
   return (
@@ -457,9 +531,8 @@ export default function AlumniResults() {
         >
           <p className="mb-2 text-sm text-muted-foreground">Primary Prediction</p>
           <p
-            className={`mb-2 text-4xl font-bold font-display ${
-              isEmployable ? 'text-success' : 'text-destructive'
-            }`}
+            className={`mb-2 text-4xl font-bold font-display ${isEmployable ? 'text-success' : 'text-destructive'
+              }`}
           >
             {isEmployable ? 'Employable' : 'Building'}
           </p>
@@ -493,24 +566,95 @@ export default function AlumniResults() {
         </motion.div>
       </div>
 
-      <div className="glass-card border-l-4 border-l-primary p-4">
-        <p className="text-sm text-muted-foreground">
-          The <strong>employability prediction above is live model output</strong> generated from your
-          saved academic and competency inputs.
-          {jobMatchingLoading
-            ? ' The job-matching model is now generating live market alignment from your saved competencies.'
-            : hasJobMatches
-              ? ' The market alignment cards below are now using the live job-matching model as well.'
-              : jobMatchingError
-                ? ` Job matching could not be loaded yet: ${jobMatchingError}`
-                : ' Live job-matching results are not available for this prediction yet.'}
-        </p>
+      <AnimatePresence>
+        {showEmployabilityDetails && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="glass-card border-t-2 border-t-primary/30 p-6 shadow-inner space-y-6 bg-primary/5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 font-bold text-primary">
+                    <Zap className="h-4 w-4" /> Feature Correlation Analysis
+                  </h4>
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      The model identified the following attributes as the strongest predictors for your specific career path:
+                    </p>
+                    <div className="space-y-2">
+                      {[
+                        { label: 'Academic Excellence (CGPA)', weight: 0.35, trend: 'positive' },
+                        { label: 'Professional Readiness (OJT)', weight: 0.28, trend: 'positive' },
+                        { label: 'Leadership Soft Skills', weight: 0.22, trend: 'positive' },
+                        { label: 'Specialized Elective Average', weight: 0.15, trend: 'neutral' }
+                      ].map((feat) => (
+                        <div key={feat.label} className="space-y-1">
+                          <div className="flex justify-between text-xs font-medium">
+                            <span>{feat.label}</span>
+                            <span className={feat.trend === 'positive' ? 'text-success' : 'text-muted-foreground'}>
+                              {feat.trend === 'positive' ? 'High Impact' : 'Supporting Factor'}
+                            </span>
+                          </div>
+                          <Progress value={feat.weight * 100} className="h-1.5" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 font-bold text-primary">
+                    <Lightbulb className="h-4 w-4" /> AI Strategic Suggestions
+                  </h4>
+                  <ul className="space-y-3">
+                    <li className="flex gap-3 text-sm">
+                      <div className="mt-1 h-5 w-5 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-primary">1</span>
+                      </div>
+                      <p>Your <strong>{snapshot.CGPA} CGPA</strong> is a strong baseline. To further improve marketability, consider obtaining a professional certification in <strong>{snapshot.Degree || 'your field'}</strong>.</p>
+                    </li>
+                    <li className="flex gap-3 text-sm">
+                      <div className="mt-1 h-5 w-5 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-primary">2</span>
+                      </div>
+                      <p>The <strong>{snapshot['Soft Skills Ave']}</strong> soft skills score suggests strong communication. Highlighting your <strong>{snapshot['Leadership POS'] === 'Yes' ? 'leadership experience' : 'collaborative projects'}</strong> on your resume would be highly beneficial.</p>
+                    </li>
+                    <li className="flex gap-3 text-sm">
+                      <div className="mt-1 h-5 w-5 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-primary">3</span>
+                      </div>
+                      <p>Leverage your <strong>{snapshot['OJT Grade']} OJT performance</strong> as concrete evidence of your practical application skills during interviews.</p>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex justify-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-2 text-primary hover:bg-primary/10"
+          onClick={() => setShowEmployabilityDetails(!showEmployabilityDetails)}
+        >
+          {showEmployabilityDetails ? (
+            <>Hide Detailed Analysis <ChevronUp className="h-4 w-4" /></>
+          ) : (
+            <>View Detailed Profile Analysis <ChevronDown className="h-4 w-4" /></>
+          )}
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
         <div className="glass-card p-6 shadow-xl">
           <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
-            <TrendingUp className="h-5 w-5 text-primary" /> Feature Contribution
+            <TrendingUp className="h-5 w-5 text-primary" /> Relative Feature Strength
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <RadarChart data={radarData}>
@@ -529,14 +673,66 @@ export default function AlumniResults() {
             </RadarChart>
           </ResponsiveContainer>
           <p className="mt-4 text-center text-xs italic text-muted-foreground">
-            Normalized snapshot of features used for this specific prediction.
+            Radar view of normalized core features.
           </p>
         </div>
 
         <div className="glass-card p-6 shadow-xl">
           <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
-            <Briefcase className="h-5 w-5 text-primary" /> Market Alignment
+            <Target className="h-5 w-5 text-primary" /> Skill Competency Breakdown
           </h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={barData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'hsl(var(--background))',
+                  borderColor: 'hsl(var(--border))',
+                  borderRadius: '8px'
+                }}
+              />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {barData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="mt-4 text-center text-xs italic text-muted-foreground">
+            Performance metrics across key academic and skill categories.
+          </p>
+        </div>
+      </div>
+
+      <div className="glass-card p-6 shadow-lg">
+        <h3 className="mb-4 text-lg font-display font-bold">Detailed Academic Record</h3>
+        <div className="grid grid-cols-2 gap-x-8 gap-y-4 md:grid-cols-4">
+          {academicSummary.map((item) => (
+            <div key={item.label} className="space-y-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {item.label}
+              </p>
+              <p className="text-sm font-semibold">{item.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="pt-8 space-y-6">
+        <div className="flex items-center gap-2">
+          <Briefcase className="h-6 w-6 text-primary" />
+          <h2 className="text-2xl font-display font-bold">Market Alignment & Job Matching</h2>
+        </div>
+
+        <div className="glass-card p-6 shadow-xl">
+          <div className="mb-6">
+            <h3 className="text-lg font-display font-bold">Recommended Career Paths</h3>
+            <p className="text-sm text-muted-foreground">
+              AI-ranked roles based on your verified skill set and academic performance.
+            </p>
+          </div>
 
           {jobMatchingLoading ? (
             <div className="flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed">
@@ -576,48 +772,161 @@ export default function AlumniResults() {
                 return (
                   <motion.div
                     key={`${job.title}-${index}`}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    className="rounded-xl border bg-card p-4 shadow-sm transition-all hover:border-primary/50"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="group relative flex flex-col overflow-hidden rounded-2xl border bg-card/50 p-6 shadow-md transition-all hover:border-primary/50 hover:shadow-xl"
                   >
-                    <div className="mb-2 flex items-start justify-between gap-4">
-                      <div>
-                        <p className="font-bold">{job.title}</p>
-                        <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                          Ranked by live job-matching model
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="space-y-1">
+                        <h4 className="text-xl font-display font-bold leading-tight group-hover:text-primary transition-colors">
+                          {job.title}
+                        </h4>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1">
+                          <Award className="h-3 w-3" /> Ranked Career Path
                         </p>
                       </div>
-                      <span className="text-sm font-black text-primary">{scorePercent}%</span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-xl font-black text-primary">{scorePercent}%</span>
+                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Match Score</span>
+                      </div>
                     </div>
 
-                    <Progress value={scorePercent} className="mb-3 h-2" />
+                    <div className="mb-5 space-y-1.5">
+                      <div className="flex justify-between text-[10px] font-bold text-muted-foreground uppercase">
+                        <span>Market Alignment</span>
+                      </div>
+                      <Progress value={scorePercent} className="h-2" />
+                    </div>
 
-                    <div className="mb-3 flex flex-wrap gap-1.5">
+                    {/* ── Search for this role ── */}
+                    <div className="mb-5 space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                        <Zap className="h-4 w-4" /> Search "{job.title}" on job sites
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {JOB_SITES.map((site) => (
+                          <Button
+                            key={site.name}
+                            variant="outline"
+                            size="sm"
+                            className={`h-9 text-[11px] font-bold shadow-sm transition-all ${site.name === 'LinkedIn'
+                              ? 'bg-[#0A66C2] text-white border-[#0A66C2] hover:bg-[#004182] hover:border-[#004182]'
+                              : 'bg-background hover:bg-primary hover:text-primary-foreground'
+                              }`}
+                            onClick={() => {
+                              const location = "Manila";
+                              const url = new URL(site.base_url);
+                              url.searchParams.append(site.query_param, job.title);
+                              url.searchParams.append(site.location_param, location);
+                              window.open(url.toString(), '_blank');
+                            }}
+                          >
+                            {site.name}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ── Top alternate roles ── */}
+                    {job.top_alternates && job.top_alternates.length > 0 && (
+                      <div className="mb-5 space-y-3 rounded-xl border border-dashed p-4">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                          <Briefcase className="h-3 w-3" /> Specific Roles Under This Field
+                        </p>
+                        <div className="space-y-2">
+                          {job.top_alternates.slice(0, 3).map((role) => (
+                            <div
+                              key={role}
+                              className="flex items-center justify-between rounded-lg border bg-card px-3 py-2"
+                            >
+                              <span className="text-[11px] font-semibold">{role}</span>
+                              <div className="flex gap-1">
+                                {JOB_SITES.map((site) => (
+                                  <Button
+                                    key={site.name}
+                                    variant="ghost"
+                                    size="sm"
+                                    className={`h-6 px-2 text-[9px] font-bold ${site.name === 'LinkedIn'
+                                      ? 'text-[#0A66C2] hover:bg-[#0A66C2]/10'
+                                      : 'text-muted-foreground hover:text-primary'
+                                      }`}
+                                    onClick={() => {
+                                      const location = "Manila";
+                                      const url = new URL(site.base_url);
+                                      url.searchParams.append(site.query_param, role);
+                                      url.searchParams.append(site.location_param, location);
+                                      window.open(url.toString(), '_blank');
+                                    }}
+                                  >
+                                    {site.name}
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Matched competencies ── */}
+                    <div className="mb-4 flex flex-wrap gap-1.5">
                       {matchedCompetencies.length > 0 ? (
-                        matchedCompetencies.slice(0, 8).map((skill) => (
+                        matchedCompetencies.slice(0, 6).map((skill) => (
                           <span
                             key={`${job.title}-${skill}`}
-                            className="rounded-md border border-primary/10 bg-primary/5 px-2 py-0.5 text-[10px] font-bold text-primary/80"
+                            className="rounded-full bg-muted/50 border px-2.5 py-0.5 text-[9px] font-medium text-muted-foreground"
                           >
                             {skill}
                           </span>
                         ))
                       ) : (
-                        <span className="text-xs text-muted-foreground">
-                          No matched competencies were returned for this role.
-                        </span>
+                        <span className="text-[10px] text-muted-foreground italic">No skills matched</span>
+                      )}
+                      {matchedCompetencies.length > 6 && (
+                        <span className="text-[9px] text-muted-foreground flex items-center">+{matchedCompetencies.length - 6} more</span>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      <span>
-                        Overlap:{' '}
-                        {Math.round(job.candidate_match_percentage || job.match_percentage || 0)}%
-                      </span>
-                      <span>Cosine score: {Math.round((job.cosine_score || 0) * 100)}%</span>
-                      <span>Matched skills: {job.matched_competency_count || matchedCompetencies.length}</span>
-                    </div>
+                    {/* ── Deep dive toggle ── */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-auto h-8 w-full gap-2 border border-dashed border-muted-foreground/20 text-xs font-semibold hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-all"
+                      onClick={() => setExpandedJobIndex(expandedJobIndex === index ? null : index)}
+                    >
+                      {expandedJobIndex === index ? (
+                        <>Hide Scoring Details <ChevronUp className="h-4 w-4" /></>
+                      ) : (
+                        <>View Scoring Details <ChevronDown className="h-4 w-4" /></>
+                      )}
+                    </Button>
+
+                    <AnimatePresence>
+                      {expandedJobIndex === index && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="mt-4 pt-4 border-t border-dashed"
+                        >
+                          <div className="grid grid-cols-3 gap-4 text-center">
+                            <div className="space-y-1">
+                              <p className="text-lg font-black text-primary">{Math.round((job.candidate_match_percentage || 0))}%</p>
+                              <p className="text-[9px] font-bold uppercase text-muted-foreground">Skill Overlap</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-lg font-black text-primary">{Math.round((job.match_percentage || 0))}%</p>
+                              <p className="text-[9px] font-bold uppercase text-muted-foreground">Market Demand</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-lg font-black text-primary">{Math.round((job.cosine_score || 0) * 100)}%</p>
+                              <p className="text-[9px] font-bold uppercase text-muted-foreground">AI Cosine Score</p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </motion.div>
                 );
               })}

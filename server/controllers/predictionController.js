@@ -65,7 +65,7 @@ const getArimaPrediction = async (req, res) => {
       }));
 
     const result = await runMlScript({
-      scriptPath: 'scripts/predict_api.py',
+      scriptPath: 'scripts/predict_employment_rate.py',
       input: historicalData
     });
 

@@ -1,5 +1,5 @@
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar} from '@/components/ui/sidebar';
-import { GraduationCap, LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Briefcase, Lock, ShieldCheck, ScrollText } from 'lucide-react';
+import { LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Briefcase, Lock, ShieldCheck, ScrollText } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
@@ -49,12 +49,16 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 border-b border-sidebar-border group-data-[collapsible=icon]:px-2">
-        <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+        <NavLink to="/" className="flex items-center gap-3 rounded-md p-1 transition-colors hover:bg-sidebar-accent/40 group-data-[collapsible=icon]:justify-center">
           <div className="p-2 rounded-xl bg-sidebar-primary/20 shrink-0">
-            <GraduationCap className="h-5 w-5 text-sidebar-primary" />
+            <img
+              src="/plp_logo.png"
+              alt="PLP Logo"
+              className="h-5 w-5 object-contain"
+            />
           </div>
           {!collapsed && <span className="font-display font-bold text-sm text-sidebar-foreground">Alumni Tracer</span>}
-        </div>
+        </NavLink>
       </SidebarHeader>
 
       <SidebarContent>

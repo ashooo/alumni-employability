@@ -1,5 +1,5 @@
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar} from '@/components/ui/sidebar';
-import { GraduationCap, LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Lock, ShieldCheck, ScrollText } from 'lucide-react';
+import { LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Briefcase, Lock, ShieldCheck, ScrollText } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
@@ -24,12 +24,13 @@ const superAdminNav = [
 const alumniNav = [
   { title: 'Dashboard', url: '/app/alumni/dashboard', icon: LayoutDashboard },
   { title: 'Tracer Survey', url: '/app/alumni/survey', icon: ClipboardCheck },
-  { title: 'Results & Jobs', url: '/app/alumni/results', icon: Star },
+  { title: 'Employability Results', url: '/app/alumni/results', icon: Star },
+  { title: 'Job Recommendations', url: '/app/alumni/jobs', icon: Briefcase },
   { title: 'My Submissions', url: '/app/alumni/submissions', icon: FileCheck },
 ];
 
 const sharedNav = [
-  { title: 'My Profile', url: '/app/alumni/profile', icon: User },
+  { title: 'My Account', url: '/app/alumni/profile', icon: User },
   { title: 'System Overview', url: '/app/overview', icon: Home },
   { title: 'Model Simulator', url: '/app/model-simulator', icon: Brain },
   { title: 'Help / Guide', url: '/app/help', icon: HelpCircle },
@@ -48,12 +49,16 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 border-b border-sidebar-border group-data-[collapsible=icon]:px-2">
-        <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+        <NavLink to="/" className="flex items-center gap-3 rounded-md p-1 transition-colors hover:bg-sidebar-accent/40 group-data-[collapsible=icon]:justify-center">
           <div className="p-2 rounded-xl bg-sidebar-primary/20 shrink-0">
-            <GraduationCap className="h-5 w-5 text-sidebar-primary" />
+            <img
+              src="/plp_logo.png"
+              alt="PLP Logo"
+              className="h-5 w-5 object-contain"
+            />
           </div>
           {!collapsed && <span className="font-display font-bold text-sm text-sidebar-foreground">Alumni Tracer</span>}
-        </div>
+        </NavLink>
       </SidebarHeader>
 
       <SidebarContent>

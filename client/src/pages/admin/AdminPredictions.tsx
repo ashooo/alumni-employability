@@ -239,8 +239,6 @@ export default function AdminPredictions() {
       <Tabs defaultValue="arima">
         <TabsList className="mb-4">
           <TabsTrigger value="arima">ARIMA</TabsTrigger>
-          <TabsTrigger value="linear">Linear Regression</TabsTrigger>
-          <TabsTrigger value="rf">Random Forest</TabsTrigger>
         </TabsList>
 
         {(['arima', 'linear', 'rf'] as const).map(tab => {

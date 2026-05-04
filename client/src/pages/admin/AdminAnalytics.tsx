@@ -11,9 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 interface KpiData {
   totalAlumni: number;
-  totalAlumniTrend: number;
   participationRate: number;
-  participationTrend: number;
   employmentRate: number;
   employmentTrend: number;
   degreeAlignment: number;
@@ -39,8 +37,8 @@ export default function AdminAnalytics() {
   const { toast } = useToast();
 
   const [kpis, setKpis] = useState<KpiData>({
-    totalAlumni: 0, totalAlumniTrend: 0,
-    participationRate: 0, participationTrend: 0,
+    totalAlumni: 0,
+    participationRate: 0,
     employmentRate: 0, employmentTrend: 0,
     degreeAlignment: 0
   });
@@ -124,14 +122,12 @@ export default function AdminAnalytics() {
               title="Total Alumni" 
               value={kpis.totalAlumni.toLocaleString()} 
               icon={Users} 
-              trend={{ value: kpis.totalAlumniTrend, label: 'from last year' }} 
               delay={0} 
             />
             <KpiCard 
               title="Participation Rate" 
               value={`${kpis.participationRate.toFixed(1)}%`} 
               icon={Target} 
-              trend={{ value: kpis.participationTrend, label: 'improvement' }} 
               delay={0.1} 
             />
             <KpiCard 

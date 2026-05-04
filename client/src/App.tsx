@@ -12,6 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
 import AlumniProfile from "./pages/alumni/AlumniProfile";
 import AlumniResults from "./pages/alumni/AlumniResults";
+import AlumniJobs from "./pages/alumni/AlumniJobs";
 import AlumniSurvey from "./pages/alumni/AlumniSurvey";
 import AdminReports from "./pages/admin/AdminReports";
 import AdminContent from "./pages/admin/AdminContent";
@@ -67,6 +68,7 @@ const App = () => (
                 <Route path="alumni/survey" element={<AlumniSurvey />} />
                 <Route path="alumni/submissions" element={<AlumniSubmissions />} />
                 <Route path="alumni/results" element={<AlumniResults />} />
+                <Route path="alumni/jobs" element={<AlumniJobs />} />
                 <Route path="alumni/change-password" element={<AlumniChangePassword />} />
                 <Route path="model-simulator" element={<ModelSimulator />} />
                 <Route path="overview" element={<SystemOverview />} />

@@ -1,54 +1,15 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, BarChart, Bar, ComposedChart } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, BarChart, Bar, ComposedChart, Line } from 'recharts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { predictionData } from '@/data/mockData';
 import { motion } from 'framer-motion';
-import { useState, useEffect } from 'react';
-import { Info, TrendingDown, TrendingUp, Minus } from 'lucide-react';
+import ArimaTab from './prediction_tabs/ArimaTab';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function MetricsTable({ metrics, model }: { metrics: { mae: number; rmse: number; mape?: number; r2?: number }, model: string }) {
-  const isArima = model === 'arima';
-
-  if (isArima) {
-    const mae = metrics.mae ?? 0;
-    const rmse = metrics.rmse ?? 0;
-    return (
-      <div className="mt-6 space-y-3">
-        <h4 className="font-display font-semibold text-sm">Model Accuracy</h4>
-        <p className="text-xs text-muted-foreground mb-3">
-          On average, predictions are within <span className="text-primary font-semibold">±{mae.toFixed(2)}%</span> of actual values.
-          Lower numbers mean more accurate forecasts.
-        </p>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 rounded-lg bg-muted/50 border border-border/50">
-            <div className="flex items-center gap-1 mb-1">
-              <p className="text-xs font-semibold text-muted-foreground">MAE</p>
-              <span title="Mean Absolute Error — the average gap between predicted and actual employment rates.">
-                <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-              </span>
-            </div>
-            <p className="text-2xl font-bold font-display">{mae.toFixed(2)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Average prediction error in %</p>
-          </div>
-          <div className="p-4 rounded-lg bg-muted/50 border border-border/50">
-            <div className="flex items-center gap-1 mb-1">
-              <p className="text-xs font-semibold text-muted-foreground">RMSE</p>
-              <span title="Root Mean Squared Error — penalises larger errors more. Lower is better.">
-                <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-              </span>
-            </div>
-            <p className="text-2xl font-bold font-display">{rmse.toFixed(2)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Penalises larger errors more</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+function MetricsTable({ metrics }: { metrics: { mae: number; rmse: number; mape?: number; r2?: number } }) {
   const metricsList = [
     { label: 'MAE', value: metrics.mae, desc: 'Avg error in %' },
     { label: 'RMSE', value: metrics.rmse, desc: 'Penalises large errors' },
@@ -68,6 +29,53 @@ function MetricsTable({ metrics, model }: { metrics: { mae: number; rmse: number
     </div>
   );
 }
+
+
+const renderCustomLegend = () => {
+  const items = [
+    {
+      name: "Actual Employment Rate",
+      color: "hsl(var(--primary))",
+      icon: (
+        <svg width="24" height="12" viewBox="0 0 24 12">
+          <line x1="0" y1="6" x2="24" y2="6" stroke="hsl(var(--primary))" strokeWidth="3" />
+          <circle cx="12" cy="6" r="4" fill="hsl(var(--primary))" />
+        </svg>
+      ),
+    },
+    {
+      name: "Potential Range",
+      color: "hsl(var(--primary))",
+      icon: (
+        <svg width="24" height="12" viewBox="0 0 24 12">
+          <rect x="0" y="2" width="24" height="8" rx="2" fill="hsl(var(--primary))" opacity={0.15} />
+        </svg>
+      ),
+    },
+    {
+      name: "Predicted Rate",
+      color: "hsl(var(--primary))",
+      icon: (
+        <svg width="24" height="12" viewBox="0 0 24 12">
+          <line x1="0" y1="6" x2="24" y2="6" stroke="hsl(var(--primary))" strokeWidth="3" strokeDasharray="5 5" />
+          <circle cx="12" cy="6" r="4" fill="hsl(var(--primary))" />
+        </svg>
+      ),
+    },
+  ];
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center", gap: "20px", flexWrap: "wrap", marginTop: "8px" }}>
+      {items.map((item) => (
+        <div key={item.name} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px" }}>
+          {item.icon}
+          <span style={{ color: item.color }}>{item.name}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 
 function ForecastChart({ data }: { data: typeof predictionData.arima }) {
   const combined = [
@@ -100,7 +108,7 @@ function ForecastChart({ data }: { data: typeof predictionData.arima }) {
           contentStyle={{ borderRadius: '0.75rem', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }}
           formatter={(value: number, name: string) => [`${Number(value).toFixed(2)}%`, name]}
         />
-        <Legend />
+        <Legend content={renderCustomLegend} />
         {/* Confidence band — rendered beneath the lines */}
         <Area type="monotone" dataKey="upper" stroke="none" fill="hsl(var(--primary) / 0.12)" name="Upper Bound" legendType="none" connectNulls />
         <Area type="monotone" dataKey="lower" stroke="none" fill="hsl(var(--background))" name="Lower Bound" legendType="none" connectNulls />
@@ -111,90 +119,8 @@ function ForecastChart({ data }: { data: typeof predictionData.arima }) {
   );
 }
 
-// Auto-generate key insights from ARIMA data
-function generateInsights(data: typeof predictionData.arima): string[] {
-  const insights: string[] = [];
-  const hist = [...data.historical].sort((a, b) => Number(a.year) - Number(b.year));
-  const forecast = [...data.forecast].sort((a, b) => Number(a.year) - Number(b.year));
+// Legacy insights generators removed
 
-  if (hist.length < 2) return ['Insufficient historical data to generate insights.'];
-
-  // Trend across historical years
-  const first = hist[0].value;
-  const last = hist[hist.length - 1].value;
-  const overallChange = last - first;
-
-  if (Math.abs(overallChange) < 3) {
-    const startYear = hist[0].year;
-    const endYear = hist[hist.length - 1].year;
-    insights.push(`Employment rate remained relatively stable from ${startYear} to ${endYear}, hovering around ${last.toFixed(1)}%.`);
-  } else if (overallChange < 0) {
-    insights.push(`Employment rate declined by approximately ${Math.abs(overallChange).toFixed(1)}% from ${hist[0].year} to ${hist[hist.length - 1].year}.`);
-  } else {
-    insights.push(`Employment rate improved by approximately ${overallChange.toFixed(1)}% from ${hist[0].year} to ${hist[hist.length - 1].year}.`);
-  }
-
-  // Most recent year change
-  if (hist.length >= 2) {
-    const prev = hist[hist.length - 2];
-    const curr = hist[hist.length - 1];
-    const recentChange = curr.value - prev.value;
-    if (Math.abs(recentChange) >= 1.5) {
-      const direction = recentChange < 0 ? 'declined' : 'increased';
-      insights.push(`A ${direction} of ${Math.abs(recentChange).toFixed(1)}% was observed in ${curr.year} compared to ${prev.year}.`);
-    }
-  }
-
-  // Peak and lowest years
-  const peakYear = hist.reduce((best, d) => d.value > best.value ? d : best, hist[0]);
-  const lowYear = hist.reduce((best, d) => d.value < best.value ? d : best, hist[0]);
-  if (peakYear.year !== lowYear.year) {
-    insights.push(`Highest recorded rate: ${peakYear.value.toFixed(1)}% in ${peakYear.year}. Lowest: ${lowYear.value.toFixed(1)}% in ${lowYear.year}.`);
-  }
-
-  // Forecast summary
-  if (forecast.length > 0) {
-    const forecastFirst = forecast[0].value;
-    const forecastLast = forecast[forecast.length - 1].value;
-    const forecastDelta = forecastLast - forecastFirst;
-    if (Math.abs(forecastDelta) < 2) {
-      insights.push(`The forecast suggests a stable employment rate through ${forecast[forecast.length - 1].year}, with no major shifts expected.`);
-    } else if (forecastDelta < 0) {
-      insights.push(`Forecast indicates a gradual decline through ${forecast[forecast.length - 1].year}. Consider reviewing employability support programs.`);
-    } else {
-      insights.push(`Forecast projects a gradual improvement through ${forecast[forecast.length - 1].year}. Current trends appear positive.`);
-    }
-  }
-
-  return insights;
-}
-
-function generateForecastInterpretation(data: typeof predictionData.arima): string {
-  const forecast = [...data.forecast].sort((a, b) => Number(a.year) - Number(b.year));
-  if (forecast.length === 0) return 'No forecast data available.';
-
-  const first = forecast[0].value;
-  const last = forecast[forecast.length - 1].value;
-  const delta = last - first;
-  const endYear = forecast[forecast.length - 1].year;
-
-  if (Math.abs(delta) < 2) {
-    return `The model suggests employment rates will remain stable over the next ${forecast.length} year${forecast.length > 1 ? 's' : ''}, with no major increases or declines expected through ${endYear}.`;
-  } else if (delta < 0) {
-    return `The model forecasts a gradual decline of about ${Math.abs(delta).toFixed(1)}% by ${endYear}. This warrants attention to employability initiatives for upcoming graduates.`;
-  } else {
-    return `The model forecasts a gradual improvement of about ${delta.toFixed(1)}% by ${endYear}. Current conditions appear to support continued graduate employability.`;
-  }
-}
-
-function getTrendIcon(data: typeof predictionData.arima) {
-  const hist = [...data.historical].sort((a, b) => Number(a.year) - Number(b.year));
-  if (hist.length < 2) return <Minus className="h-4 w-4" />;
-  const delta = hist[hist.length - 1].value - hist[0].value;
-  if (delta > 3) return <TrendingUp className="h-4 w-4 text-green-400" />;
-  if (delta < -3) return <TrendingDown className="h-4 w-4 text-red-400" />;
-  return <Minus className="h-4 w-4 text-yellow-400" />;
-}
 
 // ---------------------------------------------------------------------------
 // Main Page
@@ -272,49 +198,20 @@ export default function AdminPredictions() {
           <TabsTrigger value="arima">ARIMA</TabsTrigger>
         </TabsList>
 
-        {(['arima', 'linear', 'rf'] as const).map(tab => {
+        <TabsContent value="arima">
+          <ArimaTab />
+        </TabsContent>
+
+        {(['linear', 'rf'] as const).map(tab => {
           const key = tab === 'rf' ? 'randomForest' : tab;
-          let d = predictionData[key as keyof typeof predictionData];
-
-          if (tab === 'arima' && arimaData) {
-            d = arimaData as any;
-          }
-
-          const isArima = tab === 'arima';
-          const activeData = d as typeof predictionData.arima;
+          const activeData = predictionData[key as keyof typeof predictionData] as typeof predictionData.arima;
 
           return (
             <TabsContent key={tab} value={tab}>
-
-              {/* ── ARIMA-only: What is ARIMA? ── */}
-              {isArima && (
-                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-5 mb-4 border-l-4 border-primary/60">
-                  <div className="flex items-start gap-3">
-                    <Info className="h-5 w-5 text-primary mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-semibold text-sm mb-1">
-                        What does this model do?{' '}
-                        <span className="text-xs font-normal text-muted-foreground ml-1"
-                          title="ARIMA = AutoRegressive Integrated Moving Average — a statistical time-series forecasting method">
-                          (ARIMA <Info className="inline h-3 w-3 cursor-help" />)
-                        </span>
-                      </p>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        This model analyzes <strong>past employment trends</strong> to predict future rates. It detects patterns
-                        like gradual increases, declines, or periods of stability across graduation years — then uses those
-                        patterns to estimate what the employment rate will look like in the coming years.
-                      </p>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card p-6">
-
                 {/* Chart Header */}
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-4">
                   <h3 className="font-display font-semibold">Employment Trend &amp; Forecast</h3>
-                  {!loading && !fetchError && isArima && arimaData && getTrendIcon(activeData)}
                 </div>
 
                 {/* How to Read This Chart */}

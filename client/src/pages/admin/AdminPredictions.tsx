@@ -166,20 +166,37 @@ export default function AdminPredictions() {
                 {tab === 'rf' && predictionData.randomForest.featureImportance && (
                   <div className="mt-6">
                     <h4 className="font-display font-semibold mb-3">Feature Importance</h4>
-                    <p className="text-xs text-muted-foreground mb-3">Gender is identified as a significant factor affecting employment rate predictions.</p>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <BarChart data={predictionData.randomForest.featureImportance} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis type="number" tick={{ fontSize: 12 }} />
-                        <YAxis type="category" dataKey="feature" tick={{ fontSize: 12 }} width={100} />
-                        <Tooltip contentStyle={{ borderRadius: '0.75rem', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }} />
-                        <Bar dataKey="importance" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                    <div className="mt-4 p-4 rounded-lg bg-primary/5 border border-primary/10">
-                      <p className="text-sm font-medium text-primary">📊 Gender Impact Analysis</p>
-                      <p className="text-xs text-muted-foreground mt-1">Gender accounts for approximately 12% of employment rate variance. Female graduates show a consistently higher employment rate (+3-4%) across all programs and years studied.</p>
-                    </div>
+                    {(() => {
+                      const sortedFeatures = [...predictionData.randomForest.featureImportance].sort((a, b) => b.importance - a.importance);
+                      const topFeature = sortedFeatures[0];
+                      const secondFeature = sortedFeatures[1];
+                      
+                      return (
+                        <>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            <strong>{topFeature.feature}</strong> is identified as the most significant factor, 
+                            accounting for {(topFeature.importance * 100).toFixed(0)}% of the model's predictive weight.
+                          </p>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={predictionData.randomForest.featureImportance} layout="vertical">
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis type="number" tick={{ fontSize: 12 }} />
+                              <YAxis type="category" dataKey="feature" tick={{ fontSize: 12 }} width={100} />
+                              <Tooltip contentStyle={{ borderRadius: '0.75rem', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }} />
+                              <Bar dataKey="importance" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                          <div className="mt-4 p-4 rounded-lg bg-primary/5 border border-primary/10">
+                            <p className="text-sm font-medium text-primary">📊 Key Driver Analysis</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              The model indicates that <strong>{topFeature.feature}</strong> and <strong>{secondFeature.feature}</strong> are 
+                              the primary drivers of employment outcomes. Variations in these factors explain over 
+                              {((topFeature.importance + secondFeature.importance) * 100).toFixed(0)}% of the predicted trends.
+                            </p>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </motion.div>

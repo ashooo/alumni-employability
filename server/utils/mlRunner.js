@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -6,7 +7,31 @@ const ML_ROOT = path.resolve(__dirname, '../../ml');
 const VENV_PYTHON = path.join(ML_ROOT, 'venv', 'Scripts', 'python.exe');
 
 function resolvePythonExecutable() {
-  return fs.existsSync(VENV_PYTHON) ? VENV_PYTHON : 'python';
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const candidates = [
+    VENV_PYTHON,
+    path.join(localAppData, 'Programs', 'Python', 'Python312', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python311', 'python.exe'),
+    'python'
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate.endsWith('.exe') && !fs.existsSync(candidate)) {
+      continue;
+    }
+
+    const probe = spawnSync(candidate, ['--version'], {
+      stdio: 'pipe',
+      encoding: 'utf8'
+    });
+
+    if (probe.status === 0) {
+      return candidate;
+    }
+  }
+
+  // Keep final fallback for environments where probing fails due restrictions.
+  return 'python';
 }
 
 function resolveScriptPath(relativeScriptPath) {

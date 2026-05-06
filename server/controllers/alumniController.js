@@ -6,6 +6,7 @@ const {
   getSurveyStatus,
   submitSurveyResponse: persistSurveyResponse
 } = require('../services/surveyDataService');
+const { writeAuditLogWithReq } = require('../utils/auditLog');
 
 const emailChangeOtpStore = new Map();
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -291,6 +292,11 @@ const verifyEmailChangeOtp = async (req, res) => {
   try {
     const { studentId } = req.params;
     const { newEmail, otp } = req.body;
+    const ipAddress =
+      (String(req.headers['x-forwarded-for'] || '').split(',')[0] || '').trim() ||
+      req.ip ||
+      req.connection?.remoteAddress ||
+      null;
 
     if (!assertSelf(req, res, studentId)) {
       return;
@@ -343,6 +349,16 @@ const verifyEmailChangeOtp = async (req, res) => {
     await refactorPrisma.user.update({
       where: { id: profile.user.id },
       data: { email: normalizedNewEmail }
+    });
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: profile.user.id,
+      action: 'email_changed',
+      entityType: 'user',
+      entityId: profile.user.id,
+      status: 'success',
+      details: 'Success',
+      metadata: { new_email: normalizedNewEmail }
     });
 
     emailChangeOtpStore.delete(key);

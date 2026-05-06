@@ -100,6 +100,10 @@ model User {
   middle_name    String?              @db.VarChar(50)
   suffix         String?              @db.VarChar(10)
   last_login     DateTime?
+  failed_login_attempts Int           @default(0)
+  locked_until   DateTime?
+  locked_permanently Boolean          @default(false)
+  last_failed_login_at DateTime?
   created_at     DateTime             @default(now())
   updated_at     DateTime             @updatedAt
 
@@ -540,6 +544,9 @@ model AuditLog {
   action      String    @db.VarChar(100)
   entity_type String?   @db.VarChar(100)
   entity_id   Int?
+  status      String?   @db.VarChar(20)
+  ip_address  String?   @db.VarChar(45)
+  details     String?   @db.Text
   metadata    Json?
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
@@ -549,6 +556,8 @@ model AuditLog {
   @@index([user_id, created_at])
   @@index([action])
   @@index([entity_type])
+  @@index([status])
+  @@index([ip_address])
   @@map("audit_logs")
 }
 

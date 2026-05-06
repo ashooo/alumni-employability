@@ -1,5 +1,6 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, BarChart, Bar, ComposedChart } from 'recharts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
 import { predictionData } from '@/data/mockData';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
@@ -202,29 +203,54 @@ function getTrendIcon(data: typeof predictionData.arima) {
 export default function AdminPredictions() {
   const [arimaData, setArimaData] = useState<typeof predictionData.arima | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRerunning, setIsRerunning] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchPrediction = async () => {
-      try {
-        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-        const res = await fetch('http://localhost:5000/api/admin/predictions/arima', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
-        if (res.ok && !data.error) {
-          setArimaData(data);
-        } else {
-          setFetchError(data.error || 'Server returned an error status: ' + res.status);
-        }
-      } catch (err: any) {
-        setFetchError(err.message || 'Network fetch failed');
-        console.error('Failed to fetch ARIMA predictions:', err);
-      } finally {
-        setLoading(false);
+  const fetchPrediction = async () => {
+    try {
+      setLoading(true);
+      setFetchError(null);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/admin/predictions/arima', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && !data.error) {
+        setArimaData(data);
+      } else {
+        setFetchError(data.error || 'Server returned an error status: ' + res.status);
       }
-    };
+    } catch (err: any) {
+      setFetchError(err.message || 'Network fetch failed');
+      console.error('Failed to fetch ARIMA predictions:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const rerunArima = async () => {
+    try {
+      setIsRerunning(true);
+      setFetchError(null);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/admin/predictions/arima/run', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setFetchError(data.error || 'Failed to re-run ARIMA model.');
+        return;
+      }
+      await fetchPrediction();
+    } catch (err: any) {
+      setFetchError(err.message || 'Failed to re-run ARIMA model.');
+    } finally {
+      setIsRerunning(false);
+    }
+  };
+
+  useEffect(() => {
     fetchPrediction();
   }, []);
 
@@ -234,6 +260,11 @@ export default function AdminPredictions() {
       <div>
         <h1 className="text-2xl font-display font-bold">Employment Forecast Models</h1>
         <p className="text-muted-foreground text-sm">Predict future employment rates using trained machine learning models</p>
+        <div className="mt-3">
+          <Button onClick={rerunArima} disabled={isRerunning || loading}>
+            {isRerunning ? 'Re-running ARIMA...' : 'Re-run ARIMA Model'}
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="arima">
@@ -302,7 +333,7 @@ export default function AdminPredictions() {
 
                 {tab === 'arima' && loading ? (
                   <div className="flex h-[300px] items-center justify-center">
-                    <p className="text-muted-foreground animate-pulse">Running ARIMA Model Generator...</p>
+                    <p className="text-muted-foreground animate-pulse">Loading trained ARIMA output...</p>
                   </div>
                 ) : (
                   <>

@@ -21,6 +21,8 @@ import { Toaster } from "@/components/ui/toaster";
 import AdminUsers from "./pages/admin/AdminUsers";
 import HelpGuide from "./pages/shared/HelpGuide";
 import SuperAdminAuditLogs from "./pages/superadmin/SuperAdminAuditLogs";
+import SuperAdminSystemLogs from "@/pages/superadmin/SuperAdminSystemLogs";
+import SuperAdminSecurityLogs from "@/pages/superadmin/SuperAdminSecurityLogs";
 import SuperAdminAdmins from "./pages/superadmin/SuperAdminAdmins";
 import SuperAdminSettings from "./pages/superadmin/SuperAdminSettings";
 import LandingPage from "./pages/LandingPage";
@@ -36,7 +38,7 @@ const queryClient = new QueryClient();
 function AppRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={user.role === 'superadmin' ? '/app/superadmin/audit-logs' : user.role === 'admin' ? '/app/admin/analytics' : '/app/alumni/dashboard'} replace />;
+  return <Navigate to={user.role === 'superadmin' ? '/app/superadmin/audit-logs/system' : user.role === 'admin' ? '/app/admin/analytics' : '/app/alumni/dashboard'} replace />;
 }
 
 const App = () => (
@@ -60,7 +62,11 @@ const App = () => (
                 <Route path="admin/users" element={<AdminUsers />} />
                 <Route path="admin/survey-manager" element={<AdminSurveyManager />} />
                 <Route path="admin/content" element={<AdminContent />} />
-                <Route path="superadmin/audit-logs" element={<SuperAdminAuditLogs />} />
+                <Route path="superadmin/audit-logs" element={<SuperAdminAuditLogs />}>
+                  <Route index element={<Navigate to="system" replace />} />
+                  <Route path="system" element={<SuperAdminSystemLogs />} />
+                  <Route path="security" element={<SuperAdminSecurityLogs />} />
+                </Route>
                 <Route path="superadmin/admins" element={<SuperAdminAdmins />} />
                 <Route path="superadmin/settings" element={<SuperAdminSettings />} />
                 <Route path="alumni/dashboard" element={<AlumniDashboard />} />

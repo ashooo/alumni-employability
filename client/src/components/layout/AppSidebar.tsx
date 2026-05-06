@@ -1,5 +1,5 @@
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar} from '@/components/ui/sidebar';
-import { LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Briefcase, Lock, ShieldCheck, ScrollText } from 'lucide-react';
+import { LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Briefcase, ShieldCheck, ScrollText, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
@@ -14,7 +14,8 @@ const adminNav = [
 ];
 
 const superAdminNav = [
-  { title: 'Audit Logs', url: '/app/superadmin/audit-logs', icon: ScrollText },
+  { title: 'System Logs', url: '/app/superadmin/audit-logs/system', icon: ScrollText },
+  { title: 'Security Logs', url: '/app/superadmin/audit-logs/security', icon: Shield },
   { title: 'Admin Management', url: '/app/superadmin/admins', icon: ShieldCheck },
   { title: 'System Settings', url: '/app/superadmin/settings', icon: Settings },
   // Super admin can still access regular admin tools

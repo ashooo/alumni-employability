@@ -90,8 +90,8 @@ const getCompatibilitySummary = (avgScore: number) => {
 
   return {
     label: 'Low Match',
-    message: 'Heads up: current competencies show low alignment with these roles right now.',
-    tone: 'text-destructive'
+    message: 'Note: current competencies show low alignment with these roles right now.',
+    tone: 'text-orange-600 dark:text-amber-400'
   };
 };
 

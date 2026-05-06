@@ -562,7 +562,7 @@ export default function AlumniResults() {
                 cy="50"
                 r="40"
                 fill="none"
-                stroke={isEmployable ? 'hsl(var(--success))' : 'hsl(var(--destructive))'}
+                stroke={isEmployable ? 'hsl(var(--success))' : '#f59e0b'}
                 strokeWidth="8"
                 strokeLinecap="round"
                 strokeDasharray={`${readinessScore * 2.51} 251`}
@@ -570,7 +570,7 @@ export default function AlumniResults() {
             </svg>
             <span className="absolute text-2xl font-bold font-display">{readinessScore}%</span>
           </div>
-          <p className={`text-xs font-bold ${isEmployable ? 'text-success' : 'text-destructive'}`}>
+          <p className={`text-xs font-bold ${isEmployable ? 'text-success' : 'text-amber-600 dark:text-amber-400'}`}>
             {isEmployable ? 'HIGH POTENTIAL' : 'DEVELOPING PROFILE'}
           </p>
         </motion.div>
@@ -581,12 +581,12 @@ export default function AlumniResults() {
           transition={{ delay: 0.1 }}
           className="glass-card p-6 text-center shadow-lg"
         >
-          <p className="mb-2 text-sm text-muted-foreground">Primary Prediction</p>
+          <p className="mb-2 text-sm text-muted-foreground">Primary Assessment</p>
           <p
-            className={`mb-2 text-4xl font-bold font-display ${isEmployable ? 'text-success' : 'text-destructive'
+            className={`mb-2 text-4xl font-bold font-display ${isEmployable ? 'text-success' : 'text-amber-600 dark:text-amber-400'
               }`}
           >
-            {isEmployable ? 'Employable' : 'Building'}
+            {isEmployable ? 'Employable' : 'Developing Readiness'}
           </p>
           <p className="text-xs text-muted-foreground">
             Model confidence: {Math.round(prediction.confidence * 100)}%

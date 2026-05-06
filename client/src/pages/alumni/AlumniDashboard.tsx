@@ -70,7 +70,7 @@ const getSurveySummary = (surveyState: SurveyFlowStatus | null) => {
     case 'pending_unemployed_assessment':
       return 'Your unemployed path is open. Continue the employability assessment to generate results.';
     case 'pending_employed_survey':
-      return 'Your employed path was recorded. The dedicated employed survey is not implemented yet.';
+      return 'Your employed path was recorded. Continue to complete your employed survey questions.';
     case 'assessment_submitted_prediction_missing':
       return 'Your assessment was submitted. The prediction result is still being finalized.';
     case 'completed_awaiting_followup':
@@ -375,7 +375,15 @@ export default function AlumniDashboard() {
               onClick={() => navigate('/app/alumni/results')}
               disabled={!alumniData.resultsReady}
             >
-              View Results & Jobs
+              View Employability Results
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => navigate('/app/alumni/jobs')}
+              disabled={!alumniData.resultsReady}
+            >
+              View Job Recommendations
             </Button>
             <Button
               variant="outline"

@@ -1566,9 +1566,7 @@ const getAnalytics = async (req, res) => {
     return res.json({
       kpis: {
         totalAlumni,
-        totalAlumniTrend: 0,
         participationRate,
-        participationTrend: 0,
         employmentRate,
         employmentTrend,
         degreeAlignment

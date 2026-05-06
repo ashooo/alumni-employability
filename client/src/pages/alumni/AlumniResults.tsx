@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import {
   AlertTriangle, Star, Briefcase, TrendingUp, Loader2, Target,
-  ChevronDown, ChevronUp, Info, Lightbulb, Zap, Award
+  ChevronDown, ChevronUp, Info, Lightbulb, Zap, Award, Linkedin
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -65,6 +65,14 @@ const JOB_SITES = [
     location_param: "location",
   }
 ];
+
+const JOB_SITE_STYLES: Record<string, { bg: string; text: string; iconText: string }> = {
+  Indeed: { bg: 'bg-[#2557A7]', text: 'text-white', iconText: 'in' },
+  Glassdoor: { bg: 'bg-[#0CAA41]', text: 'text-white', iconText: 'gd' },
+  Monster: { bg: 'bg-[#6E46AE]', text: 'text-white', iconText: 'm' },
+  ZipRecruiter: { bg: 'bg-[#2A6DF5]', text: 'text-white', iconText: 'zr' },
+  LinkedIn: { bg: 'bg-[#0A66C2]', text: 'text-white', iconText: 'in' }
+};
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -470,6 +478,36 @@ export default function AlumniResults() {
     { name: 'Hard Skills', value: parseNumericValue(snapshot['Hard Skills Ave']) * 10, color: 'hsl(var(--info))' }
   ];
 
+  const openJobSite = (site: (typeof JOB_SITES)[number], roleTitle: string) => {
+    const location = 'Manila';
+    const url = new URL(site.base_url);
+    url.searchParams.append(site.query_param, roleTitle);
+    url.searchParams.append(site.location_param, location);
+    window.open(url.toString(), '_blank');
+  };
+
+  const renderJobSiteIcon = (site: (typeof JOB_SITES)[number]) => {
+    const style = JOB_SITE_STYLES[site.name] || {
+      bg: 'bg-muted',
+      text: 'text-foreground',
+      iconText: site.name.slice(0, 2).toLowerCase()
+    };
+
+    if (site.name === 'LinkedIn') {
+      return (
+        <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${style.bg} ${style.text}`}>
+          <Linkedin className="h-3 w-3" />
+        </span>
+      );
+    }
+
+    return (
+      <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${style.bg} ${style.text} text-[9px] font-bold uppercase`}>
+        {style.iconText}
+      </span>
+    );
+  };
+
   return (
     <div className="space-y-6 pb-12">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -485,6 +523,11 @@ export default function AlumniResults() {
           onClick={() => navigate('/app/alumni/survey', { state: { retake: true } })}
         >
           Retake Assessment
+        </Button>
+      </div>
+      <div className="flex justify-end">
+        <Button variant="secondary" onClick={() => navigate('/app/alumni/jobs')}>
+          Open Job Recommendations
         </Button>
       </div>
 
@@ -810,19 +853,12 @@ export default function AlumniResults() {
                             key={site.name}
                             variant="outline"
                             size="sm"
-                            className={`h-9 text-[11px] font-bold shadow-sm transition-all ${site.name === 'LinkedIn'
-                              ? 'bg-[#0A66C2] text-white border-[#0A66C2] hover:bg-[#004182] hover:border-[#004182]'
-                              : 'bg-background hover:bg-primary hover:text-primary-foreground'
-                              }`}
-                            onClick={() => {
-                              const location = "Manila";
-                              const url = new URL(site.base_url);
-                              url.searchParams.append(site.query_param, job.title);
-                              url.searchParams.append(site.location_param, location);
-                              window.open(url.toString(), '_blank');
-                            }}
+                            className="h-9 gap-2 text-[11px] font-bold shadow-sm transition-all bg-background hover:bg-primary hover:text-primary-foreground"
+                            onClick={() => openJobSite(site, job.title)}
+                            title={`Open ${site.name}`}
                           >
-                            {site.name}
+                            {renderJobSiteIcon(site)}
+                            <span>{site.name}</span>
                           </Button>
                         ))}
                       </div>
@@ -847,19 +883,11 @@ export default function AlumniResults() {
                                     key={site.name}
                                     variant="ghost"
                                     size="sm"
-                                    className={`h-6 px-2 text-[9px] font-bold ${site.name === 'LinkedIn'
-                                      ? 'text-[#0A66C2] hover:bg-[#0A66C2]/10'
-                                      : 'text-muted-foreground hover:text-primary'
-                                      }`}
-                                    onClick={() => {
-                                      const location = "Manila";
-                                      const url = new URL(site.base_url);
-                                      url.searchParams.append(site.query_param, role);
-                                      url.searchParams.append(site.location_param, location);
-                                      window.open(url.toString(), '_blank');
-                                    }}
+                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
+                                    onClick={() => openJobSite(site, role)}
+                                    title={`${site.name}: ${role}`}
                                   >
-                                    {site.name}
+                                    {renderJobSiteIcon(site)}
                                   </Button>
                                 ))}
                               </div>

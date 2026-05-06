@@ -1227,7 +1227,7 @@ export default function AlumniSurvey() {
                 isEmployable ? 'text-success' : 'text-destructive'
               }`}
             >
-              {isEmployable ? 'Employable' : 'Not Yet Employable'}
+              {isEmployable ? 'Employable' : 'Low Competency'}
             </h2>
             <p className="text-muted-foreground max-w-md mx-auto">
               Our AI model analyzed your profile with <strong>{confidence}% confidence</strong>.

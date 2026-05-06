@@ -736,14 +736,17 @@ export default function AlumniResults() {
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={barData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+              <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'hsl(var(--foreground))' }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'hsl(var(--foreground))' }} />
               <Tooltip
                 contentStyle={{
                   backgroundColor: 'hsl(var(--background))',
                   borderColor: 'hsl(var(--border))',
-                  borderRadius: '8px'
+                  borderRadius: '8px',
+                  color: 'hsl(var(--foreground))'
                 }}
+                itemStyle={{ color: 'hsl(var(--foreground))' }}
+                labelStyle={{ color: 'hsl(var(--foreground))' }}
               />
               <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                 {barData.map((entry, index) => (

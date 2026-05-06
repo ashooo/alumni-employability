@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { loadContentSettings, saveContentSettings } from '@/lib/contentSettings';
+import { fetchContentSettings, loadContentSettings, saveContentSettingsRemote } from '@/lib/contentSettings';
 
 export default function AdminContent() {
   const { toast } = useToast();
@@ -17,18 +17,22 @@ export default function AdminContent() {
   const [faqs, setFaqs] = useState(loadContentSettings().faqs);
 
   useEffect(() => {
-    const current = loadContentSettings();
-    setOverviewContent(current.overview);
-    setHelpContent(current.help);
-    setFaqs(current.faqs);
+    const run = async () => {
+      const current = await fetchContentSettings();
+      setOverviewContent(current.overview);
+      setHelpContent(current.help);
+      setFaqs(current.faqs);
+    };
+    run();
   }, []);
 
-  const handleSave = () => {
-    saveContentSettings({
+  const handleSave = async () => {
+    const payload = {
       overview: overviewContent,
       help: helpContent,
       faqs: faqs.filter(f => f.q.trim() || f.a.trim())
-    });
+    };
+    await saveContentSettingsRemote(payload);
     toast({ title: 'Content Saved', description: 'All changes have been saved successfully.' });
   };
 

@@ -5,6 +5,7 @@ const {
   createPlaceholderPasswordHash,
   isPlaceholderPasswordHash
 } = require('../utils/refactorAuth');
+const { writeAuditLogWithReq } = require('../utils/auditLog');
 
 const VALID_IMPORT_STATUSES = new Set(['active', 'inactive', 'graduated']);
 const EMPLOYED_STATUSES = ['EMPLOYED', 'SELF_EMPLOYED', 'FREELANCER'];
@@ -37,6 +38,61 @@ const requireRefactorPrisma = () => {
   }
 
   return getPrisma();
+};
+
+const CONTENT_SETTINGS_KEY = 'site_content_settings_v1';
+
+const getContentSettings = async (req, res) => {
+  try {
+    const refactorPrisma = requireRefactorPrisma();
+    const row = await refactorPrisma.systemSetting.findUnique({
+      where: { key: CONTENT_SETTINGS_KEY }
+    });
+
+    if (!row) {
+      return res.json({ value: null });
+    }
+
+    return res.json({ value: row.value });
+  } catch (error) {
+    console.error('Get content settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to load content settings' });
+  }
+};
+
+const saveContentSettings = async (req, res) => {
+  try {
+    const value = req.body?.value;
+    if (value === undefined) {
+      return res.status(400).json({ error: 'value is required' });
+    }
+
+    const serializedValue = JSON.stringify(value);
+    const refactorPrisma = requireRefactorPrisma();
+
+    await refactorPrisma.systemSetting.upsert({
+      where: { key: CONTENT_SETTINGS_KEY },
+      update: { value: serializedValue, updated_by: req.user?.id || null },
+      create: { key: CONTENT_SETTINGS_KEY, value: serializedValue, updated_by: req.user?.id || null }
+    });
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'save_content_settings',
+      entityType: 'system_setting',
+      entityId: null,
+      metadata: { key: CONTENT_SETTINGS_KEY }
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Save content settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to save content settings' });
+  }
 };
 
 const normalizeString = (value) => String(value || '').trim();
@@ -1109,6 +1165,14 @@ const importBatch = async (req, res) => {
       });
     });
 
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'import_alumni_batch',
+      entityType: 'import_history',
+      entityId: null,
+      metadata: { filename, total_records: Array.isArray(records) ? records.length : 0 }
+    });
+
     return res.json({
       inserted: summary.inserted,
       skipped: summary.skipped,
@@ -1191,6 +1255,14 @@ const importAlumni = async (req, res) => {
       });
     });
 
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'import_alumni_file',
+      entityType: 'import_history',
+      entityId: null,
+      metadata: { filename: req.file.originalname || 'import', total_records: parsedRows.length }
+    });
+
     return res.json({
       success: true,
       results: {
@@ -1228,6 +1300,14 @@ const deactivateAlumni = async (req, res) => {
     if (result.count === 0) {
       return res.status(404).json({ error: 'Alumni record not found' });
     }
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'deactivate_alumni',
+      entityType: 'alumni_profile',
+      entityId: null,
+      metadata: { student_id: String(studentId) }
+    });
 
     return res.json({ success: true });
   } catch (error) {
@@ -1491,6 +1571,13 @@ const downloadErrorReport = async (req, res) => {
       'Content-Disposition',
       `attachment; filename=import-errors-${importId}.csv`
     );
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'export_import_error_csv',
+      entityType: 'import_history',
+      entityId: importId,
+      metadata: { import_id: importId }
+    });
     return res.send(csvRows.join('\n'));
   } catch (error) {
     console.error('Download error report error:', error);
@@ -1670,6 +1757,14 @@ const getReports = async (req, res) => {
       ];
     }
 
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'generate_report',
+      entityType: 'report',
+      entityId: null,
+      metadata: { type: type || null }
+    });
+
     return res.json(reportData);
   } catch (error) {
     console.error('Reports error:', error);
@@ -1692,5 +1787,7 @@ module.exports = {
   getImportHistory,
   downloadErrorReport,
   getAnalytics,
-  getReports
+  getReports,
+  getContentSettings,
+  saveContentSettings
 };

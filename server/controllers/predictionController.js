@@ -202,7 +202,7 @@ const getArimaPrediction = async (req, res) => {
 
 const rerunArimaTraining = async (req, res) => {
   try {
-    const result = clearawait runArimaTraining({ timeoutMs: 300000 });
+    const result = await runArimaTraining({ timeoutMs: 300000 });
 
     if (result.alreadyRunning) {
       return res.status(409).json({

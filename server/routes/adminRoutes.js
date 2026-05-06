@@ -90,4 +90,8 @@ router.get(
   adminController.downloadErrorReport
 );
 
+// Content settings (Content Manager)
+router.get('/content-settings', authenticateToken, adminController.getContentSettings);
+router.put('/content-settings', authenticateToken, adminController.saveContentSettings);
+
 module.exports = router;

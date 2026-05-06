@@ -23,6 +23,7 @@ router.get('/users', superAdminController.listUsers);
 router.post('/admins', superAdminController.createAdmin);
 router.put('/users/:id/role', superAdminController.updateUserRole);
 router.delete('/admins/:id', superAdminController.removeAdmin);
+router.put('/users/:id/unlock', superAdminController.unlockUserAccount);
 
 // Audit logs
 router.get('/audit-logs', superAdminController.listAuditLogs);

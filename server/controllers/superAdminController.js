@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 const { normalizeUserRole, normalizeUserRoleEnum } = require('../utils/refactorAuth');
+const { writeAuditLogWithReq } = require('../utils/auditLog');
 
 const createHttpError = (statusCode, message) => {
   const error = new Error(message);
@@ -32,18 +33,58 @@ const parseOptionalInt = (value) => {
 const normalizeString = (value) => String(value || '').trim();
 const normalizeEmail = (value) => normalizeString(value).toLowerCase();
 
+const SYSTEM_ACTIONS = new Set([
+  'create_template',
+  'update_template',
+  'activate_template',
+  'deactivate_template',
+  'clone_template',
+  'delete_template',
+  'create_question',
+  'update_question',
+  'delete_question',
+  'add_question_to_template',
+  'remove_question_from_template',
+  'reorder_template_questions',
+  'import_alumni_batch',
+  'import_alumni_file',
+  'deactivate_alumni',
+  'export_import_error_csv',
+  'generate_report',
+  'save_content_settings',
+  'upsert_setting',
+  'create_admin',
+  'remove_user',
+  'update_user_role'
+]);
+
+const SECURITY_ACTIONS = new Set([
+  'login_success',
+  'login_failed',
+  'login_failed_3x',
+  'login_failed_unknown_user',
+  'login_blocked_temp_lock',
+  'login_blocked_permanent_lock',
+  'temp_lock_15m',
+  'account_locked_permanently',
+  'account_unlocked',
+  'password_changed',
+  'password_reset',
+  'email_changed'
+]);
+
 const writeAuditLog = async (
   prismaClient,
-  { userId, action, entityType, entityId = null, metadata = null }
+  { req = null, userId, action, entityType, entityId = null, status = 'success', details = null, metadata = null }
 ) => {
-  await prismaClient.auditLog.create({
-    data: {
-      user_id: userId || null,
-      action: String(action),
-      entity_type: entityType ? String(entityType) : null,
-      entity_id: entityId === null || entityId === undefined ? null : Number(entityId),
-      metadata: metadata || null
-    }
+  await writeAuditLogWithReq(prismaClient, req, {
+    userId,
+    action,
+    entityType,
+    entityId,
+    status,
+    details,
+    metadata
   });
 };
 
@@ -266,6 +307,7 @@ const createAdmin = async (req, res) => {
       });
 
       await writeAuditLog(tx, {
+        req,
         userId: req.user.id,
         action: 'create_admin',
         entityType: 'user',
@@ -336,6 +378,7 @@ const updateUserRole = async (req, res) => {
       });
 
       await writeAuditLog(tx, {
+        req,
         userId: req.user.id,
         action: 'update_user_role',
         entityType: 'user',
@@ -437,6 +480,7 @@ const removeAdmin = async (req, res) => {
       });
 
       await writeAuditLog(tx, {
+        req,
         userId: req.user.id,
         action: 'remove_user',
         entityType: 'user',
@@ -454,13 +498,70 @@ const removeAdmin = async (req, res) => {
   }
 };
 
+const unlockUserAccount = async (req, res) => {
+  try {
+    const userId = parseOptionalInt(req.params.id);
+    if (!userId) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+    const target = await refactorPrisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, username: true, role: true }
+    });
+
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    await refactorPrisma.user.update({
+      where: { id: userId },
+      data: {
+        failed_login_attempts: 0,
+        locked_until: null,
+        locked_permanently: false,
+        last_failed_login_at: null
+      }
+    });
+
+    await writeAuditLog(refactorPrisma, {
+      req,
+      userId: req.user?.id,
+      action: 'account_unlocked',
+      entityType: 'user',
+      entityId: userId,
+      metadata: { target_email: target.email || null, target_username: target.username, target_role: normalizeUserRole(target.role) }
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Unlock user error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to unlock user' });
+  }
+};
+
 const listAuditLogs = async (req, res) => {
   try {
-    const limitParam = parseOptionalInt(req.query?.limit);
-    const limit = Math.min(Math.max(limitParam || 100, 1), 500);
+    const pageParam = parseOptionalInt(req.query?.page);
+    const pageSizeParam = parseOptionalInt(req.query?.pageSize);
+    const pageSize = Math.min(Math.max(pageSizeParam || 20, 1), 100);
+    const page = Math.max(pageParam || 1, 1);
+    const skip = (page - 1) * pageSize;
+
     const userId = parseOptionalInt(req.query?.userId);
+    const email = normalizeEmail(req.query?.email);
     const action = normalizeString(req.query?.action);
     const entityType = normalizeString(req.query?.entityType);
+    const category = normalizeString(req.query?.category).toLowerCase();
+    const roleFilter = normalizeString(req.query?.role).toLowerCase();
+    const from = normalizeString(req.query?.from);
+    const to = normalizeString(req.query?.to);
+    const status = normalizeString(req.query?.status).toLowerCase();
+    const ipAddress = normalizeString(req.query?.ipAddress);
+    const search = normalizeString(req.query?.search);
 
     const where = {
       ...(userId ? { user_id: userId } : {}),
@@ -469,35 +570,113 @@ const listAuditLogs = async (req, res) => {
     };
 
     const refactorPrisma = requireRefactorPrisma();
-    const rows = await refactorPrisma.auditLog.findMany({
-      where,
-      include: {
-        user: {
-          select: {
-            username: true,
-            role: true
-          }
-        }
-      },
-      orderBy: {
-        created_at: 'desc'
-      },
-      take: limit
-    });
+    if (category === 'system') {
+      where.action = action ? action : { in: Array.from(SYSTEM_ACTIONS) };
+    } else if (category === 'security') {
+      where.action = action ? action : { in: Array.from(SECURITY_ACTIONS) };
+    }
 
-    return res.json(
-      rows.map((row) => ({
+    const userWhere = {};
+    if (email) {
+      userWhere.email = email;
+    }
+    if (roleFilter) {
+      if (roleFilter === 'admin_like') {
+        userWhere.role = { in: ['ADMIN', 'SUPERADMIN'] };
+      } else {
+        const normalized =
+          roleFilter === 'admin'
+            ? 'ADMIN'
+            : roleFilter === 'alumni'
+              ? 'ALUMNI'
+              : roleFilter === 'superadmin'
+                ? 'SUPERADMIN'
+                : null;
+        if (normalized) userWhere.role = normalized;
+      }
+    }
+    if (Object.keys(userWhere).length > 0) {
+      where.user = userWhere;
+    }
+
+    if (from || to) {
+      const createdAt = {};
+      if (from) {
+        const parsedFrom = new Date(from);
+        if (!Number.isNaN(parsedFrom.getTime())) createdAt.gte = parsedFrom;
+      }
+      if (to) {
+        const parsedTo = new Date(to);
+        if (!Number.isNaN(parsedTo.getTime())) createdAt.lte = parsedTo;
+      }
+      if (Object.keys(createdAt).length > 0) {
+        where.created_at = createdAt;
+      }
+    }
+
+    if (category === 'security') {
+      // Security UX doesn't use entity type filter.
+      if (!normalizeString(req.query?.entityType)) {
+        delete where.entity_type;
+      }
+      if (status && status !== 'all') {
+        where.status = status;
+      }
+      if (ipAddress) {
+        where.ip_address = { contains: ipAddress };
+      }
+      if (search) {
+        where.OR = [
+          { action: { contains: search } },
+          { details: { contains: search } },
+          { ip_address: { contains: search } },
+          { user: { email: { contains: search } } },
+          { user: { username: { contains: search } } }
+        ];
+      }
+    }
+
+    const [total, rows] = await Promise.all([
+      refactorPrisma.auditLog.count({ where }),
+      refactorPrisma.auditLog.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              username: true,
+              role: true,
+              email: true
+            }
+          }
+        },
+        orderBy: {
+          created_at: 'desc'
+        },
+        skip,
+        take: pageSize
+      })
+    ]);
+
+    return res.json({
+      page,
+      pageSize,
+      total,
+      items: rows.map((row) => ({
         id: row.id,
         user_id: row.user_id,
         username: row.user?.username || null,
+        email: row.user?.email || null,
         role: row.user?.role ? normalizeUserRole(row.user.role) : null,
         action: row.action,
         entity_type: row.entity_type,
         entity_id: row.entity_id,
+        status: row.status || null,
+        ip_address: row.ip_address || null,
+        details: row.details || null,
         metadata: row.metadata,
         created_at: row.created_at
       }))
-    );
+    });
   } catch (error) {
     console.error('List audit logs error:', error);
     return res
@@ -622,6 +801,7 @@ const upsertSetting = async (req, res) => {
       });
 
       await writeAuditLog(tx, {
+        req,
         userId: req.user.id,
         action: 'upsert_setting',
         entityType: 'system_setting',
@@ -643,6 +823,7 @@ module.exports = {
   createAdmin,
   updateUserRole,
   removeAdmin,
+  unlockUserAccount,
   listAuditLogs,
   getPublicSetting,
   getSetting,

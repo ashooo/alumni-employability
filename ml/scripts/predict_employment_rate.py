@@ -104,6 +104,110 @@ def main():
                     item["upper"] = round(float(row['Upper']), 2)
             response["historical"].append(item)
 
+        # Generate Insights from Backend
+        mae = response["metrics"].get("mae", 0)
+        rmse = response["metrics"].get("rmse", 0)
+        
+        # Behavior Insights
+        behavior_insight = "The model balances its predictions well, with no significant bias towards over-predicting or under-predicting."
+        over_predicts = 0
+        under_predicts = 0
+        total_predictions = 0
+        
+        if not eval_df_excl.empty:
+            for _, row in eval_df_excl.iterrows():
+                diff = row['Predicted'] - row['Actual']
+                if diff > 0.5: over_predicts += 1
+                elif diff < -0.5: under_predicts += 1
+                total_predictions += 1
+            
+            if total_predictions > 0:
+                if over_predicts > under_predicts and over_predicts > total_predictions / 2:
+                    behavior_insight = "The model shows a tendency to slightly over-predict employment rates compared to actual outcomes. It might be overly optimistic."
+                elif under_predicts > over_predicts and under_predicts > total_predictions / 2:
+                    behavior_insight = "The model shows a tendency to slightly under-predict employment rates. It leans towards being conservative."
+
+        # Error Insights
+        error_takeaway = ""
+        if mae < 4.9:
+            error_takeaway = f"With a low MAE of {mae:.2f}, the model performs exceptionally well. It tracks the actual employment trends very closely with minimal deviation."
+        elif mae <= 9.99:
+            error_takeaway = f"The model performs adequately, with a moderate average error of {mae:.2f}%. It captures general trends but may miss sudden spikes or drops."
+        else:
+            error_takeaway = f"The model struggles with accuracy, showing a high average error of {mae:.2f}%. It performs poorly possibly due to high variance or lack of stable historical patterns."
+
+        rmse_takeaway = ""
+        if (rmse - mae) > 2:
+            rmse_takeaway = f"The RMSE ({rmse:.2f}) is notably higher than the MAE, indicating that while average errors are acceptable, the model occasionally makes large mispredictions (likely during volatile years)."
+        else:
+            rmse_takeaway = f"The RMSE ({rmse:.2f}) is close to the MAE, meaning the model's errors are consistent and it rarely makes extreme miscalculations."
+
+        # Verdict based on user thresholds: <4.9 High, >9.99 Moderate? 
+        # Re-interpreting for logic: <4.9 High, 4.9-9.99 Moderate, >9.99 Low
+        verdict = "High Accuracy"
+        verdict_color = "text-green-500"
+        
+        if mae > 9.99:
+            verdict = "Low Accuracy"
+            verdict_color = "text-red-500"
+        elif mae >= 4.9:
+            verdict = "Moderate Accuracy"
+            verdict_color = "text-yellow-500"
+
+        # Additional Trend Insights for Analytics Dashboard
+        all_points = response["historical"] + response["forecast"]
+        all_points_sorted = sorted(all_points, key=lambda x: x["year"])
+        
+        # Forecast Direction
+        trend_direction = "Stable"
+        growth_explanation = "The employment rate is projected to remain relatively stable."
+        if response["forecast"]:
+            f_start = response["forecast"][0]
+            f_end = response["forecast"][-1]
+            diff = f_end["value"] - f_start["value"]
+            if abs(diff) > 0.5:
+                trend_direction = "Upward" if diff > 0.5 else "Downward"
+                action = "increase" if diff > 0.5 else "decrease"
+                growth_explanation = f"The employment rate is projected to {action} by {abs(diff):.1f}% from {f_start['year']} to {f_end['year']}."
+
+        # Biggest Change
+        biggest_change_text = "Not enough data to calculate significant changes."
+        if len(all_points_sorted) >= 2:
+            max_diff = 0
+            change_info = None
+            for i in range(1, len(all_points_sorted)):
+                prev = all_points_sorted[i-1]
+                curr = all_points_sorted[i]
+                diff = curr.get("value", 0) - prev.get("value", 0)
+                if abs(diff) > abs(max_diff):
+                    max_diff = diff
+                    change_info = (prev["year"], curr["year"], "increase" if diff > 0 else "decrease")
+            if change_info:
+                biggest_change_text = f"A {abs(max_diff):.1f}% {change_info[2]} between {change_info[0]} and {change_info[1]}."
+
+        # Recent Trend
+        recent_trend_text = "Not enough historical data to determine a recent trend."
+        hist_sorted = sorted(response["historical"], key=lambda x: x["year"])
+        if len(hist_sorted) >= 2:
+            recent = hist_sorted[-3:]
+            start = recent[0]
+            end = recent[-1]
+            diff = end["value"] - start["value"]
+            direction = "increased" if diff > 0 else "decreased" if diff < 0 else "remained stable"
+            recent_trend_text = f"In the most recent recorded years ({start['year']}-{end['year']}), the employment rate {direction} from {start['value']:.1f}% to {end['value']:.1f}%."
+
+        response["insights"] = {
+            "behavior": behavior_insight,
+            "error_takeaway": error_takeaway,
+            "rmse_takeaway": rmse_takeaway,
+            "verdict": verdict,
+            "verdict_color": verdict_color,
+            "trend_direction": trend_direction,
+            "growth_explanation": growth_explanation,
+            "biggest_change_text": biggest_change_text,
+            "recent_trend_text": recent_trend_text
+        }
+
         # Predict future 3 years
         try:
             forecast_steps = 3

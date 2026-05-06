@@ -1,6 +1,5 @@
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, BarChart, Bar, ComposedChart, Line } from 'recharts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
 import { predictionData } from '@/data/mockData';
 import { motion } from 'framer-motion';
 import ArimaTab from './prediction_tabs/ArimaTab';
@@ -127,70 +126,13 @@ function ForecastChart({ data }: { data: typeof predictionData.arima }) {
 // ---------------------------------------------------------------------------
 
 export default function AdminPredictions() {
-  const [arimaData, setArimaData] = useState<typeof predictionData.arima | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isRerunning, setIsRerunning] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  const fetchPrediction = async () => {
-    try {
-      setLoading(true);
-      setFetchError(null);
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/admin/predictions/arima', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok && !data.error) {
-        setArimaData(data);
-      } else {
-        setFetchError(data.error || 'Server returned an error status: ' + res.status);
-      }
-    } catch (err: any) {
-      setFetchError(err.message || 'Network fetch failed');
-      console.error('Failed to fetch ARIMA predictions:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const rerunArima = async () => {
-    try {
-      setIsRerunning(true);
-      setFetchError(null);
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/admin/predictions/arima/run', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setFetchError(data.error || 'Failed to re-run ARIMA model.');
-        return;
-      }
-      await fetchPrediction();
-    } catch (err: any) {
-      setFetchError(err.message || 'Failed to re-run ARIMA model.');
-    } finally {
-      setIsRerunning(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchPrediction();
-  }, []);
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-display font-bold">Employment Forecast Models</h1>
-        <p className="text-muted-foreground text-sm">Predict future employment rates using trained machine learning models</p>
-        <div className="mt-3">
-          <Button onClick={rerunArima} disabled={isRerunning || loading}>
-            {isRerunning ? 'Re-running ARIMA...' : 'Re-run ARIMA Model'}
-          </Button>
-        </div>
+        <h1 className="text-2xl font-display font-bold">ARIMA Employment Rate Forecast Performance</h1>
+        <p className="text-muted-foreground text-sm">Evaluate predictive performance of the ARIMA model for alumni employment rates</p>
       </div>
 
       <Tabs defaultValue="arima">
@@ -214,68 +156,9 @@ export default function AdminPredictions() {
                   <h3 className="font-display font-semibold">Employment Trend &amp; Forecast</h3>
                 </div>
 
-                {/* How to Read This Chart */}
-                <div className="flex flex-wrap gap-x-5 gap-y-1 mb-4">
-                  <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <span className="inline-block w-6 h-0.5 bg-primary rounded" /> Actual Rate
-                  </span>
-                  <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <span className="inline-block w-6 border-t-2 border-dashed border-primary" /> Predicted Rate
-                  </span>
-                  <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <span className="inline-block w-5 h-3 bg-primary/15 rounded-sm border border-primary/20" /> Confidence Range
-                  </span>
-                  <span className="text-xs text-muted-foreground">X-axis: Year &nbsp;|&nbsp; Y-axis: Employment Rate (%)</span>
-                </div>
-
-                {tab === 'arima' && loading ? (
-                  <div className="flex h-[300px] items-center justify-center">
-                    <p className="text-muted-foreground animate-pulse">Loading trained ARIMA output...</p>
-                  </div>
-                ) : (
-                  <>
-                    {tab === 'arima' && fetchError && (
-                      <div className="mb-4 p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
-                        <p className="font-bold">Model Fetch Failed</p>
-                        <p>{fetchError}</p>
-                      </div>
-                    )}
-
-                    <ForecastChart data={activeData} />
-
-                    {/* Metrics */}
-                    <MetricsTable metrics={activeData.metrics} model={tab} />
-
-                    {/* ── ARIMA-only: Key Insights ── */}
-                    {isArima && !fetchError && (
-                      <div className="mt-6 p-4 rounded-lg bg-muted/40 border border-border/50">
-                        <p className="text-sm font-semibold mb-2">Key Insights</p>
-                        <ul className="space-y-1.5">
-                          {generateInsights(activeData).map((insight, i) => (
-                            <li key={i} className="text-xs text-muted-foreground flex gap-2">
-                              <span className="text-primary mt-0.5">•</span>
-                              <span>{insight}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* ── ARIMA-only: Forecast Interpretation ── */}
-                    {isArima && !fetchError && activeData.forecast?.length > 0 && (
-                      <div className="mt-4 p-4 rounded-lg bg-primary/5 border border-primary/15">
-                        <p className="text-sm font-medium text-primary mb-1">Forecast Interpretation</p>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          {generateForecastInterpretation(activeData)}
-                        </p>
-                        <p className="text-xs text-muted-foreground/60 mt-2 italic">
-                          The shaded band represents the model's confidence range — wider bands in future years reflect
-                          increasing uncertainty, which is normal for any time-series forecast.
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
+                <ForecastChart data={activeData} />
+                {/* Metrics */}
+                <MetricsTable metrics={activeData.metrics} />
 
                 {/* ── Random Forest: Feature Importance ── */}
                 {tab === 'rf' && predictionData.randomForest.featureImportance && (

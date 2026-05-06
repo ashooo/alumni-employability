@@ -574,6 +574,15 @@ const getSurveyResponses = async (studentId) => {
         ],
         include: {
           template: true,
+          academic_snapshot: true,
+          submission_competencies: {
+            where: {
+              selected: true
+            },
+            include: {
+              competency: true
+            }
+          },
           survey_answers: {
             orderBy: { question_id: 'asc' },
             include: {
@@ -588,6 +597,8 @@ const getSurveyResponses = async (studentId) => {
   if (!profile) {
     return [];
   }
+
+  const competencyKinds = ['HARD_SKILL', 'SOFT_SKILL', 'KNOWLEDGE', 'ABILITY', 'INTEREST', 'TECHNOLOGY'];
 
   return profile.survey_submissions
     .filter((submission) => submission.template?.template_key !== 'profile_employment_update')
@@ -606,7 +617,41 @@ const getSurveyResponses = async (studentId) => {
       question_text: answer.question.question_text,
       question_type: mapRefactorQuestionType(answer.question.question_type),
       ...mapAnswerValue(answer)
-    }))
+    })),
+    submission_summary: (() => {
+      const competencies = (submission.submission_competencies || [])
+        .filter((entry) => entry.competency)
+        .map((entry) => ({
+          id: entry.competency.id,
+          name: entry.competency.name,
+          kind: entry.competency.kind,
+          score: entry.score === null || entry.score === undefined ? null : Number(entry.score),
+          importance: entry.importance === null || entry.importance === undefined ? null : Number(entry.importance),
+          selected: entry.selected !== false
+        }));
+
+      const competencies_by_kind = competencyKinds.reduce((acc, kind) => {
+        acc[kind] = competencies.filter((item) => item.kind === kind);
+        return acc;
+      }, {});
+
+      return {
+        id: submission.id,
+        branch_path: submission.branch_path || null,
+        academic_snapshot: submission.academic_snapshot || null,
+        survey_answers: submission.survey_answers.map((answer) => {
+          const mapped = mapAnswerValue(answer);
+          return {
+            question_id: answer.question_id,
+            question_key: answer.question.question_key,
+            question_text: answer.question.question_text,
+            value: mapped.answer_options ?? mapped.answer_number ?? mapped.answer_text ?? null
+          };
+        }),
+        competencies,
+        competencies_by_kind
+      };
+    })()
   }));
 };
 

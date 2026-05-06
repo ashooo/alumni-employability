@@ -23,6 +23,32 @@ interface Submission {
     answer_options?: string[];
     answer_number?: number;
   }[];
+  submission_summary?: {
+    id: number;
+    branch_path?: string | null;
+    survey_answers?: Array<{
+      question_id: number;
+      question_key?: string | null;
+      question_text: string;
+      value: string | number | boolean | Record<string, unknown> | Array<unknown> | null;
+    }>;
+    competencies?: Array<{
+      id: number;
+      name: string;
+      kind: string;
+      score?: number | null;
+      importance?: number | null;
+      selected?: boolean;
+    }>;
+    competencies_by_kind?: Record<string, Array<{
+      id: number;
+      name: string;
+      kind: string;
+      score?: number | null;
+      importance?: number | null;
+      selected?: boolean;
+    }>>;
+  };
 }
 
 interface Category {
@@ -219,6 +245,49 @@ export default function AlumniSubmissions() {
                 <span className="text-muted-foreground">Questions Answered</span>
                 <span className="font-medium">{viewSub.answers?.length || 0}</span>
               </div>
+
+              {viewSub.submission_summary ? (
+                <div className="space-y-2 border-b pb-3">
+                  <p className="text-sm font-semibold">Submission Summary</p>
+                  <p className="text-xs text-muted-foreground">
+                    Branch: {viewSub.submission_summary.branch_path || 'N/A'}
+                  </p>
+                  {viewSub.submission_summary.competencies?.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {viewSub.submission_summary.competencies.slice(0, 12).map((item) => (
+                        <span key={`${item.kind}-${item.id}`} className="rounded-full border bg-muted/20 px-2 py-1 text-[10px]">
+                          {item.name}
+                        </span>
+                      ))}
+                      {viewSub.submission_summary.competencies.length > 12 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          +{viewSub.submission_summary.competencies.length - 12} more
+                        </span>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {viewSub.submission_summary?.survey_answers?.length ? (
+                <div className="space-y-2 border-b pb-3">
+                  <p className="text-sm font-semibold">Scoped Survey Answers</p>
+                  <div className="space-y-2">
+                    {viewSub.submission_summary.survey_answers.map((answer) => (
+                      <div key={`${answer.question_id}-${answer.question_key || 'summary'}`} className="rounded-md border bg-muted/20 p-2">
+                        <p className="text-xs text-muted-foreground">{answer.question_text}</p>
+                        <p className="text-sm font-medium">
+                          {Array.isArray(answer.value)
+                            ? answer.value.join(', ')
+                            : answer.value === null || answer.value === undefined || answer.value === ''
+                              ? '—'
+                              : String(answer.value)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {loadingDetails ? (
                 <div className="flex justify-center py-4">

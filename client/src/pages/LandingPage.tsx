@@ -16,7 +16,7 @@ export default function LandingPage() {
   const [logoUrl, setLogoUrl] = useState('/plp_logo.png');
   const panelPath =
     user?.role === 'superadmin'
-      ? '/app/superadmin/audit-logs'
+      ? '/app/superadmin/audit-logs/system'
       : user?.role === 'admin'
         ? '/app/admin/analytics'
         : '/app/alumni/dashboard';

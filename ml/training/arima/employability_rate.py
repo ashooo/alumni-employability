@@ -90,8 +90,12 @@ def preprocess(df):
         'employment_rate': synth_values
     }).set_index('Year Graduated')
 
-    # Combine synthetic + real data
+    # Combine synthetic + real data.
+    # Real data should take precedence when overlapping years exist, so we keep
+    # the last row per year (df_synth is concatenated first, real data second).
     full_ts_data = pd.concat([df_synth, ts_data[['employment_rate']]])
+    full_ts_data = full_ts_data[~full_ts_data.index.duplicated(keep='last')]
+    full_ts_data = full_ts_data.sort_index()
     full_ts_data = full_ts_data.asfreq('YS') # Ensure annual frequency
     
     # Smooth the data to reduce noise and improve ARIMA fit

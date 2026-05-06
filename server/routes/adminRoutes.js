@@ -28,6 +28,7 @@ router.get('/colleges', authenticateToken, adminController.getColleges);
 router.get('/analytics', authenticateToken, adminController.getAnalytics);
 router.get('/reports', authenticateToken, adminController.getReports);
 router.get('/predictions/arima', authenticateToken, predictionController.getArimaPrediction);
+router.post('/predictions/arima/run', authenticateToken, predictionController.rerunArimaTraining);
 
 // Program management
 router.get('/programs/list', authenticateToken, programController.getAllPrograms);
@@ -88,5 +89,9 @@ router.get(
   authenticateToken,
   adminController.downloadErrorReport
 );
+
+// Content settings (Content Manager)
+router.get('/content-settings', authenticateToken, adminController.getContentSettings);
+router.put('/content-settings', authenticateToken, adminController.saveContentSettings);
 
 module.exports = router;

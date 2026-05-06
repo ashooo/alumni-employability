@@ -14,6 +14,9 @@ export interface SiteContentSettings {
 }
 
 export const CONTENT_SETTINGS_KEY = 'site_content_settings_v1';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
 
 export const defaultContentSettings: SiteContentSettings = {
   overview: {
@@ -59,4 +62,45 @@ export const loadContentSettings = (): SiteContentSettings => {
 
 export const saveContentSettings = (settings: SiteContentSettings) => {
   localStorage.setItem(CONTENT_SETTINGS_KEY, JSON.stringify(settings));
+};
+
+export const fetchContentSettings = async (): Promise<SiteContentSettings> => {
+  const token = getToken();
+  if (!token) return loadContentSettings();
+
+  const res = await fetch(`${API_URL}/admin/content-settings`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  if (!res.ok) return loadContentSettings();
+  const data = await res.json().catch(() => null);
+  const raw = data?.value;
+  if (!raw) return defaultContentSettings;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return {
+      overview: { ...defaultContentSettings.overview, ...(parsed?.overview || {}) },
+      help: { ...defaultContentSettings.help, ...(parsed?.help || {}) },
+      faqs: Array.isArray(parsed?.faqs) && parsed.faqs.length > 0 ? parsed.faqs : defaultContentSettings.faqs
+    };
+  } catch {
+    return defaultContentSettings;
+  }
+};
+
+export const saveContentSettingsRemote = async (settings: SiteContentSettings) => {
+  const token = getToken();
+  if (!token) {
+    saveContentSettings(settings);
+    return;
+  }
+
+  await fetch(`${API_URL}/admin/content-settings`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ value: settings })
+  });
 };

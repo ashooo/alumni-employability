@@ -6,6 +6,8 @@ const {
 } = require('../services/surveyDataService');
 
 const mgmt = require('../services/surveyManagementService');
+const { writeAuditLogWithReq } = require('../utils/auditLog');
+const { getPrisma } = require('../config/db');
 
 // ─── Alumni-facing (existing, unchanged) ────────────────────────────────────
 
@@ -138,6 +140,12 @@ const getTemplate = async (req, res) => {
 const createTemplateHandler = async (req, res) => {
   try {
     const template = await mgmt.createTemplate(req.body);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'create_template',
+      entityType: 'survey_template',
+      entityId: template?.id,
+      metadata: { template_key: template?.template_key, name: template?.name }
+    });
     return res.status(201).json(template);
   } catch (error) {
     console.error('Create template error:', error);
@@ -150,6 +158,12 @@ const createTemplateHandler = async (req, res) => {
 const updateTemplateHandler = async (req, res) => {
   try {
     const template = await mgmt.updateTemplate(req.params.id, req.body);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'update_template',
+      entityType: 'survey_template',
+      entityId: template?.id,
+      metadata: { template_key: template?.template_key, name: template?.name }
+    });
     return res.json(template);
   } catch (error) {
     console.error('Update template error:', error);
@@ -163,6 +177,12 @@ const activateTemplateHandler = async (req, res) => {
   try {
     const { is_active } = req.body;
     const template = await mgmt.toggleTemplateActive(req.params.id, is_active);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: is_active ? 'activate_template' : 'deactivate_template',
+      entityType: 'survey_template',
+      entityId: template?.id,
+      metadata: { template_key: template?.template_key, name: template?.name }
+    });
     return res.json(template);
   } catch (error) {
     console.error('Activate template error:', error);
@@ -176,6 +196,12 @@ const cloneTemplateHandler = async (req, res) => {
   try {
     const { new_key, new_name } = req.body;
     const cloned = await mgmt.cloneTemplate(req.params.id, new_key, new_name);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'clone_template',
+      entityType: 'survey_template',
+      entityId: cloned?.id,
+      metadata: { template_key: cloned?.template_key, name: cloned?.name, source_template_id: req.params.id }
+    });
     return res.status(201).json(cloned);
   } catch (error) {
     console.error('Clone template error:', error);
@@ -188,6 +214,12 @@ const cloneTemplateHandler = async (req, res) => {
 const deleteTemplateHandler = async (req, res) => {
   try {
     await mgmt.deleteTemplate(req.params.id);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'delete_template',
+      entityType: 'survey_template',
+      entityId: req.params.id,
+      metadata: null
+    });
     return res.json({ success: true });
   } catch (error) {
     console.error('Delete template error:', error);
@@ -220,6 +252,12 @@ const getQuestions = async (req, res) => {
 const createQuestionHandler = async (req, res) => {
   try {
     const question = await mgmt.createQuestion(req.body);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'create_question',
+      entityType: 'survey_question',
+      entityId: question?.id,
+      metadata: { question_key: question?.question_key }
+    });
     return res.status(201).json(question);
   } catch (error) {
     console.error('Create question error:', error);
@@ -232,6 +270,12 @@ const createQuestionHandler = async (req, res) => {
 const updateQuestionHandler = async (req, res) => {
   try {
     const question = await mgmt.updateQuestion(req.params.id, req.body);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'update_question',
+      entityType: 'survey_question',
+      entityId: question?.id,
+      metadata: { question_key: question?.question_key }
+    });
     return res.json(question);
   } catch (error) {
     console.error('Update question error:', error);
@@ -244,6 +288,12 @@ const updateQuestionHandler = async (req, res) => {
 const deleteQuestionHandler = async (req, res) => {
   try {
     await mgmt.deleteQuestion(req.params.id);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'delete_question',
+      entityType: 'survey_question',
+      entityId: req.params.id,
+      metadata: null
+    });
     return res.json({ success: true });
   } catch (error) {
     console.error('Delete question error:', error);
@@ -268,6 +318,12 @@ const addQuestionToTemplateHandler = async (req, res) => {
       question_id,
       { display_order, is_required, section_key }
     );
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'add_question_to_template',
+      entityType: 'survey_template',
+      entityId: req.params.id,
+      metadata: { question_id, display_order, is_required, section_key }
+    });
     return res.status(201).json(link);
   } catch (error) {
     console.error('Add question to template error:', error);
@@ -280,6 +336,12 @@ const addQuestionToTemplateHandler = async (req, res) => {
 const removeQuestionFromTemplateHandler = async (req, res) => {
   try {
     await mgmt.removeQuestionFromTemplate(req.params.templateId, req.params.questionId);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'remove_question_from_template',
+      entityType: 'survey_template',
+      entityId: req.params.templateId,
+      metadata: { question_id: req.params.questionId }
+    });
     return res.json({ success: true });
   } catch (error) {
     console.error('Remove question from template error:', error);
@@ -298,6 +360,12 @@ const reorderQuestionsHandler = async (req, res) => {
     }
 
     await mgmt.reorderTemplateQuestions(req.params.id, items);
+    await writeAuditLogWithReq(getPrisma(), req, {
+      action: 'reorder_template_questions',
+      entityType: 'survey_template',
+      entityId: req.params.id,
+      metadata: { count: Array.isArray(items) ? items.length : 0 }
+    });
     return res.json({ success: true });
   } catch (error) {
     console.error('Reorder questions error:', error);

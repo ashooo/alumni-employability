@@ -8,6 +8,7 @@ const {
   normalizeUserRole,
   isPlaceholderPasswordHash
 } = require('../utils/refactorAuth');
+const { writeAuditLogWithReq } = require('../utils/auditLog');
 
 // Store OTPs temporarily (in production, use Redis or database)
 const otpStore = new Map();
@@ -220,6 +221,15 @@ const login = async (req, res) => {
     });
 
     if (!user) {
+      await writeAuditLogWithReq(refactorPrisma, req, {
+        userId: null,
+        action: 'login_failed_unknown_user',
+        entityType: 'auth',
+        entityId: null,
+        status: 'failure',
+        details: 'Unknown user',
+        metadata: { identifier }
+      });
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
@@ -229,9 +239,76 @@ const login = async (req, res) => {
       });
     }
 
+    if (user.locked_permanently) {
+      await writeAuditLogWithReq(refactorPrisma, req, {
+        userId: user.id,
+        action: 'login_blocked_permanent_lock',
+        entityType: 'user',
+        entityId: user.id,
+        status: 'locked',
+        details: 'Permanent lock',
+        metadata: { role: normalizeUserRole(user.role) }
+      });
+      return res.status(423).json({ error: 'Account locked. Please contact support.' });
+    }
+
+    if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) {
+      await writeAuditLogWithReq(refactorPrisma, req, {
+        userId: user.id,
+        action: 'login_blocked_temp_lock',
+        entityType: 'user',
+        entityId: user.id,
+        status: 'locked',
+        details: 'Temporary lock',
+        metadata: { locked_until: user.locked_until, role: normalizeUserRole(user.role) }
+      });
+      return res.status(423).json({ error: 'Too many attempts. Try again later.' });
+    }
+
     const validPassword = await bcrypt.compare(String(password), user.password_hash);
     
     if (!validPassword) {
+      const nextAttempts = Number(user.failed_login_attempts || 0) + 1;
+      const updates = {
+        failed_login_attempts: nextAttempts,
+        last_failed_login_at: new Date(),
+        locked_until: null,
+        locked_permanently: false
+      };
+
+      let action = 'login_failed';
+      let lockUntil = null;
+      if (nextAttempts === 3) {
+        action = 'login_failed_3x';
+      } else if (nextAttempts === 5 || nextAttempts === 6) {
+        action = 'temp_lock_15m';
+        lockUntil = new Date(Date.now() + 15 * 60 * 1000);
+        updates.locked_until = lockUntil;
+      } else if (nextAttempts >= 7) {
+        action = 'account_locked_permanently';
+        updates.locked_permanently = true;
+        updates.locked_until = null;
+      }
+
+      await refactorPrisma.user.update({
+        where: { id: user.id },
+        data: updates
+      });
+
+      await writeAuditLogWithReq(refactorPrisma, req, {
+        userId: user.id,
+        action,
+        entityType: 'user',
+        entityId: user.id,
+        status: action === 'temp_lock_15m' || action === 'account_locked_permanently' ? 'locked' : 'failure',
+        details: 'Invalid password',
+        metadata: {
+          attempts: nextAttempts,
+          locked_until: lockUntil,
+          role: normalizeUserRole(user.role)
+        }
+      });
+
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
@@ -256,8 +333,22 @@ const login = async (req, res) => {
     await refactorPrisma.user.update({
       where: { id: user.id },
       data: {
-        last_login: new Date()
+        last_login: new Date(),
+        failed_login_attempts: 0,
+        locked_until: null,
+        locked_permanently: false,
+        last_failed_login_at: null
       }
+    });
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: user.id,
+      action: 'login_success',
+      entityType: 'user',
+      entityId: user.id,
+      status: 'success',
+      details: 'Success',
+      metadata: { role: normalizeUserRole(user.role) }
     });
 
     const token = jwt.sign(
@@ -666,6 +757,11 @@ const resetPasswordWithOtp = async (req, res) => {
     const username = String(req.body?.username || '').trim();
     const rawOtp = req.body?.otp;
     const newPassword = String(req.body?.newPassword || '');
+    const ipAddress =
+      (String(req.headers['x-forwarded-for'] || '').split(',')[0] || '').trim() ||
+      req.ip ||
+      req.connection?.remoteAddress ||
+      null;
 
     if (!username || !rawOtp || !newPassword) {
       return res.status(400).json({ error: 'username, otp, and newPassword are required' });
@@ -736,6 +832,16 @@ const resetPasswordWithOtp = async (req, res) => {
       data: { password_hash: passwordHash }
     });
 
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: null,
+      action: 'password_reset',
+      entityType: 'user',
+      entityId: null,
+      status: 'success',
+      details: 'Success',
+      metadata: { username }
+    });
+
     forgotPasswordOtpStore.delete(username);
     return res.json({ success: true, message: 'Password reset successfully' });
   } catch (error) {
@@ -800,6 +906,11 @@ const changePassword = async (req, res) => {
     if (!username) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    const ipAddress =
+      (String(req.headers['x-forwarded-for'] || '').split(',')[0] || '').trim() ||
+      req.ip ||
+      req.connection?.remoteAddress ||
+      null;
 
     const { currentPassword, newPassword, otp } = req.body || {};
     if (!currentPassword || !newPassword || !otp) {
@@ -861,6 +972,16 @@ const changePassword = async (req, res) => {
     await refactorPrisma.user.update({
       where: { username: String(username) },
       data: { password_hash: passwordHash }
+    });
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id || null,
+      action: 'password_changed',
+      entityType: 'user',
+      entityId: req.user?.id || null,
+      status: 'success',
+      details: 'Success',
+      metadata: { username: String(username) }
     });
 
     passwordChangeOtpStore.delete(String(username));

@@ -49,6 +49,7 @@ def main():
         # Calculate metrics using in-sample prediction if possible
         eval_df = pd.DataFrame()
         pred_hist_df = pd.DataFrame()
+        eval_df_excl = pd.DataFrame()
         # The first year is the ARIMA burn-in year — exclude it from metrics and
         # from predicted/bound output to avoid misleading users.
         first_year = int(actual_rates.index.min())
@@ -104,7 +105,31 @@ def main():
                     item["upper"] = round(float(row['Upper']), 2)
             response["historical"].append(item)
 
-        # Generate Insights from Backend
+        # ── STEP 1: Generate forecast FIRST so insights can use the data ──────────
+        try:
+            forecast_steps = 3
+            forecast = model_fit.get_forecast(steps=forecast_steps)
+            forecast_df = forecast.summary_frame()
+            
+            if hasattr(forecast_df.index, 'year'):
+                forecast_df.index = forecast_df.index.year
+            
+            cur_year = int(actual_rates.index.max())
+            i = 1
+            for idx, row in forecast_df.iterrows():
+                response["forecast"].append({
+                    "year": int(idx) if not pd.isna(idx) and str(idx).isdigit() and int(idx) > cur_year else cur_year + i,
+                    "value": round(float(row['mean']), 2),
+                    "lower": round(float(row['mean_ci_lower']), 2),
+                    "upper": round(float(row['mean_ci_upper']), 2)
+                })
+                i += 1
+                
+        except Exception as e:
+            print(json.dumps({"error": f"Error forecasting: {str(e)}"}))
+            sys.exit(1)
+
+        # ── STEP 2: Generate Insights AFTER forecast is populated ─────────────────
         mae = response["metrics"].get("mae", 0)
         rmse = response["metrics"].get("rmse", 0)
         
@@ -142,8 +167,6 @@ def main():
         else:
             rmse_takeaway = f"The RMSE ({rmse:.2f}) is close to the MAE, meaning the model's errors are consistent and it rarely makes extreme miscalculations."
 
-        # Verdict based on user thresholds: <4.9 High, >9.99 Moderate? 
-        # Re-interpreting for logic: <4.9 High, 4.9-9.99 Moderate, >9.99 Low
         verdict = "High Accuracy"
         verdict_color = "text-green-500"
         
@@ -158,20 +181,42 @@ def main():
         all_points = response["historical"] + response["forecast"]
         all_points_sorted = sorted(all_points, key=lambda x: x["year"])
         
-        # Forecast Direction
+        # Volatility and historical context
+        hist_values = [h["value"] for h in response["historical"]]
+        avg_rate = sum(hist_values) / len(hist_values) if hist_values else 0
+        std_dev = np.std(hist_values) if len(hist_values) > 1 else 0
+        stability = "highly consistent" if std_dev < 2 else "relatively stable" if std_dev < 5 else "showing significant fluctuations"
+        
+        # Forecast Direction — now correctly uses the populated forecast list
         trend_direction = "Stable"
-        growth_explanation = "The employment rate is projected to remain relatively stable."
-        if response["forecast"]:
+        growth_explanation = f"The employment rate has been {stability} with an average of {avg_rate:.1f}% and is projected to maintain this stability."
+        if response["forecast"] and response["historical"]:
+            last_actual = response["historical"][-1]
             f_start = response["forecast"][0]
             f_end = response["forecast"][-1]
-            diff = f_end["value"] - f_start["value"]
-            if abs(diff) > 0.5:
-                trend_direction = "Upward" if diff > 0.5 else "Downward"
-                action = "increase" if diff > 0.5 else "decrease"
-                growth_explanation = f"The employment rate is projected to {action} by {abs(diff):.1f}% from {f_start['year']} to {f_end['year']}."
+            
+            # Compare last actual with the end of forecast for overall direction
+            overall_diff = f_end["value"] - last_actual["value"]
+            # Also check internal forecast movement
+            forecast_internal_diff = f_end["value"] - f_start["value"]
+            
+            # Threshold for considering a change as significant
+            threshold = 0.2
+            
+            if overall_diff > threshold or forecast_internal_diff > threshold:
+                trend_direction = "Upward"
+                action = "grow"
+                growth_explanation = f"Following a {stability} historical period, the employment rate shows upward momentum and is projected to {action} to approximately {f_end['value']:.1f}% by {f_end['year']}."
+            elif overall_diff < -threshold or forecast_internal_diff < -threshold:
+                trend_direction = "Downward"
+                action = "decline"
+                growth_explanation = f"The model detects a {action} in employment rates, with the forecast projecting a trend towards {f_end['value']:.1f}% by {f_end['year']}, continuing the recent patterns."
+            else:
+                trend_direction = "Stable"
+                growth_explanation = f"The employment rate is projected to remain {stability} around {f_end['value']:.1f}%, showing no significant upward or downward shifts in the near future."
 
         # Biggest Change
-        biggest_change_text = "Not enough data to calculate significant changes."
+        biggest_change_text = "The historical data remains too consistent to identify major shifts."
         if len(all_points_sorted) >= 2:
             max_diff = 0
             change_info = None
@@ -181,20 +226,23 @@ def main():
                 diff = curr.get("value", 0) - prev.get("value", 0)
                 if abs(diff) > abs(max_diff):
                     max_diff = diff
-                    change_info = (prev["year"], curr["year"], "increase" if diff > 0 else "decrease")
-            if change_info:
-                biggest_change_text = f"A {abs(max_diff):.1f}% {change_info[2]} between {change_info[0]} and {change_info[1]}."
+                    change_info = (prev["year"], curr["year"], "surge" if diff > 2 else "increase" if diff > 0 else "drop" if diff < -2 else "decrease")
+            if change_info and abs(max_diff) > 0.1:
+                biggest_change_text = f"The most notable shift was a {abs(max_diff):.1f}% {change_info[2]} observed between {change_info[0]} and {change_info[1]}."
 
         # Recent Trend
-        recent_trend_text = "Not enough historical data to determine a recent trend."
+        recent_trend_text = "Insufficient historical data to establish a recent trend pattern."
         hist_sorted = sorted(response["historical"], key=lambda x: x["year"])
         if len(hist_sorted) >= 2:
             recent = hist_sorted[-3:]
             start = recent[0]
             end = recent[-1]
             diff = end["value"] - start["value"]
-            direction = "increased" if diff > 0 else "decreased" if diff < 0 else "remained stable"
-            recent_trend_text = f"In the most recent recorded years ({start['year']}-{end['year']}), the employment rate {direction} from {start['value']:.1f}% to {end['value']:.1f}%."
+            if abs(diff) < 0.5:
+                recent_trend_text = f"In the recent period ({start['year']}-{end['year']}), the employment rate has plateaued, holding steady at approximately {end['value']:.1f}%."
+            else:
+                direction = "upward momentum" if diff > 0 else "downward slide"
+                recent_trend_text = f"The data shows a clear {direction} in the most recent years ({start['year']}-{end['year']}), moving from {start['value']:.1f}% to {end['value']:.1f}%."
 
         response["insights"] = {
             "behavior": behavior_insight,
@@ -207,30 +255,6 @@ def main():
             "biggest_change_text": biggest_change_text,
             "recent_trend_text": recent_trend_text
         }
-
-        # Predict future 3 years
-        try:
-            forecast_steps = 3
-            forecast = model_fit.get_forecast(steps=forecast_steps)
-            forecast_df = forecast.summary_frame()
-            
-            if hasattr(forecast_df.index, 'year'):
-                forecast_df.index = forecast_df.index.year
-            
-            cur_year = int(actual_rates.index.max())
-            i = 1
-            for idx, row in forecast_df.iterrows():
-                response["forecast"].append({
-                    "year": int(idx) if not pd.isna(idx) and str(idx).isdigit() and int(idx) > cur_year else cur_year + i,
-                    "value": round(float(row['mean']), 2),
-                    "lower": round(float(row['mean_ci_lower']), 2),
-                    "upper": round(float(row['mean_ci_upper']), 2)
-                })
-                i += 1
-                
-        except Exception as e:
-            print(json.dumps({"error": f"Error forecasting: {str(e)}"}))
-            sys.exit(1)
 
         print(json.dumps(response))
 

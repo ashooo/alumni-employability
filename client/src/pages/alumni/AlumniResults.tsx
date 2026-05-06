@@ -292,6 +292,7 @@ export default function AlumniResults() {
   const [jobMatching, setJobMatching] = useState<JobMatchingPrediction | null>(null);
   const [jobMatchingError, setJobMatchingError] = useState<string | null>(null);
   const [showEmployabilityDetails, setShowEmployabilityDetails] = useState(false);
+  const [showSubmissionSummary, setShowSubmissionSummary] = useState(false);
   const [expandedJobIndex, setExpandedJobIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -525,10 +526,18 @@ export default function AlumniResults() {
           Retake Assessment
         </Button>
       </div>
-      <div className="flex justify-end">
-        <Button variant="secondary" onClick={() => navigate('/app/alumni/jobs')}>
-          Open Job Recommendations
-        </Button>
+      <div className="glass-card border border-primary/20 bg-primary/5 p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-primary">Looking for role matches?</p>
+            <p className="text-sm text-muted-foreground">
+              Click here for job recommendations based on your latest submission and skills profile.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={() => navigate('/app/alumni/jobs')}>
+            Click Here for Job Recommendations
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -763,310 +772,130 @@ export default function AlumniResults() {
         </div>
       </div>
 
-      <div className="pt-8 space-y-6">
-        <div className="flex items-center gap-2">
-          <Briefcase className="h-6 w-6 text-primary" />
-          <h2 className="text-2xl font-display font-bold">Market Alignment & Job Matching</h2>
-        </div>
-
-        <div className="glass-card p-6 shadow-xl">
-          <div className="mb-6">
-            <h3 className="text-lg font-display font-bold">Recommended Career Paths</h3>
+      <div className="glass-card p-6 shadow-xl">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <h3 className="text-xl font-display font-semibold">Full Submission Summary</h3>
             <p className="text-sm text-muted-foreground">
-              AI-ranked roles based on your verified skill set and academic performance.
+              This is the saved profile and the exact selections currently attached to this prediction.
             </p>
           </div>
-
-          {jobMatchingLoading ? (
-            <div className="flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              <p className="text-sm font-medium">Generating live job matches</p>
-              <p className="max-w-sm text-center text-sm text-muted-foreground">
-                We are using your saved competencies to score the best-fit roles from the job-matching
-                model.
-              </p>
-            </div>
-          ) : hasJobMatches ? (
-            <div className="space-y-4">
-              <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Star className="h-4 w-4 text-primary" />
-                  <span>
-                    {jobMatching?.totalMatches || jobMatching?.matches.length || 0} live role matches
-                    from {jobMatching?.candidateSkills.length || 0} saved competencies.
-                  </span>
-                </div>
-                {jobMatching?.filters ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Filtered to roles with at least{' '}
-                    {Math.round((jobMatching.filters.min_cosine_score || 0) * 100)}% cosine
-                    similarity,{' '}
-                    {Math.round(jobMatching.filters.min_candidate_match_percentage || 0)}%
-                    candidate overlap, and{' '}
-                    {jobMatching.filters.min_matched_competencies || 0} matched skills.
-                  </p>
-                ) : null}
-              </div>
-
-              {jobMatching?.matches.map((job, index) => {
-                const scorePercent = getJobMatchScorePercent(job);
-                const matchedCompetencies = job.matched_competencies || [];
-
-                return (
-                  <motion.div
-                    key={`${job.title}-${index}`}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="group relative flex flex-col overflow-hidden rounded-2xl border bg-card/50 p-6 shadow-md transition-all hover:border-primary/50 hover:shadow-xl"
-                  >
-                    <div className="mb-4 flex items-start justify-between">
-                      <div className="space-y-1">
-                        <h4 className="text-xl font-display font-bold leading-tight group-hover:text-primary transition-colors">
-                          {job.title}
-                        </h4>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1">
-                          <Award className="h-3 w-3" /> Ranked Career Path
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <span className="text-xl font-black text-primary">{scorePercent}%</span>
-                        <span className="text-[9px] font-bold uppercase text-muted-foreground">Match Score</span>
-                      </div>
-                    </div>
-
-                    <div className="mb-5 space-y-1.5">
-                      <div className="flex justify-between text-[10px] font-bold text-muted-foreground uppercase">
-                        <span>Market Alignment</span>
-                      </div>
-                      <Progress value={scorePercent} className="h-2" />
-                    </div>
-
-                    {/* ── Search for this role ── */}
-                    <div className="mb-5 space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
-                        <Zap className="h-4 w-4" /> Search "{job.title}" on job sites
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {JOB_SITES.map((site) => (
-                          <Button
-                            key={site.name}
-                            variant="outline"
-                            size="sm"
-                            className="h-9 gap-2 text-[11px] font-bold shadow-sm transition-all bg-background hover:bg-primary hover:text-primary-foreground"
-                            onClick={() => openJobSite(site, job.title)}
-                            title={`Open ${site.name}`}
-                          >
-                            {renderJobSiteIcon(site)}
-                            <span>{site.name}</span>
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* ── Top alternate roles ── */}
-                    {job.top_alternates && job.top_alternates.length > 0 && (
-                      <div className="mb-5 space-y-3 rounded-xl border border-dashed p-4">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                          <Briefcase className="h-3 w-3" /> Specific Roles Under This Field
-                        </p>
-                        <div className="space-y-2">
-                          {job.top_alternates.slice(0, 3).map((role) => (
-                            <div
-                              key={role}
-                              className="flex items-center justify-between rounded-lg border bg-card px-3 py-2"
-                            >
-                              <span className="text-[11px] font-semibold">{role}</span>
-                              <div className="flex gap-1">
-                                {JOB_SITES.map((site) => (
-                                  <Button
-                                    key={site.name}
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
-                                    onClick={() => openJobSite(site, role)}
-                                    title={`${site.name}: ${role}`}
-                                  >
-                                    {renderJobSiteIcon(site)}
-                                  </Button>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ── Matched competencies ── */}
-                    <div className="mb-4 flex flex-wrap gap-1.5">
-                      {matchedCompetencies.length > 0 ? (
-                        matchedCompetencies.slice(0, 6).map((skill) => (
-                          <span
-                            key={`${job.title}-${skill}`}
-                            className="rounded-full bg-muted/50 border px-2.5 py-0.5 text-[9px] font-medium text-muted-foreground"
-                          >
-                            {skill}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground italic">No skills matched</span>
-                      )}
-                      {matchedCompetencies.length > 6 && (
-                        <span className="text-[9px] text-muted-foreground flex items-center">+{matchedCompetencies.length - 6} more</span>
-                      )}
-                    </div>
-
-                    {/* ── Deep dive toggle ── */}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mt-auto h-8 w-full gap-2 border border-dashed border-muted-foreground/20 text-xs font-semibold hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-all"
-                      onClick={() => setExpandedJobIndex(expandedJobIndex === index ? null : index)}
-                    >
-                      {expandedJobIndex === index ? (
-                        <>Hide Scoring Details <ChevronUp className="h-4 w-4" /></>
-                      ) : (
-                        <>View Scoring Details <ChevronDown className="h-4 w-4" /></>
-                      )}
-                    </Button>
-
-                    <AnimatePresence>
-                      {expandedJobIndex === index && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="mt-4 pt-4 border-t border-dashed"
-                        >
-                          <div className="grid grid-cols-3 gap-4 text-center">
-                            <div className="space-y-1">
-                              <p className="text-lg font-black text-primary">{Math.round((job.candidate_match_percentage || 0))}%</p>
-                              <p className="text-[9px] font-bold uppercase text-muted-foreground">Skill Overlap</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-lg font-black text-primary">{Math.round((job.match_percentage || 0))}%</p>
-                              <p className="text-[9px] font-bold uppercase text-muted-foreground">Market Demand</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-lg font-black text-primary">{Math.round((job.cosine_score || 0) * 100)}%</p>
-                              <p className="text-[9px] font-bold uppercase text-muted-foreground">AI Cosine Score</p>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed p-6 text-center">
-              <p className="font-medium">No job matches available yet</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {jobMatchingError || 'We could not load role matches for this profile yet. Please try again.'}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="glass-card space-y-6 p-6 shadow-xl">
-        <div className="space-y-2">
-          <h3 className="text-xl font-display font-semibold">Full Submission Summary</h3>
-          <p className="text-sm text-muted-foreground">
-            This is the saved profile and the exact selections currently attached to this prediction.
-          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-primary hover:bg-primary/10"
+            onClick={() => setShowSubmissionSummary(!showSubmissionSummary)}
+          >
+            {showSubmissionSummary ? (
+              <>Hide Full Submission <ChevronUp className="h-4 w-4" /></>
+            ) : (
+              <>Show Full Submission <ChevronDown className="h-4 w-4" /></>
+            )}
+          </Button>
         </div>
 
-        <div className="space-y-3">
-          <h4 className="font-semibold">Academic and Model Inputs</h4>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {academicSummary.map((item) => (
-              <div key={item.label} className="rounded-xl border bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
-                <p className="mt-1 font-medium">{formatChoiceValue(item.value)}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <h4 className="font-semibold">Scoped Survey Answers</h4>
-          {submissionSummary?.survey_answers?.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {submissionSummary.survey_answers.map((answer) => (
-                <div
-                  key={`${answer.question_id}-${answer.question_key || 'answer'}`}
-                  className="rounded-xl border bg-muted/20 p-4"
-                >
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    {answer.question_text}
-                  </p>
-                  <p className="mt-1 font-medium">{formatChoiceValue(answer.value)}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-              No extra scoped survey answers were saved for this prediction.
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-3">
-          <h4 className="font-semibold">Job Matching Scope</h4>
-          {jobMatching?.candidateSkills?.length ? (
-            <div className="flex flex-wrap gap-2">
-              {jobMatching.candidateSkills.map((skill) => (
-                <Badge key={skill} variant="outline" className="bg-primary/5 text-foreground">
-                  {skill}
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-              The saved competencies used by the job matcher will appear here after a live result is
-              available.
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          <h4 className="font-semibold">Selected Competencies</h4>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {(
-              Object.keys(COMPETENCY_GROUP_LABELS) as Array<keyof typeof COMPETENCY_GROUP_LABELS>
-            ).map((kind) => {
-              const items = submissionSummary?.competencies_by_kind?.[kind] || [];
-
-              return (
-                <div key={kind} className="space-y-3 rounded-xl border bg-muted/20 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <h5 className="font-medium">{COMPETENCY_GROUP_LABELS[kind]}</h5>
-                    <Badge variant="outline">{items.length} selected</Badge>
+        <AnimatePresence initial={false}>
+          {showSubmissionSummary && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-6 space-y-6">
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Academic and Model Inputs</h4>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {academicSummary.map((item) => (
+                      <div key={item.label} className="rounded-xl border bg-muted/20 p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                        <p className="mt-1 font-medium">{formatChoiceValue(item.value)}</p>
+                      </div>
+                    ))}
                   </div>
+                </div>
 
-                  {items.length > 0 ? (
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Scoped Survey Answers</h4>
+                  {submissionSummary?.survey_answers?.length ? (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      {submissionSummary.survey_answers.map((answer) => (
+                        <div
+                          key={`${answer.question_id}-${answer.question_key || 'answer'}`}
+                          className="rounded-xl border bg-muted/20 p-4"
+                        >
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            {answer.question_text}
+                          </p>
+                          <p className="mt-1 font-medium">{formatChoiceValue(answer.value)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                      No extra scoped survey answers were saved for this prediction.
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Job Matching Scope</h4>
+                  {jobMatching?.candidateSkills?.length ? (
                     <div className="flex flex-wrap gap-2">
-                      {items.map((item) => (
-                        <Badge key={item.id} variant="outline" className="bg-primary/5 text-foreground">
-                          {item.name}
-                          {item.score !== null && item.score !== undefined
-                            ? ` | ${item.score}/10`
-                            : ''}
+                      {jobMatching.candidateSkills.map((skill) => (
+                        <Badge key={skill} variant="outline" className="bg-primary/5 text-foreground">
+                          {skill}
                         </Badge>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">
-                      No selections saved in this category.
-                    </p>
+                    <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                      The saved competencies used by the job matcher will appear here after a live result is
+                      available.
+                    </div>
                   )}
                 </div>
-              );
-            })}
-          </div>
-        </div>
+
+                <div className="space-y-4">
+                  <h4 className="font-semibold">Selected Competencies</h4>
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    {(
+                      Object.keys(COMPETENCY_GROUP_LABELS) as Array<keyof typeof COMPETENCY_GROUP_LABELS>
+                    ).map((kind) => {
+                      const items = submissionSummary?.competencies_by_kind?.[kind] || [];
+
+                      return (
+                        <div key={kind} className="space-y-3 rounded-xl border bg-muted/20 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <h5 className="font-medium">{COMPETENCY_GROUP_LABELS[kind]}</h5>
+                            <Badge variant="outline">{items.length} selected</Badge>
+                          </div>
+
+                          {items.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {items.map((item) => (
+                                <Badge key={item.id} variant="outline" className="bg-primary/5 text-foreground">
+                                  {item.name}
+                                  {item.score !== null && item.score !== undefined
+                                    ? ` | ${item.score}/10`
+                                    : ''}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              No selections saved in this category.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ const alumniRoutes = require('./routes/alumniRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const superAdminRoutes = require('./routes/superAdminRoutes');
 const predictionRoutes = require('./routes/predictionRoutes');
+const { initializeArimaOnStartup } = require('./controllers/predictionController');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -73,4 +74,5 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Allowed CORS origins: ${allowedOrigins.join(', ')}`);
+  initializeArimaOnStartup();
 });

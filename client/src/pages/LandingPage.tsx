@@ -1,6 +1,7 @@
 import { GraduationCap, ShieldCheck, BarChart3, Users, ArrowRight, ChevronDown, Lock, Mail, Phone, Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
@@ -9,9 +10,16 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
   const [logoUrl, setLogoUrl] = useState('/plp_logo.png');
+  const panelPath =
+    user?.role === 'superadmin'
+      ? '/app/superadmin/audit-logs'
+      : user?.role === 'admin'
+        ? '/app/admin/analytics'
+        : '/app/alumni/dashboard';
 
   const handleThemeToggle = () => {
     setTheme(isDark ? 'light' : 'dark');
@@ -80,8 +88,19 @@ export default function LandingPage() {
             >
               {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
-            <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" onClick={() => navigate('/login')}>Login</Button>
-            <Button className="bg-white/10 backdrop-blur border border-white/20 hover:bg-white/20 text-white transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,255,255,0.3)] shadow-[0_0_15px_rgba(255,255,255,0.15)]" onClick={() => navigate('/activate')}>Activate Account</Button>
+            {user ? (
+              <Button
+                className="bg-white/10 backdrop-blur border border-white/20 hover:bg-white/20 text-white transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,255,255,0.3)] shadow-[0_0_15px_rgba(255,255,255,0.15)]"
+                onClick={() => navigate(panelPath)}
+              >
+                Back to Panel
+              </Button>
+            ) : (
+              <>
+                <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" onClick={() => navigate('/login')}>Login</Button>
+                <Button className="bg-white/10 backdrop-blur border border-white/20 hover:bg-white/20 text-white transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,255,255,0.3)] shadow-[0_0_15px_rgba(255,255,255,0.15)]" onClick={() => navigate('/activate')}>Activate Account</Button>
+              </>
+            )}
           </div>
         </nav>
 
@@ -91,8 +110,14 @@ export default function LandingPage() {
             <h1 className="text-4xl md:text-6xl font-display font-extrabold leading-tight mb-6">Track, Predict &<br />Empower Alumni Career</h1>
             <p className="text-lg md:text-xl text-white/70 max-w-2xl mx-auto mb-10">A comprehensive tracer and prediction system that connects alumni outcomes with institutional growth.</p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="bg-white text-black hover:bg-white/90 font-semibold text-base px-8 gap-2" onClick={() => navigate('/login')}>Login <ArrowRight className="h-4 w-4" /></Button>
-              <Button size="lg" className="bg-transparent text-white border-2 border-white hover:bg-white hover:text-black font-semibold text-base px-8 backdrop-blur-sm transition-all duration-300" onClick={() => navigate('/activate')}>Activate Account</Button>
+              {user ? (
+                <Button size="lg" className="bg-white text-black hover:bg-white/90 font-semibold text-base px-8 gap-2" onClick={() => navigate(panelPath)}>Back to Panel <ArrowRight className="h-4 w-4" /></Button>
+              ) : (
+                <>
+                  <Button size="lg" className="bg-white text-black hover:bg-white/90 font-semibold text-base px-8 gap-2" onClick={() => navigate('/login')}>Login <ArrowRight className="h-4 w-4" /></Button>
+                  <Button size="lg" className="bg-transparent text-white border-2 border-white hover:bg-white hover:text-black font-semibold text-base px-8 backdrop-blur-sm transition-all duration-300" onClick={() => navigate('/activate')}>Activate Account</Button>
+                </>
+              )}
             </div>
           </motion.div>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2, duration: 0.6 }} className="mt-16">

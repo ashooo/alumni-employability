@@ -1,5 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Save, Loader2, Building2, GraduationCap } from 'lucide-react';
+import { Save, Loader2, Building2, GraduationCap, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,15 +55,30 @@ interface Program {
   college_name?: string;
 }
 
+interface AcademicSnapshot {
+  degree_id?: number | null;
+  year_graduated?: number | null;
+  cgpa?: number | string | null;
+  prof_grade?: number | string | null;
+  elec_grade?: number | string | null;
+  ojt_grade?: number | string | null;
+  gender?: string | null;
+  age?: number | string | null;
+  leader_pos?: boolean | null;
+  act_member_pos?: boolean | null;
+}
+
 export default function AlumniProfile() {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const isAdminAccount = user?.role === 'admin' || user?.role === 'superadmin';
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [emailOtpSending, setEmailOtpSending] = useState(false);
   const [emailOtpVerifying, setEmailOtpVerifying] = useState(false);
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [academicSnapshot, setAcademicSnapshot] = useState<AcademicSnapshot | null>(null);
   const [originalEmail, setOriginalEmail] = useState('');
   const [emailOtpSentTo, setEmailOtpSentTo] = useState<string | null>(null);
   const [emailOtpCode, setEmailOtpCode] = useState('');
@@ -119,6 +134,20 @@ export default function AlumniProfile() {
   useEffect(() => {
     const fetchProfile = async () => {
       if (!user?.username) return;
+
+      if (isAdminAccount) {
+        setProfile((prev) => ({
+          ...prev,
+          firstName: user.firstName || '',
+          lastName: user.lastName || '',
+          middleName: user.middleName || '',
+          suffix: user.suffix || '',
+          email: user.email || ''
+        }));
+        setOriginalEmail((user.email || '').trim());
+        setLoading(false);
+        return;
+      }
       
       setLoading(true);
       try {
@@ -132,6 +161,18 @@ export default function AlumniProfile() {
 
         if (response.ok) {
           const data = await response.json();
+          const academicResponse = await fetch(`${API_URL}/prediction/employability/academic-profile/${user.username}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          if (academicResponse.ok) {
+            const academicData = await academicResponse.json();
+            setAcademicSnapshot(academicData);
+          } else {
+            setAcademicSnapshot(null);
+          }
           
           // Fetch employment records
           const employmentResponse = await fetch(`${API_URL}/alumni/employment/${user.username}`, {
@@ -189,8 +230,10 @@ export default function AlumniProfile() {
     };
 
     fetchProfile();
-    fetchPrograms();
-  }, [user]);
+    if (!isAdminAccount) {
+      fetchPrograms();
+    }
+  }, [isAdminAccount, user]);
 
   // Handle save
   const handleSave = async () => {
@@ -355,6 +398,78 @@ export default function AlumniProfile() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (isAdminAccount) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-display font-bold">My Account</h1>
+            <p className="text-muted-foreground text-sm">Manage your administrator account details</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="glass-card p-6 space-y-4">
+            <h3 className="font-display font-semibold flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-muted-foreground" />
+              Account Information
+            </h3>
+
+            <div>
+              <Label>Role</Label>
+              <Input className="mt-1.5 bg-muted" value={String(user?.role || '').toUpperCase()} disabled />
+            </div>
+            <div>
+              <Label>Username</Label>
+              <Input className="mt-1.5 bg-muted" value={user?.username || ''} disabled />
+            </div>
+            <div>
+              <Label>Full Name</Label>
+              <Input
+                className="mt-1.5 bg-muted"
+                value={`${profile.firstName} ${profile.middleName || ''} ${profile.lastName} ${profile.suffix || ''}`.trim()}
+                disabled
+              />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input className="mt-1.5 bg-muted" value={profile.email || ''} disabled />
+            </div>
+            <div>
+              <Label>Last Login</Label>
+              <Input
+                className="mt-1.5 bg-muted"
+                value={user?.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Not available'}
+                disabled
+              />
+            </div>
+          </div>
+
+          <div className="glass-card p-6 space-y-4">
+            <h3 className="font-display font-semibold flex items-center gap-2">
+              <Lock className="h-5 w-5 text-muted-foreground" />
+              Security Settings
+            </h3>
+            <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl border border-dashed">
+              <div>
+                <p className="text-sm font-medium">Account Password</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Update your password regularly to keep your account secure.</p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/app/alumni/change-password')}
+                className="gap-2"
+              >
+                <Lock className="h-4 w-4" />
+                Change Password
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -530,99 +645,57 @@ export default function AlumniProfile() {
           </div>
         </div>
 
-        {/* Employment Information */}
+        {/* Security Settings */}
         <div className="glass-card p-6 space-y-4 lg:col-span-2">
-          <h3 className="font-display font-semibold">Employment Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <h3 className="font-display font-semibold">Academic Snapshot</h3>
+          <p className="text-xs text-muted-foreground">
+            Records used for employability assessment and prediction inputs.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <Label htmlFor="employmentStatus">Employment Status</Label>
-              <Select 
-                value={profile.employmentStatus} 
-                onValueChange={v => setProfile({ ...profile, employmentStatus: v })}
-              >
-                <SelectTrigger id="employmentStatus" className="mt-1.5">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {['Employed', 'Unemployed', 'Self-Employed', 'Freelancer', 'Further Studies'].map(s => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Year Graduated</Label>
+              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.year_graduated ?? 'N/A'} disabled />
             </div>
-
-            {(profile.employmentStatus === 'Employed' || profile.employmentStatus === 'Self-Employed' || profile.employmentStatus === 'Freelancer') && (
-              <>
-                <div>
-                  <Label htmlFor="company">Company / Business</Label>
-                  <Input 
-                    id="company"
-                    className="mt-1.5" 
-                    value={profile.company} 
-                    onChange={e => setProfile({ ...profile, company: e.target.value })}
-                    placeholder="Company name"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="position">Position / Role</Label>
-                  <Input 
-                    id="position"
-                    className="mt-1.5" 
-                    value={profile.position} 
-                    onChange={e => setProfile({ ...profile, position: e.target.value })}
-                    placeholder="Job title"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="industry">Industry</Label>
-                  <Select 
-                    value={profile.industry} 
-                    onValueChange={v => setProfile({ ...profile, industry: v })}
-                  >
-                    <SelectTrigger id="industry" className="mt-1.5">
-                      <SelectValue placeholder="Select industry" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {['Technology', 'Education', 'Healthcare', 'Finance', 'Manufacturing', 'Retail', 'Construction', 'Transportation', 'Hospitality', 'Other'].map(i => (
-                        <SelectItem key={i} value={i}>{i}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="startDate">Start Date</Label>
-                  <Input 
-                    id="startDate"
-                    type="date"
-                    className="mt-1.5" 
-                    value={profile.employmentStartDate} 
-                    onChange={e => setProfile({ ...profile, employmentStartDate: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="income">Monthly Income (PHP)</Label>
-                  <Input 
-                    id="income"
-                    type="number"
-                    className="mt-1.5" 
-                    value={profile.monthlyIncome} 
-                    onChange={e => setProfile({ ...profile, monthlyIncome: e.target.value })}
-                    placeholder="e.g., 25000"
-                  />
-                </div>
-              </>
-            )}
-
-            {profile.employmentStatus === 'Further Studies' && (
-              <div className="md:col-span-2">
-                <Label htmlFor="course">Course/Program</Label>
-                <Input 
-                  id="course"
-                  className="mt-1.5" 
-                  placeholder="e.g., Master in Information Technology"
-                />
-              </div>
-            )}
+            <div>
+              <Label>CGPA</Label>
+              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.cgpa ?? 'N/A'} disabled />
+            </div>
+            <div>
+              <Label>Average Prof Grade</Label>
+              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.prof_grade ?? 'N/A'} disabled />
+            </div>
+            <div>
+              <Label>Average Elec Grade</Label>
+              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.elec_grade ?? 'N/A'} disabled />
+            </div>
+            <div>
+              <Label>OJT Grade</Label>
+              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.ojt_grade ?? 'N/A'} disabled />
+            </div>
+            <div>
+              <Label>Gender</Label>
+              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.gender || 'N/A'} disabled />
+            </div>
+            <div>
+              <Label>Age</Label>
+              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.age ?? 'N/A'} disabled />
+            </div>
+            <div>
+              <Label>Leadership Position</Label>
+              <Input
+                className="mt-1.5 bg-muted"
+                value={academicSnapshot?.leader_pos === true ? 'Yes' : academicSnapshot?.leader_pos === false ? 'No' : 'N/A'}
+                disabled
+              />
+            </div>
+            <div>
+              <Label>Active Member Position</Label>
+              <Input
+                className="mt-1.5 bg-muted"
+                value={academicSnapshot?.act_member_pos === true ? 'Yes' : academicSnapshot?.act_member_pos === false ? 'No' : 'N/A'}
+                disabled
+              />
+            </div>
           </div>
         </div>
 

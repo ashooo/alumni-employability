@@ -1,21 +1,26 @@
-# Python version: 3.11.9
+# Python version: 3.10+
+#
+# This file intentionally avoids strict pins so `pip install -U -r requirements.txt`
+# installs current package releases.
+
 # Core Data & ML
-pandas==3.0.2
-numpy==2.4.4
-scikit-learn==1.8.0
-joblib==1.5.3
+pandas
+numpy
+scikit-learn
+joblib
 
 # Visualization & Stats
-matplotlib==3.10.8
-seaborn==0.13.2
-statsmodels==0.14.6
+matplotlib
+seaborn
+statsmodels
 
-# Job Matching (ONNX & FAISS)
-onnxruntime==1.21.0
-optimum[onnxruntime]==1.23.3
-transformers==4.49.0
-faiss-cpu==1.10.0
+# Job Matching (ONNX, embeddings, and vector search)
+onnxruntime
+optimum[onnxruntime]
+transformers
+sentence-transformers
+faiss-cpu
 
 # Database & Environment
-mysql-connector-python==9.6.0
-python-dotenv==1.2.2
+mysql-connector-python
+python-dotenv

@@ -5,11 +5,11 @@ import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 
 const adminNav = [
-  { title: 'Survey Manager', url: '/app/admin/survey-manager', icon: ClipboardList },
   { title: 'Analytics Dashboard', url: '/app/admin/analytics', icon: BarChart3 },
   { title: 'Prediction Models', url: '/app/admin/predictions', icon: Brain },
-  { title: 'Content Manager', url: '/app/admin/content', icon: Settings },
   { title: 'User Management', url: '/app/admin/users', icon: Users },
+  { title: 'Survey Manager', url: '/app/admin/survey-manager', icon: ClipboardList },
+  { title: 'Content Manager', url: '/app/admin/content', icon: Settings },
   { title: 'Reports', url: '/app/admin/reports', icon: FileText },
 ];
 

@@ -248,7 +248,7 @@ class JobMatcher:
         except Exception as e:
             print(f"Warning: Failed to load alternate titles: {e}")
 
-    def _select_top_alternates(self, std_title: str, candidate_tokens: Set[str], top_k: int = 3) -> List[str]:
+    def _select_top_alternates(self, std_title: str, candidate_tokens: Set[str], top_k: int = 5) -> List[str]:
         alternates = self.alternate_titles_map.get(std_title, [])
         if not alternates:
             return []
@@ -445,7 +445,7 @@ class JobMatcher:
 
             # Add Top 3 Alternate Titles
             candidate_tokens = _tokenize_values(candidate_skills)
-            result["top_alternates"] = self._select_top_alternates(result["title"], candidate_tokens, top_k=3)
+            result["top_alternates"] = self._select_top_alternates(result["title"], candidate_tokens, top_k=5)
 
             results.append(result)
 

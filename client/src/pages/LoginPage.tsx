@@ -46,7 +46,11 @@ export default function LoginPage() {
           className="max-w-md text-white"
         >
           <div className="p-3 rounded-2xl bg-white/10 inline-block mb-8">
-            <GraduationCap className="h-10 w-10" />
+              <img
+                src="/plp_logo.png"
+                alt="PLP Logo"
+                className="h-12 w-12 object-contain"
+              />
           </div>
           <h1 className="text-4xl font-display font-extrabold mb-4">Alumni Employability Tracer</h1>
           <p className="text-white/80 text-lg leading-relaxed">

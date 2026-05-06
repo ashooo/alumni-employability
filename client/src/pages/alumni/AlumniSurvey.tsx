@@ -791,7 +791,7 @@ export default function AlumniSurvey() {
             className={
               selectionValid
                 ? 'border-success/30 bg-success/5 text-success'
-                : 'border-destructive/30 bg-destructive/5 text-destructive'
+                : 'border-amber-300/40 bg-amber-100/40 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300'
             }
           >
             {selectedIds.length} selected
@@ -1210,7 +1210,7 @@ export default function AlumniSurvey() {
                 cy="50"
                 r="45"
                 fill="none"
-                stroke={isEmployable ? 'hsl(var(--success))' : 'hsl(var(--destructive))'}
+                stroke={isEmployable ? 'hsl(var(--success))' : '#f59e0b'}
                 strokeWidth="8"
                 strokeLinecap="round"
                 strokeDasharray={`${probability * 2.82} 282`}
@@ -1224,10 +1224,10 @@ export default function AlumniSurvey() {
           <div className="space-y-2">
             <h2
               className={`text-4xl font-display font-bold ${
-                isEmployable ? 'text-success' : 'text-destructive'
+                isEmployable ? 'text-success' : 'text-amber-600 dark:text-amber-400'
               }`}
             >
-              {isEmployable ? 'Employable' : 'Not Yet Employable'}
+              {isEmployable ? 'Employable' : 'Readiness In Progress'}
             </h2>
             <p className="text-muted-foreground max-w-md mx-auto">
               Our AI model analyzed your profile with <strong>{confidence}% confidence</strong>.

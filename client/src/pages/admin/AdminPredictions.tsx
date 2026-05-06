@@ -2,7 +2,7 @@ import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { predictionData } from '@/data/mockData';
 import { motion } from 'framer-motion';
-import ArimaTab from './components/ArimaTab';
+import ArimaTab from './prediction_tabs/ArimaTab';
 
 // ---------------------------------------------------------------------------
 // Helpers

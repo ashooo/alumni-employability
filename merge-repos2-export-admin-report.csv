@@ -1,0 +1,7 @@
+﻿section,branch,base_branch,file,status,additions,deletions,commit_count_ahead,latest_commit_sha,latest_commit_date,latest_commit_author,latest_commit_message,notes
+summary,merge-repos2-export,main,,N/A,,,15,35f45fd71b366fb150744f348b98847b294350a7,2026-05-02 01:40:41 +0800,Carl,"updated logo","Admin page/report-generation focused diff"
+admin-report,merge-repos2-export,main,client/src/pages/admin/AdminReports.tsx,Modified,250,235,15,35f45fd71b366fb150744f348b98847b294350a7,2026-05-02 01:40:41 +0800,Carl,"updated logo","Frontend admin report generation page"
+admin-report,merge-repos2-export,main,server/controllers/adminController.js,Modified,508,1621,15,35f45fd71b366fb150744f348b98847b294350a7,2026-05-02 01:40:41 +0800,Carl,"updated logo","Backend admin report logic"
+admin-report,merge-repos2-export,main,server/routes/adminRoutes.js,Modified,16,45,15,35f45fd71b366fb150744f348b98847b294350a7,2026-05-02 01:40:41 +0800,Carl,"updated logo","Admin route mappings"
+admin-report,merge-repos2-export,main,server/routes/predictionRoutes.js,Modified,7,1,15,35f45fd71b366fb150744f348b98847b294350a7,2026-05-02 01:40:41 +0800,Carl,"updated logo","Prediction route adjustments affecting report endpoints"
+commit-highlight,merge-repos2-export,main,client/src/pages/admin/AdminReports.tsx,Modified,,,,a0a37c7b9ef23ff1f0e8ef6bacb76c1afa27d99f,2026-03-26,,"Generate Downloadables","Commit explicitly tied to report download/export feature"

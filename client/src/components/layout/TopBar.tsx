@@ -30,6 +30,7 @@ export default function TopBar() {
   const { resolvedTheme, setTheme } = useTheme();
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const showNotifications = user?.role !== 'superadmin';
 
   const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
 
@@ -53,9 +54,13 @@ export default function TopBar() {
   };
 
   useEffect(() => {
+    if (!showNotifications) {
+      setNotifications([]);
+      return;
+    }
     fetchNotifications();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, showNotifications]);
 
   const markAsRead = async (notificationId: number) => {
     const target = notifications.find(n => n.id === notificationId);
@@ -160,39 +165,41 @@ export default function TopBar() {
             </Badge>
           )}
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-[10px] 
-                                   font-medium text-destructive-foreground flex items-center justify-center">
-                    {unreadCount}
-                  </span>
-                )}
-              </Button>
-            </DropdownMenuTrigger>
+          {showNotifications ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="h-5 w-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-[10px] 
+                                     font-medium text-destructive-foreground flex items-center justify-center">
+                      {unreadCount}
+                    </span>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
 
-            <DropdownMenuContent align="end" className="w-80">
-              {notifications.length === 0 ? (
-                <div className="py-4 text-center text-sm text-muted-foreground">
-                  No notifications
-                </div>
-              ) : (
-                notifications.map((notification) => (
-                  <DropdownMenuItem
-                    key={notification.id}
-                    className="cursor-pointer"
-                    onClick={() => markAsRead(notification.id)}
-                  >
-                    <p className={notificationTextClass(notification.read)}>
-                      {notification.title}
-                    </p>
-                  </DropdownMenuItem>
-                ))
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+              <DropdownMenuContent align="end" className="w-80">
+                {notifications.length === 0 ? (
+                  <div className="py-4 text-center text-sm text-muted-foreground">
+                    No notifications
+                  </div>
+                ) : (
+                  notifications.map((notification) => (
+                    <DropdownMenuItem
+                      key={notification.id}
+                      className="cursor-pointer"
+                      onClick={() => markAsRead(notification.id)}
+                    >
+                      <p className={notificationTextClass(notification.read)}>
+                        {notification.title}
+                      </p>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
 
         {/* User Menu */}

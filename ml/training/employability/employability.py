@@ -18,6 +18,7 @@ Outputs saved to ml/models/employability/:
 """
 
 import sys
+import argparse
 import json
 import numpy as np
 import pandas as pd
@@ -40,6 +41,8 @@ from sklearn.metrics import (
 ML_DIR = Path(__file__).resolve().parent.parent.parent  # ml/
 MODEL_DIR = ML_DIR / "models" / "employability"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
+EVAL_DIR = MODEL_DIR / "evaluation"
+EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -47,18 +50,24 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
 CV_FOLDS = 5
-ENSEMBLE_THRESHOLD = 0.02  # 2% F1 difference threshold for ensemble decision
+ENSEMBLE_THRESHOLD = 0.0  # Always select the absolute best model
 
-FEATURE_COLS = [
+BASE_NUMERIC_FEATURES = [
     'CGPA', 'Average Prof Grade', 'Average Elec Grade', 'OJT Grade',
-    'Leadership POS', 'Act Member POS', 'Soft Skills Ave', 'Hard Skills Ave'
+    'Leadership POS', 'Act Member POS', 'Soft Skills Ave', 'Hard Skills Ave',
+    'Board Exam', 'Internship Experience', 'Certifications'
 ]
+CATEGORICAL_CANDIDATES = ['Program', 'Degree']
 TARGET_COL = 'Employability'
-BINARY_COLS = ['Leadership POS', 'Act Member POS']  # Yes/No -> 1/0
 
 
-def load_data():
-    """Fetch training data from the database via db_utils."""
+def load_data(data_path=None):
+    """Load training data from CSV path, else fallback to database via db_utils."""
+    if data_path:
+        df = pd.read_csv(data_path)
+        print(f"Loaded {len(df)} records from CSV: {data_path}")
+        return df
+
     from db_utils import get_training_data
     df = get_training_data()
     print(f"Loaded {len(df)} records from database.")
@@ -75,6 +84,7 @@ def preprocess(df):
         'Employable': 'Employable',
         'Yes': 'Employable',
         'Not Employable': 'Not Employable',
+        'Less Employable': 'Not Employable',  # CSV uses this label
         'No': 'Not Employable',
     }
     df[TARGET_COL] = df[TARGET_COL].map(label_map)
@@ -84,16 +94,51 @@ def preprocess(df):
     y = le.fit_transform(df[TARGET_COL])
     print(f"Label mapping: {dict(zip(le.classes_, le.transform(le.classes_)))}")
 
-    # --- Features ---
-    X = df[FEATURE_COLS].copy()
+    # --- Core numeric features ---
+    # These features are optional and default to 0 if missing
+    optional_features = {'Board Exam', 'Internship Experience', 'Certifications'}
+    available_features = [col for col in BASE_NUMERIC_FEATURES if col in df.columns]
+    missing_features = [col for col in BASE_NUMERIC_FEATURES
+                        if col not in df.columns and col not in optional_features]
+    if missing_features:
+        raise ValueError(f"Missing required feature columns: {missing_features}")
+    for opt in optional_features:
+        if opt not in available_features:
+            df[opt] = 0
+            available_features.append(opt)
 
-    # Encode binary Yes/No columns to 1/0
-    for col in BINARY_COLS:
-        X[col] = X[col].map({'Yes': 1, 'No': 0}).fillna(0).astype(int)
+    # --- Program / course categorical feature ---
+    cat_col = next((c for c in CATEGORICAL_CANDIDATES if c in df.columns), None)
 
-    # Ensure all numeric
+    # --- Skill features (dynamic) ---
+    non_skill_columns = set(
+        [TARGET_COL, 'snapshot_id', 'Gender', 'Age', 'Year Graduated', 'source_file', 'Employability Reason']
+        + CATEGORICAL_CANDIDATES
+        + available_features
+    )
+    skill_columns = []
+    for col in df.columns:
+        if col in non_skill_columns:
+            continue
+        # Keep columns that can be treated as numeric skills.
+        if pd.to_numeric(df[col], errors='coerce').notna().any():
+            skill_columns.append(col)
+
+    X = df[available_features + skill_columns].copy()
+
+    # Ensure numeric conversion for base + skill features.
     for col in X.columns:
         X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0.0)
+
+    # One-hot encode program/course.
+    if cat_col:
+        cat_values = df[cat_col].fillna('UNKNOWN').astype(str).str.strip()
+        cat_dummies = pd.get_dummies(cat_values, prefix=cat_col, dtype=float)
+        X = pd.concat([X, cat_dummies], axis=1)
+
+    selected_feature_cols = list(X.columns)
+    print(f"Using {len(available_features)} core numeric features, {len(skill_columns)} skill features, "
+          f"and {0 if not cat_col else X.filter(regex=f'^{cat_col}_').shape[1]} one-hot {cat_col} features.")
 
     # --- Class balance check ---
     unique, counts = np.unique(y, return_counts=True)
@@ -104,10 +149,10 @@ def preprocess(df):
     if ratio < 0.4:
         print("[!] Moderate class imbalance detected -> using class_weight='balanced'")
 
-    return X, y, le, balance
+    return X, y, le, balance, selected_feature_cols
 
 
-def train_and_evaluate(X_train, X_test, y_train, y_test, le):
+def train_and_evaluate(X_train, X_test, y_train, y_test, le, feature_cols):
     """
     Train LR and RF independently with GridSearchCV, compare, and decide.
     Returns: chosen model, scaler, training report dict.
@@ -133,7 +178,7 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le):
     }
     lr_grid = GridSearchCV(
         LogisticRegression(random_state=RANDOM_STATE, class_weight='balanced'),
-        lr_param_grid, cv=cv, scoring='f1', n_jobs=-1, refit=True
+        lr_param_grid, cv=cv, scoring='f1', n_jobs=1, refit=True
     )
     lr_grid.fit(X_train_scaled, y_train)
     lr_model = lr_grid.best_estimator_
@@ -150,7 +195,7 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le):
 
     # Feature coefficients
     lr_importance = pd.DataFrame({
-        'Feature': FEATURE_COLS,
+        'Feature': feature_cols,
         'Coefficient': np.abs(lr_model.coef_[0])
     }).sort_values('Coefficient', ascending=False)
     print("Feature Coefficients (absolute):")
@@ -170,7 +215,7 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le):
     }
     rf_grid = GridSearchCV(
         RandomForestClassifier(random_state=RANDOM_STATE, class_weight='balanced'),
-        rf_param_grid, cv=cv, scoring='f1', n_jobs=-1, refit=True
+        rf_param_grid, cv=cv, scoring='f1', n_jobs=1, refit=True
     )
     rf_grid.fit(X_train_scaled, y_train)
     rf_model = rf_grid.best_estimator_
@@ -187,7 +232,7 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le):
 
     # Feature importances
     rf_importance = pd.DataFrame({
-        'Feature': FEATURE_COLS,
+        'Feature': feature_cols,
         'Importance': rf_model.feature_importances_
     }).sort_values('Importance', ascending=False)
     print("Feature Importances:")
@@ -239,10 +284,21 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le):
     print(f"{'Random Forest':<25} {rf_f1:>8.4f} {rf_auc:>8.4f} {rf_acc:>10.4f}")
     print(f"{'Soft Voting Ensemble':<25} {ens_f1:>8.4f} {ens_auc:>8.4f} {ens_acc:>10.4f}")
 
-    # Select ensemble as final model
-    chosen_model = ensemble
-    model_type = 'VotingClassifier'
-    rationale = f"Soft Voting Ensemble selected. LR weight={weights[0]}, RF weight={weights[1]}. Ensemble F1={ens_f1:.4f}"
+    # Smart model selection: use ensemble only if it beats best individual model
+    best_individual_f1 = max(lr_f1, rf_f1)
+    best_individual_name = 'Random Forest' if rf_f1 >= lr_f1 else 'Logistic Regression'
+    best_individual_model = rf_model if rf_f1 >= lr_f1 else lr_model
+
+    if ens_f1 >= best_individual_f1 + ENSEMBLE_THRESHOLD:
+        chosen_model = ensemble
+        model_type = 'VotingClassifier'
+        rationale = (f"Ensemble selected (F1={ens_f1:.4f}) — beats {best_individual_name} "
+                     f"(F1={best_individual_f1:.4f}) by {ens_f1 - best_individual_f1:.4f} > threshold {ENSEMBLE_THRESHOLD}")
+    else:
+        chosen_model = best_individual_model
+        model_type = type(best_individual_model).__name__
+        rationale = (f"{best_individual_name} selected (F1={best_individual_f1:.4f}) — "
+                     f"ensemble (F1={ens_f1:.4f}) didn't beat threshold {ENSEMBLE_THRESHOLD}")
     print(f"\n[OK] {rationale}")
 
     # ---------------------------------------------------------------
@@ -266,7 +322,7 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le):
         'dataset_size': len(y_train) + len(y_test),
         'train_size': len(y_train),
         'test_size': len(y_test),
-        'features': FEATURE_COLS,
+        'features': feature_cols,
         'model_type': model_type,
         'selection_rationale': rationale,
         'ensemble_weights': weights,
@@ -283,32 +339,85 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le):
         'feature_importance': rf_importance.to_dict(orient='records'),
     }
 
-    return chosen_model, scaler, report
+    per_model_metrics = [
+        {'model': 'Logistic Regression', 'f1_weighted': round(lr_f1, 4), 'auc': round(lr_auc, 4), 'accuracy': round(lr_acc, 4)},
+        {'model': 'Random Forest', 'f1_weighted': round(rf_f1, 4), 'auc': round(rf_auc, 4), 'accuracy': round(rf_acc, 4)},
+        {'model': 'Soft Voting Ensemble', 'f1_weighted': round(ens_f1, 4), 'auc': round(ens_auc, 4), 'accuracy': round(ens_acc, 4)},
+    ]
+
+    artifacts = {
+        'y_test': y_test,
+        'final_pred': final_pred,
+        'final_proba': final_proba,
+        'class_names': list(le.classes_),
+        'per_model_metrics': per_model_metrics,
+    }
+    return chosen_model, scaler, report, artifacts
 
 
-def save_artifacts(model, scaler, le, report):
+def save_artifacts(model, scaler, le, report, artifacts, feature_cols):
     """Save all model artifacts to disk."""
     joblib.dump(model, MODEL_DIR / "model.pkl")
     joblib.dump(scaler, MODEL_DIR / "scaler.pkl")
     joblib.dump(le, MODEL_DIR / "label_encoder.pkl")
-    joblib.dump(FEATURE_COLS, MODEL_DIR / "feature_names.pkl")
+    joblib.dump(feature_cols, MODEL_DIR / "feature_names.pkl")
 
     with open(MODEL_DIR / "training_report.json", 'w') as f:
         json.dump(report, f, indent=2, default=str)
+
+    # Save richer evaluation outputs
+    pd.DataFrame(artifacts['per_model_metrics']).to_csv(EVAL_DIR / "model_metrics.csv", index=False)
+
+    y_true = artifacts['y_test']
+    y_pred = artifacts['final_pred']
+    y_proba = artifacts['final_proba']
+
+    classification_dict = classification_report(
+        y_true, y_pred, target_names=artifacts['class_names'], output_dict=True
+    )
+    with open(EVAL_DIR / "classification_report.json", "w") as f:
+        json.dump(classification_dict, f, indent=2)
+
+    confusion_df = pd.DataFrame(
+        confusion_matrix(y_true, y_pred),
+        index=[f"actual_{c}" for c in artifacts['class_names']],
+        columns=[f"pred_{c}" for c in artifacts['class_names']],
+    )
+    confusion_df.to_csv(EVAL_DIR / "confusion_matrix.csv")
+
+    pred_df = pd.DataFrame({
+        "y_true": y_true,
+        "y_pred": y_pred,
+        "pred_proba_positive": y_proba,
+    })
+    pred_df.to_csv(EVAL_DIR / "test_predictions.csv", index=False)
 
     print(f"\n[OK] Artifacts saved to {MODEL_DIR}/")
     print(f"   model.pkl            ({report['model_type']})")
     print(f"   scaler.pkl           (StandardScaler)")
     print(f"   label_encoder.pkl    (LabelEncoder)")
-    print(f"   feature_names.pkl    ({len(FEATURE_COLS)} features)")
+    print(f"   feature_names.pkl    ({len(feature_cols)} features)")
     print(f"   training_report.json (full metrics)")
+    print(f"   evaluation/model_metrics.csv")
+    print(f"   evaluation/classification_report.json")
+    print(f"   evaluation/confusion_matrix.csv")
+    print(f"   evaluation/test_predictions.csv")
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    dry_run = '--dry-run' in sys.argv
+    parser = argparse.ArgumentParser(description="Train employability model with LR + RF soft voting.")
+    parser.add_argument("--dry-run", action="store_true", help="Preview data without training.")
+    parser.add_argument(
+        "--data-path",
+        type=str,
+        default=str(ML_DIR / "data" / "employability" / "combined_employability_v2.csv"),
+        help="CSV path. Defaults to combined_employability_v2.csv.",
+    )
+    args = parser.parse_args()
+    dry_run = args.dry_run
 
     print("=" * 60)
     print("EMPLOYABILITY MODEL TRAINING PIPELINE")
@@ -316,10 +425,10 @@ def main():
     print("=" * 60)
 
     # 1. Load
-    df = load_data()
+    df = load_data(args.data_path)
 
     # 2. Preprocess
-    X, y, le, class_dist = preprocess(df)
+    X, y, le, class_dist, feature_cols = preprocess(df)
 
     if dry_run:
         print("\n--- DRY RUN: Data preview ---")
@@ -335,10 +444,10 @@ def main():
     print(f"\nSplit: {len(X_train)} train / {len(X_test)} test")
 
     # 4. Train & Evaluate
-    model, scaler, report = train_and_evaluate(X_train, X_test, y_train, y_test, le)
+    model, scaler, report, artifacts = train_and_evaluate(X_train, X_test, y_train, y_test, le, feature_cols)
 
     # 5. Save
-    save_artifacts(model, scaler, le, report)
+    save_artifacts(model, scaler, le, report, artifacts, feature_cols)
 
     print(f"\nCompleted: {datetime.now().isoformat()}")
 

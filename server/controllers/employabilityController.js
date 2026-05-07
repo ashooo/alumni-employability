@@ -78,7 +78,7 @@ const ensureSubmissionAccess = (req, res, studentId) => {
   return true;
 };
 
-const buildModelInput = (academicData, degreeName, hardAve, softAve) => {
+const buildModelInput = (academicData, degreeName, hardAve, softAve, internshipExp, certifications) => {
   return {
     CGPA: parseNumeric(academicData.cgpa),
     'Average Prof Grade': parseNumeric(academicData.prof_grade),
@@ -87,7 +87,10 @@ const buildModelInput = (academicData, degreeName, hardAve, softAve) => {
     'Leadership POS': academicData.leader_pos === 'Yes' || academicData.leader_pos === true ? 'Yes' : 'No',
     'Act Member POS': academicData.act_member_pos === 'Yes' || academicData.act_member_pos === true ? 'Yes' : 'No',
     'Soft Skills Ave': parseNumeric(softAve.toFixed(2)),
-    'Hard Skills Ave': parseNumeric(hardAve.toFixed(2))
+    'Hard Skills Ave': parseNumeric(hardAve.toFixed(2)),
+    'Board Exam': parseNumeric(academicData.board_exam),
+    'Internship Experience': parseNumeric(internshipExp.toFixed(1)),
+    'Certifications': Math.round(certifications)
   };
 };
 
@@ -199,6 +202,7 @@ const submitEmployabilitySurvey = async (req, res) => {
       age: snapshot.age || 0,
       year_graduated: snapshot.year_graduated || new Date().getFullYear(),
       degree_id: program.id,
+      board_exam: snapshot.board_exam ? 1 : 0,
       leader_pos: academicData?.leader_pos === true || academicData?.leader_pos === 'Yes',
       act_member_pos: academicData?.act_member_pos === true || academicData?.act_member_pos === 'Yes'
     };
@@ -232,11 +236,38 @@ const submitEmployabilitySurvey = async (req, res) => {
       SOFT_SKILL_TARGET_COUNT
     );
 
+    // Derive synthetic features for model consistency (1-5 scale)
+    // Internship logic: OJT performace + leadership bonus
+    let internshipExp = 2.0; // Default
+    if (dbAcademicData.ojt_grade <= 1.3) internshipExp = 4.5;
+    else if (dbAcademicData.ojt_grade <= 1.6) internshipExp = 4.0;
+    else if (dbAcademicData.ojt_grade <= 1.9) internshipExp = 3.5;
+    else if (dbAcademicData.ojt_grade <= 2.2) internshipExp = 3.0;
+    else if (dbAcademicData.ojt_grade <= 2.5) internshipExp = 2.5;
+    else internshipExp = 1.5;
+
+    if (dbAcademicData.leader_pos) internshipExp += 0.4;
+    if (dbAcademicData.act_member_pos) internshipExp += 0.3;
+    internshipExp = Math.min(5.0, Math.max(1.0, internshipExp));
+
+    // Certifications logic: Board exam + Skills + Program
+    let certifications = 1.0; // Baseline
+    if (dbAcademicData.board_exam) certifications += 1.2;
+    if (adjustedHardAve >= 8.0) certifications += 1.0;
+    else if (adjustedHardAve >= 6.0) certifications += 0.5;
+
+    const techPrograms = ['BSCS', 'BSIT', 'BSECE'];
+    if (techPrograms.includes(program.code)) certifications += 0.6;
+    if (adjustedSoftAve >= 8.0) certifications += 0.5;
+    certifications = Math.min(5, Math.max(1, Math.round(certifications)));
+
     const modelInput = buildModelInput(
       dbAcademicData,
       program.name,
       adjustedHardAve,
-      adjustedSoftAve
+      adjustedSoftAve,
+      internshipExp,
+      certifications
     );
 
     let mlResult;

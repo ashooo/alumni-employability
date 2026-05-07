@@ -417,8 +417,8 @@ const submitEmployabilitySurvey = async ({
       prof_grade: parseOptionalFloat(academicData.prof_grade),
       elec_grade: parseOptionalFloat(academicData.elec_grade),
       ojt_grade: parseOptionalFloat(academicData.ojt_grade),
-      leader_pos: parseBooleanFlag(academicData.leader_pos),
-      act_member_pos: parseBooleanFlag(academicData.act_member_pos),
+      leader_pos: parseOptionalInt(academicData.leader_pos),
+      act_member_pos: parseOptionalInt(academicData.act_member_pos),
       soft_skills_ave: parseOptionalFloat(academicData.soft_skills_ave),
       hard_skills_ave: parseOptionalFloat(academicData.hard_skills_ave)
     }

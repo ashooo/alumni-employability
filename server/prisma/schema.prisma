@@ -181,10 +181,13 @@ model AcademicSnapshot {
   prof_grade       Decimal?  @db.Decimal(5, 2)
   elec_grade       Decimal?  @db.Decimal(5, 2)
   ojt_grade        Decimal?  @db.Decimal(5, 2)
-  leader_pos       Boolean?  @default(false)
-  act_member_pos   Boolean?  @default(false)
+  leader_pos       Int?
+  act_member_pos   Int?
   soft_skills_ave  Decimal?  @db.Decimal(5, 2)
   hard_skills_ave  Decimal?  @db.Decimal(5, 2)
+  internship_experience Decimal? @db.Decimal(3, 1)
+  certifications   Int?
+  board_exam       Int?      @db.TinyInt
   is_employable    Boolean?  @default(false)
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
@@ -193,11 +196,29 @@ model AcademicSnapshot {
   program          Program          @relation(fields: [program_id], references: [id])
   survey_submissions SurveySubmission[]
   ml_predictions   MlPrediction[]
+  skill_values     AcademicSnapshotSkill[]
 
   @@index([alumni_profile_id])
   @@index([program_id])
   @@index([year_graduated])
   @@map("academic_snapshot")
+}
+
+model AcademicSnapshotSkill {
+  id                   Int      @id @default(autoincrement())
+  academic_snapshot_id Int
+  skill_name           String   @db.VarChar(150)
+  skill_value          Decimal? @db.Decimal(6, 2)
+  source_column        String?  @db.VarChar(150)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  academic_snapshot    AcademicSnapshot @relation(fields: [academic_snapshot_id], references: [id], onDelete: Cascade)
+
+  @@index([academic_snapshot_id])
+  @@index([skill_name])
+  @@unique([academic_snapshot_id, skill_name])
+  @@map("academic_snapshot_skill")
 }
 
 model Competency {

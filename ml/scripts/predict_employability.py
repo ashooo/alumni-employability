@@ -17,10 +17,10 @@ warnings.filterwarnings("ignore")
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models" / "employability"
 
-# The 8 features the model was trained on
 FEATURE_COLS = [
     'CGPA', 'Average Prof Grade', 'Average Elec Grade', 'OJT Grade',
-    'Leadership POS', 'Act Member POS', 'Soft Skills Ave', 'Hard Skills Ave'
+    'Leadership POS', 'Act Member POS', 'Soft Skills Ave', 'Hard Skills Ave',
+    'Board Exam', 'Internship Experience', 'Certifications'
 ]
 
 BINARY_COLS = ['Leadership POS', 'Act Member POS']
@@ -82,22 +82,9 @@ def prepare_input(data, feature_names):
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
 
-    # --- Grade conversion: 1.0-5.0 GPA scale → percentage ---
-    # Formula: percentage = 100 - (grade - 1.0) * 12.5
-    grade_cols = ['Average Prof Grade', 'Average Elec Grade', 'OJT Grade']
-    for col in grade_cols:
-        if col in df.columns:
-            df[col] = df[col].apply(
-                lambda x: 100.0 - (x - 1.0) * 12.5 if 0 < x <= 5.0 else x
-            )
-
-    # --- Skill scale conversion: 1-10 → 10-100 ---
-    skill_cols = ['Soft Skills Ave', 'Hard Skills Ave']
-    for col in skill_cols:
-        if col in df.columns:
-            df[col] = df[col].apply(
-                lambda x: x * 10.0 if 0 < x <= 10.0 else x
-            )
+    # NOTE: No scale conversions applied here. The model was trained on raw
+    # values (Philippine 1-5 GPA scale, raw skill averages), so predictions
+    # must use the same scale to match the scaler's training distribution.
 
     return df
 

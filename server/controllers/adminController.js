@@ -10,6 +10,19 @@ const { writeAuditLogWithReq } = require('../utils/auditLog');
 const VALID_IMPORT_STATUSES = new Set(['active', 'inactive', 'graduated']);
 const EMPLOYED_STATUSES = ['EMPLOYED', 'SELF_EMPLOYED', 'FREELANCER'];
 const UNKNOWN_COLLEGE_CACHE_KEY = '__unknown__';
+const EXCLUDED_ANALYTICS_TEMPLATE_KEYS = ['historical_import'];
+
+const analyticsSubmissionFilter = {
+  template: {
+    template_key: {
+      notIn: EXCLUDED_ANALYTICS_TEMPLATE_KEYS
+    }
+  }
+};
+
+const analyticsEmploymentOutcomeFilter = {
+  submission: analyticsSubmissionFilter
+};
 
 const normalizeGenderBucket = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -875,6 +888,7 @@ const getProgramAggregates = async (refactorPrisma, alumniWhere) => {
   const employedWhere = combineWhere(alumniWhere, {
     employment_outcomes: {
       some: {
+        ...analyticsEmploymentOutcomeFilter,
         employment_status: {
           in: EMPLOYED_STATUSES
         }
@@ -955,6 +969,7 @@ const getBatchTrendData = async (refactorPrisma, alumniWhere) => {
   const employedWhere = combineWhere(alumniWhere, {
     employment_outcomes: {
       some: {
+        ...analyticsEmploymentOutcomeFilter,
         employment_status: {
           in: EMPLOYED_STATUSES
         }
@@ -987,6 +1002,7 @@ const getBatchTrendData = async (refactorPrisma, alumniWhere) => {
           batch_year: true,
           employment_outcomes: {
             where: {
+              ...analyticsEmploymentOutcomeFilter,
               employment_status: {
                 in: EMPLOYED_STATUSES
               }
@@ -1600,7 +1616,8 @@ const getAnalytics = async (req, res) => {
       where: combineWhere(alumniWhere, {
         survey_submissions: {
           some: {
-            status: 'COMPLETED'
+            status: 'COMPLETED',
+            ...analyticsSubmissionFilter
           }
         }
       })
@@ -1610,6 +1627,7 @@ const getAnalytics = async (req, res) => {
       where: combineWhere(alumniWhere, {
         employment_outcomes: {
           some: {
+            ...analyticsEmploymentOutcomeFilter,
             employment_status: {
               in: EMPLOYED_STATUSES
             }
@@ -1618,9 +1636,10 @@ const getAnalytics = async (req, res) => {
       })
     });
 
-    const outcomeWhere = alumniWhere
-      ? { alumni_profile: alumniWhere }
-      : undefined;
+    const outcomeWhere = combineWhere(
+      alumniWhere ? { alumni_profile: alumniWhere } : undefined,
+      analyticsEmploymentOutcomeFilter
+    );
 
     const totalOutcomes = await refactorPrisma.employmentOutcome.count({
       where: outcomeWhere
@@ -1709,7 +1728,8 @@ const getReports = async (req, res) => {
         where: combineWhere(alumniWhere, {
           survey_submissions: {
             some: {
-              status: 'COMPLETED'
+              status: 'COMPLETED',
+              ...analyticsSubmissionFilter
             }
           }
         })

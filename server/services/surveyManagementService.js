@@ -33,6 +33,9 @@ const listTemplates = async (filters = {}) => {
     where,
     orderBy: [{ kind: 'asc' }, { created_at: 'desc' }],
     include: {
+      program: {
+        select: { id: true, code: true, name: true }
+      },
       _count: {
         select: {
           template_questions: true,
@@ -49,6 +52,8 @@ const listTemplates = async (filters = {}) => {
     description: t.description,
     kind: t.kind,
     path_key: t.path_key,
+    program_id: t.program_id,
+    program: t.program,
     is_followup: t.is_followup,
     target_months: t.target_months,
     trigger_condition: t.trigger_condition,
@@ -66,6 +71,9 @@ const getTemplateWithQuestions = async (templateId) => {
   const template = await prisma.surveyTemplate.findUnique({
     where: { id: Number(templateId) },
     include: {
+      program: {
+        select: { id: true, code: true, name: true }
+      },
       template_questions: {
         orderBy: [{ section_key: 'asc' }, { display_order: 'asc' }],
         include: {
@@ -95,6 +103,8 @@ const getTemplateWithQuestions = async (templateId) => {
     description: template.description,
     kind: template.kind,
     path_key: template.path_key,
+    program_id: template.program_id,
+    program: template.program,
     is_followup: template.is_followup,
     target_months: template.target_months,
     trigger_condition: template.trigger_condition,
@@ -107,6 +117,8 @@ const getTemplateWithQuestions = async (templateId) => {
       question_id: tq.question_id,
       display_order: tq.display_order,
       is_required: tq.is_required,
+      is_model_critical: tq.is_model_critical,
+      model_critical_key: tq.model_critical_key,
       section_key: tq.section_key,
       question_key: tq.question.question_key,
       question_text: tq.question.question_text,
@@ -146,6 +158,7 @@ const createTemplate = async (data) => {
       description: data.description || null,
       kind: data.kind || 'GENERAL',
       path_key: data.path_key || 'INITIAL',
+      program_id: data.program_id ? Number(data.program_id) : null,
       is_followup: Boolean(data.is_followup),
       target_months: data.target_months ? Number(data.target_months) : null,
       trigger_condition: data.trigger_condition || null,
@@ -170,6 +183,8 @@ const updateTemplate = async (templateId, data) => {
   if (data.description !== undefined) updateData.description = data.description;
   if (data.kind !== undefined) updateData.kind = data.kind;
   if (data.path_key !== undefined) updateData.path_key = data.path_key;
+  if (data.program_id !== undefined)
+    updateData.program_id = data.program_id ? Number(data.program_id) : null;
   if (data.is_followup !== undefined) updateData.is_followup = Boolean(data.is_followup);
   if (data.target_months !== undefined)
     updateData.target_months = data.target_months ? Number(data.target_months) : null;
@@ -249,6 +264,7 @@ const cloneTemplate = async (sourceTemplateId, newKey, newName) => {
         description: source.description,
         kind: source.kind,
         path_key: source.path_key,
+        program_id: source.program_id,
         is_followup: source.is_followup,
         target_months: source.target_months,
         trigger_condition: source.trigger_condition,
@@ -263,6 +279,8 @@ const cloneTemplate = async (sourceTemplateId, newKey, newName) => {
           question_id: tq.question_id,
           display_order: tq.display_order,
           is_required: tq.is_required,
+          is_model_critical: tq.is_model_critical,
+          model_critical_key: tq.model_critical_key,
           section_key: tq.section_key
         }
       });
@@ -489,6 +507,14 @@ const addQuestionToTemplate = async (templateId, questionId, linkData = {}) => {
         linkData.is_required !== undefined
           ? Boolean(linkData.is_required)
           : undefined,
+      is_model_critical:
+        linkData.is_model_critical !== undefined
+          ? Boolean(linkData.is_model_critical)
+          : undefined,
+      model_critical_key:
+        linkData.model_critical_key !== undefined
+          ? linkData.model_critical_key
+          : undefined,
       section_key: linkData.section_key !== undefined ? linkData.section_key : undefined
     },
     create: {
@@ -499,6 +525,9 @@ const addQuestionToTemplate = async (templateId, questionId, linkData = {}) => {
           ? Number(linkData.display_order)
           : (maxOrder._max.display_order || 0) + 1,
       is_required: linkData.is_required !== undefined ? Boolean(linkData.is_required) : true,
+      is_model_critical:
+        linkData.is_model_critical !== undefined ? Boolean(linkData.is_model_critical) : false,
+      model_critical_key: linkData.model_critical_key || null,
       section_key: linkData.section_key || null
     }
   });

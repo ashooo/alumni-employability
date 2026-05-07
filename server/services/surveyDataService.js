@@ -25,7 +25,7 @@ const DEFAULT_SURVEY_SECTIONS = [
         key: 'current_employment_status',
         text: 'Are you currently employed?',
         type: 'SINGLE_SELECT',
-        options: ['Employed', 'Unemployed', 'Self-Employed']
+        options: ['Employed', 'Unemployed']
       },
       {
         key: 'current_job_title',
@@ -117,17 +117,6 @@ const normalizeEmploymentStatusAnswer = (value) => {
       return 'EMPLOYED';
     case 'unemployed':
       return 'UNEMPLOYED';
-    case 'self-employed':
-    case 'self employed':
-    case 'self_employed':
-      return 'SELF_EMPLOYED';
-    case 'freelancer':
-      return 'SELF_EMPLOYED';
-    case 'further studies':
-    case 'further studying':
-      return 'FURTHER_STUDYING';
-    case 'other':
-      return 'SELF_EMPLOYED';
     default:
       return null;
   }
@@ -323,29 +312,68 @@ const findEmploymentGatewayAnswer = (submissions) => {
   return null;
 };
 
-const getSurveyDefinition = async (pathKey = 'INITIAL') => {
+const getSurveyDefinition = async (pathKey = 'INITIAL', programCode = null) => {
   const refactorPrisma = requireRefactorPrisma();
 
   // Normalize pathKey
   const normalizedPath = String(pathKey || 'INITIAL').toUpperCase();
 
-  // Prefer active templates for this path that already have linked questions.
-  let template = await refactorPrisma.surveyTemplate.findFirst({
-    where: {
-      path_key: normalizedPath,
-      is_active: true,
-      template_questions: {
-        some: {}
-      }
-    },
-    orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }]
-  });
+  // Resolve target program, when provided.
+  let programId = null;
+  if (programCode) {
+    const program = await refactorPrisma.program.findFirst({
+      where: { code: String(programCode).trim().toUpperCase() },
+      select: { id: true }
+    });
+    programId = program?.id || null;
+  }
 
-  // Fallback to active path template even when still empty (for newly created drafts).
+  // Prefer active program-specific templates for this path that already have linked questions.
+  let template = null;
+  if (programId) {
+    template = await refactorPrisma.surveyTemplate.findFirst({
+      where: {
+        path_key: normalizedPath,
+        program_id: programId,
+        is_active: true,
+        template_questions: { some: {} }
+      },
+      orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }]
+    });
+  }
+
+  // Prefer active templates for this path that already have linked questions.
   if (!template) {
     template = await refactorPrisma.surveyTemplate.findFirst({
       where: {
         path_key: normalizedPath,
+        program_id: null,
+        is_active: true,
+        template_questions: {
+          some: {}
+        }
+      },
+      orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }]
+    });
+  }
+
+  // Fallback to active path template even when still empty (for newly created drafts).
+  if (!template && programId) {
+    template = await refactorPrisma.surveyTemplate.findFirst({
+      where: {
+        path_key: normalizedPath,
+        program_id: programId,
+        is_active: true
+      },
+      orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }]
+    });
+  }
+
+  if (!template) {
+    template = await refactorPrisma.surveyTemplate.findFirst({
+      where: {
+        path_key: normalizedPath,
+        program_id: null,
         is_active: true
       },
       orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }]
@@ -444,7 +472,7 @@ const getSurveyDefinition = async (pathKey = 'INITIAL') => {
     path_key: templateWithQuestions.path_key,
     branching: {
       decision_question_key: 'current_employment_status',
-      employed_values: ['Employed', 'Self-Employed'],
+      employed_values: ['Employed'],
       unemployed_values: ['Unemployed']
     }
   };
@@ -574,7 +602,13 @@ const getSurveyResponses = async (studentId) => {
         ],
         include: {
           template: true,
-          academic_snapshot: true,
+          academic_snapshot: {
+            include: {
+              skill_values: {
+                orderBy: [{ skill_name: 'asc' }]
+              }
+            }
+          },
           submission_competencies: {
             where: {
               selected: true
@@ -639,6 +673,15 @@ const getSurveyResponses = async (studentId) => {
         id: submission.id,
         branch_path: submission.branch_path || null,
         academic_snapshot: submission.academic_snapshot || null,
+        academic_snapshot_skills: (submission.academic_snapshot?.skill_values || []).map((skill) => ({
+          id: skill.id,
+          skill_name: skill.skill_name,
+          skill_value:
+            skill.skill_value === null || skill.skill_value === undefined
+              ? null
+              : Number(skill.skill_value),
+          source_column: skill.source_column || null
+        })),
         survey_answers: submission.survey_answers.map((answer) => {
           const mapped = mapAnswerValue(answer);
           return {
@@ -899,7 +942,7 @@ const getSurveyFlowStatus = async (studentId, options = {}) => {
   } else {
     resolvedPath = 'EMPLOYED';
     const hasEmployedSurvey = Boolean(employedSubmission);
-    const needsEmployedSurvey = availablePaths.has('EMPLOYED') && !hasEmployedSurvey;
+    const needsEmployedSurvey = !hasEmployedSurvey;
 
     if (needsEmployedSurvey) {
       status = 'pending_employed_survey';

@@ -13,8 +13,8 @@ const { getPrisma } = require('../config/db');
 
 const getSurvey = async (req, res) => {
   try {
-    const { path } = req.query;
-    const survey = await getSurveyDefinition(path);
+    const { path, programCode } = req.query;
+    const survey = await getSurveyDefinition(path, programCode);
     return res.json({ categories: survey.categories });
   } catch (error) {
     console.error('Get survey error:', error);
@@ -32,8 +32,8 @@ const getVersions = async (req, res) => {
 
 const getCollegeSurvey = async (req, res) => {
   try {
-    const { path } = req.query;
-    const survey = await getSurveyDefinition(path);
+    const { path, programCode } = req.query;
+    const survey = await getSurveyDefinition(path, programCode);
     return res.json({
       survey: survey.categories,
       version: survey.version,
@@ -269,12 +269,49 @@ const createQuestionHandler = async (req, res) => {
 
 const updateQuestionHandler = async (req, res) => {
   try {
+    const prisma = getPrisma();
+    const questionId = Number(req.params.id);
+    const intendsSemanticChange =
+      req.body?.question_type !== undefined ||
+      req.body?.options !== undefined;
+
+    if (intendsSemanticChange) {
+      const criticalLinks = await prisma.templateQuestion.findMany({
+        where: {
+          question_id: questionId,
+          is_model_critical: true
+        },
+        include: {
+          template: {
+            select: { id: true, template_key: true, path_key: true, program_id: true }
+          }
+        }
+      });
+
+      if (criticalLinks.length > 0 && req.body?.ack_model_impact !== true) {
+        return res.status(409).json({
+          error: 'This question is marked as model-critical. Confirm impact before changing semantics.',
+          requires_ack_model_impact: true,
+          affected_templates: criticalLinks.map((link) => ({
+            template_id: link.template.id,
+            template_key: link.template.template_key,
+            path_key: link.template.path_key,
+            program_id: link.template.program_id,
+            model_critical_key: link.model_critical_key || null
+          }))
+        });
+      }
+    }
+
     const question = await mgmt.updateQuestion(req.params.id, req.body);
     await writeAuditLogWithReq(getPrisma(), req, {
       action: 'update_question',
       entityType: 'survey_question',
       entityId: question?.id,
-      metadata: { question_key: question?.question_key }
+      metadata: {
+        question_key: question?.question_key,
+        ack_model_impact: req.body?.ack_model_impact === true
+      }
     });
     return res.json(question);
   } catch (error) {
@@ -307,7 +344,14 @@ const deleteQuestionHandler = async (req, res) => {
 
 const addQuestionToTemplateHandler = async (req, res) => {
   try {
-    const { question_id, display_order, is_required, section_key } = req.body;
+    const {
+      question_id,
+      display_order,
+      is_required,
+      section_key,
+      is_model_critical,
+      model_critical_key
+    } = req.body;
 
     if (!question_id) {
       return res.status(400).json({ error: 'question_id is required' });
@@ -316,13 +360,20 @@ const addQuestionToTemplateHandler = async (req, res) => {
     const link = await mgmt.addQuestionToTemplate(
       req.params.id,
       question_id,
-      { display_order, is_required, section_key }
+      { display_order, is_required, section_key, is_model_critical, model_critical_key }
     );
     await writeAuditLogWithReq(getPrisma(), req, {
       action: 'add_question_to_template',
       entityType: 'survey_template',
       entityId: req.params.id,
-      metadata: { question_id, display_order, is_required, section_key }
+      metadata: {
+        question_id,
+        display_order,
+        is_required,
+        section_key,
+        is_model_critical: Boolean(is_model_critical),
+        model_critical_key: model_critical_key || null
+      }
     });
     return res.status(201).json(link);
   } catch (error) {

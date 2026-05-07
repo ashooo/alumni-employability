@@ -142,6 +142,7 @@ model Program {
   college          College           @relation(fields: [college_id], references: [id])
   alumni_profiles  AlumniProfile[]
   academic_snapshots AcademicSnapshot[]
+  survey_templates SurveyTemplate[]
 
   @@index([college_id])
   @@map("program")
@@ -249,6 +250,7 @@ model SurveyTemplate {
   description        String?             @db.Text
   kind               SurveyTemplateKind
   path_key           SurveyPath
+  program_id         Int?
   is_followup        Boolean             @default(false)
   target_months      Int?
   trigger_condition  Json?
@@ -259,9 +261,11 @@ model SurveyTemplate {
   template_questions TemplateQuestion[]
   survey_submissions SurveySubmission[]
   triggered_followups FollowupSchedule[] @relation("FollowupTargetTemplate")
+  program            Program?            @relation(fields: [program_id], references: [id])
 
   @@index([kind])
   @@index([path_key])
+  @@index([program_id])
   @@map("survey_template")
 }
 
@@ -303,6 +307,8 @@ model TemplateQuestion {
   question_id     Int
   display_order   Int            @default(0)
   is_required     Boolean        @default(true)
+  is_model_critical Boolean      @default(false)
+  model_critical_key String?     @db.VarChar(100)
   section_key     String?        @db.VarChar(100)
   created_at      DateTime       @default(now())
   updated_at      DateTime       @updatedAt

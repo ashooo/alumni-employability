@@ -8,7 +8,19 @@ const JOB_MATCHING_SCRIPT = 'scripts/predict_job_matching.py';
 const JOB_MATCHING_TIMEOUT_MS = 180000;
 const JOB_MATCHING_MODEL_NAME = 'job_matcher';
 const JOB_MATCHING_MODEL_VERSION = 'jobbert_v2_onnx';
-const MAX_TOP_N = 20;
+const MAX_TOP_N = 200;
+const INTERNAL_WIDE_TOP_N = 120;
+const { PROGRAM_TITLE_MAPPING } = require('../config/programTitleMapping');
+const PROGRAM_FALLBACK_KEYWORDS = {
+  BSA: ['account', 'audit', 'tax', 'bookkeep', 'finance'],
+  BSECE: ['electronics', 'electrical', 'telecom', 'network', 'circuit', 'embedded'],
+  BSED: ['teacher', 'education', 'instructor', 'curriculum', 'language'],
+  BSN: ['nurse', 'nursing', 'clinical', 'patient', 'health'],
+  BSBA_ENTREP: ['business', 'operations', 'entrepreneur', 'development', 'management'],
+  BSBA_MARKETING: ['marketing', 'sales', 'brand', 'advertising', 'market'],
+  BSCS: ['software', 'developer', 'programmer', 'data', 'machine learning', 'ai'],
+  BSIT: ['systems', 'network', 'it support', 'database', 'information security', 'web']
+};
 
 const CANDIDATE_KIND_PRIORITY = {
   HARD_SKILL: 0,
@@ -87,6 +99,95 @@ const getJobMatchingRuntimeStatus = () => {
     modelName: JOB_MATCHING_MODEL_NAME,
     modelVersion: JOB_MATCHING_MODEL_VERSION,
     missingPaths: missingPaths.map((filePath) => path.relative(ML_ROOT, filePath).replace(/\\/g, '/'))
+  };
+};
+
+
+const normalizeTitleKey = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const normalizeProgramKey = (value) =>
+  String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^\w]+/g, '_');
+
+const getProgramTitleSet = (programCode) => {
+  if (!programCode) {
+    return new Set();
+  }
+  const mapping = PROGRAM_TITLE_MAPPING || {};
+  const normalizedProgram = normalizeProgramKey(programCode);
+  const aliases = new Set([normalizedProgram]);
+  if (normalizedProgram === 'BSBA_ENTREPRENEURSHIP') aliases.add('BSBA_ENTREP');
+  if (normalizedProgram === 'BSBA_MARKETING_MANAGEMENT') aliases.add('BSBA_MARKETING');
+  if (normalizedProgram === 'BSED_FILIPINO' || normalizedProgram === 'BSED_ENGLISH') aliases.add('BSED');
+  if (normalizedProgram === 'BSED_FILIPINO' || normalizedProgram === 'BSED_ENGLISH') aliases.add(normalizedProgram);
+  if (normalizedProgram === 'BSBA_ENTREP') aliases.add('BSBA_ENTREPRENEURSHIP');
+  if (normalizedProgram === 'BSBA_MARKETING') aliases.add('BSBA_MARKETING_MANAGEMENT');
+
+  const titles = [];
+  for (const alias of aliases) {
+    const sourceTitles = Array.isArray(mapping[alias]) ? mapping[alias] : [];
+    for (const title of sourceTitles) {
+      const normalizedTitle = normalizeTitleKey(title);
+      if (normalizedTitle) {
+        titles.push(normalizedTitle);
+      }
+    }
+  }
+
+  return new Set(titles);
+};
+
+const getProgramTitleList = (programCode) => Array.from(getProgramTitleSet(programCode));
+
+const splitMatchesByProgramField = (matches, programCode) => {
+  const allMatches = Array.isArray(matches) ? matches : [];
+  const titleSet = getProgramTitleSet(programCode);
+  const normalizedProgram = normalizeProgramKey(programCode);
+  const fallbackProgram =
+    normalizedProgram === 'BSED_FILIPINO' || normalizedProgram === 'BSED_ENGLISH'
+      ? 'BSED'
+      : normalizedProgram;
+  const fallbackKeywords = PROGRAM_FALLBACK_KEYWORDS[fallbackProgram] || [];
+
+  if (titleSet.size === 0 && fallbackKeywords.length === 0) {
+    return {
+      matches_all_titles: allMatches,
+      matches_in_field: [],
+      total_matches_all_titles: allMatches.length,
+      total_matches_in_field: 0
+    };
+  }
+
+  let inField = allMatches.filter((match) => {
+    const title = normalizeTitleKey(match?.title || '');
+    if (!title) return false;
+    if (titleSet.has(title)) return true;
+    for (const mappedTitle of titleSet) {
+      if (title.includes(mappedTitle) || mappedTitle.includes(title)) {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  if (inField.length === 0 && fallbackKeywords.length > 0) {
+    inField = allMatches.filter((match) => {
+      const title = normalizeTitleKey(match?.title || '');
+      return fallbackKeywords.some((kw) => title.includes(normalizeTitleKey(kw)));
+    });
+  }
+
+  return {
+    matches_all_titles: allMatches,
+    matches_in_field: inField,
+    total_matches_all_titles: allMatches.length,
+    total_matches_in_field: inField.length
   };
 };
 
@@ -185,7 +286,7 @@ const buildCandidateProfileFromSubmission = (submission) => {
   };
 };
 
-const runJobMatchingPrediction = async ({ candidateSkills, topN }) => {
+const runJobMatchingPrediction = async ({ candidateSkills, topN, candidateTitles }) => {
   const runtimeStatus = getJobMatchingRuntimeStatus();
   if (!runtimeStatus.ready) {
     const error = new Error(
@@ -206,7 +307,8 @@ const runJobMatchingPrediction = async ({ candidateSkills, topN }) => {
     scriptPath: JOB_MATCHING_SCRIPT,
     input: {
       candidate_skills: normalizedSkills,
-      top_n: clampTopN(topN)
+      top_n: clampTopN(topN),
+      candidate_titles: Array.isArray(candidateTitles) && candidateTitles.length > 0 ? candidateTitles : undefined
     },
     timeoutMs: JOB_MATCHING_TIMEOUT_MS
   });
@@ -280,17 +382,45 @@ const generateJobMatchingPrediction = async ({ studentId, topN, candidateSkills 
     throw error;
   }
 
-  const prediction = await runJobMatchingPrediction({
+  const requestedTopN = clampTopN(topN, 10);
+  const programTitles = getProgramTitleList(alumniProfile?.current_program?.code);
+
+  const allTitlesPrediction = await runJobMatchingPrediction({
     candidateSkills: resolvedSkills,
-    topN
+    topN: requestedTopN
   });
+  let inFieldMatches = [];
+  if (programTitles.length > 0) {
+    const inFieldPrediction = await runJobMatchingPrediction({
+      candidateSkills: resolvedSkills,
+      topN: requestedTopN,
+      candidateTitles: programTitles
+    });
+    inFieldMatches = Array.isArray(inFieldPrediction.matches) ? inFieldPrediction.matches : [];
+  } else {
+    const splitMatches = splitMatchesByProgramField(
+      allTitlesPrediction.matches,
+      alumniProfile?.current_program?.code
+    );
+    inFieldMatches = splitMatches.matches_in_field || [];
+  }
+  const enrichedPrediction = {
+    ...allTitlesPrediction,
+    top_n: requestedTopN,
+    matches: (allTitlesPrediction.matches || []).slice(0, requestedTopN),
+    total_matches: (allTitlesPrediction.matches || []).slice(0, requestedTopN).length,
+    matches_all_titles: (allTitlesPrediction.matches || []).slice(0, requestedTopN),
+    total_matches_all_titles: (allTitlesPrediction.matches || []).slice(0, requestedTopN).length,
+    matches_in_field: inFieldMatches.slice(0, requestedTopN),
+    total_matches_in_field: inFieldMatches.slice(0, requestedTopN).length
+  };
 
   const storedPrediction = await persistJobMatchingPrediction({
     alumniProfileId: alumniProfile.id,
     academicSnapshotId: candidateProfile?.academicSnapshotId || null,
     submissionId: candidateProfile?.submissionId || null,
     candidateSkills: resolvedSkills,
-    prediction
+    prediction: enrichedPrediction
   });
 
   return {
@@ -300,7 +430,7 @@ const generateJobMatchingPrediction = async ({ studentId, topN, candidateSkills 
     academicSnapshotId: candidateProfile?.academicSnapshotId || null,
     candidateSkills: resolvedSkills,
     predictionId: storedPrediction.id,
-    prediction
+    prediction: enrichedPrediction
   };
 };
 
@@ -330,6 +460,8 @@ const getLatestJobMatchingPrediction = async (studentId) => {
   const output = prediction.output_json || {};
   const inputSnapshot = prediction.input_snapshot || {};
   const matches = Array.isArray(output.matches) ? output.matches : [];
+  const matchesInField = Array.isArray(output.matches_in_field) ? output.matches_in_field : [];
+  const matchesAllTitles = Array.isArray(output.matches_all_titles) ? output.matches_all_titles : matches;
 
   return {
     id: prediction.id,
@@ -342,10 +474,14 @@ const getLatestJobMatchingPrediction = async (studentId) => {
       : Number(prediction.confidence),
     topN: output.top_n ?? inputSnapshot.top_n ?? matches.length,
     totalMatches: output.total_matches ?? matches.length,
+    totalMatchesInField: output.total_matches_in_field ?? matchesInField.length,
+    totalMatchesAllTitles: output.total_matches_all_titles ?? matchesAllTitles.length,
     candidateSkills: normalizeCandidateSkills(
       inputSnapshot.candidate_skills || output.candidate_skills || []
     ),
     matches,
+    matches_in_field: matchesInField,
+    matches_all_titles: matchesAllTitles,
     sourceSubmissionId: prediction.submission_id,
     academicSnapshotId: prediction.academic_snapshot_id,
     predictionDate: prediction.created_at,

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useEffect, useMemo, useState } from 'react';
+import { DEFAULT_LOGO_URL, resolveLogoUrl } from '@/lib/systemBranding';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -26,14 +27,14 @@ export default function SuperAdminSettings() {
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [branding, setBranding] = useState<BrandingSettings>({ logoUrl: '/plp_logo.png' });
+  const [branding, setBranding] = useState<BrandingSettings>({ logoUrl: DEFAULT_LOGO_URL });
   const [retention, setRetention] = useState<RetentionSettings>({
     auditLogDays: 365,
     backupRetentionDays: 30,
     deletedRecordsRetentionDays: 90
   });
 
-  const logoPreview = useMemo(() => branding.logoUrl || '/plp_logo.png', [branding.logoUrl]);
+  const logoPreview = useMemo(() => resolveLogoUrl(branding.logoUrl), [branding.logoUrl]);
 
   const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
 
@@ -199,7 +200,16 @@ export default function SuperAdminSettings() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-4 items-start">
-                <div className="h-28 w-28 rounded-xl border bg-muted/30 flex items-center justify-center overflow-hidden">
+                <div
+                  className="h-28 w-28 rounded-xl border flex items-center justify-center overflow-hidden"
+                  style={{
+                    backgroundColor: 'hsl(var(--muted) / 0.2)',
+                    backgroundImage:
+                      'linear-gradient(45deg, hsl(var(--muted) / 0.45) 25%, transparent 25%), linear-gradient(-45deg, hsl(var(--muted) / 0.45) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, hsl(var(--muted) / 0.45) 75%), linear-gradient(-45deg, transparent 75%, hsl(var(--muted) / 0.45) 75%)',
+                    backgroundSize: '14px 14px',
+                    backgroundPosition: '0 0, 0 7px, 7px -7px, -7px 0px'
+                  }}
+                >
                   {logoPreview ? (
                     <img src={logoPreview} alt="System logo preview" className="h-full w-full object-contain" />
                   ) : (
@@ -211,14 +221,14 @@ export default function SuperAdminSettings() {
                     <Label>Logo URL</Label>
                     <Input
                       className="mt-1.5"
-                      placeholder="https://your-domain/logo.png"
+                      placeholder="Paste image URL (https://...) or upload below"
                       value={branding.logoUrl}
                       onChange={(e) => setBranding(prev => ({ ...prev, logoUrl: e.target.value }))}
                     />
                   </div>
                   <div
                     className={`border-2 border-dashed rounded-xl p-4 transition-colors ${
-                      dragOver ? 'border-primary bg-primary/5' : 'border-border'
+                      dragOver ? 'border-primary bg-transparent' : 'border-border bg-transparent'
                     }`}
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                     onDragLeave={() => setDragOver(false)}

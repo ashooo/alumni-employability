@@ -68,8 +68,7 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
     email: '',
     action: 'all',
     status: 'all',
-    ipAddress: '',
-    search: ''
+    ipAddress: ''
   });
 
   const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
@@ -120,7 +119,6 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
       if (filters.email.trim()) query.set('email', filters.email.trim());
       if (filters.status !== 'all') query.set('status', filters.status);
       if (filters.ipAddress.trim()) query.set('ipAddress', filters.ipAddress.trim());
-      if (filters.search.trim()) query.set('search', filters.search.trim());
 
       const mapped = mapActionFilter(filters.action);
       // server supports single action filter; send the first and rely on search/status for now
@@ -237,16 +235,7 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
               onChange={(e) => setFilters((p) => ({ ...p, ipAddress: e.target.value }))}
             />
           </div>
-          <div>
-            <Label>Search</Label>
-            <Input
-              placeholder="search action/details/email"
-              value={filters.search}
-              onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))}
-            />
-          </div>
-
-          <div className="flex gap-2 md:col-span-6">
+          <div className="flex gap-2 md:justify-end">
             <Button
               onClick={() => {
                 setPage(1);
@@ -259,7 +248,7 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
             <Button
               variant="outline"
               onClick={() => {
-                setFilters({ datePreset: '7d', email: '', action: 'all', status: 'all', ipAddress: '', search: '' });
+                setFilters({ datePreset: '7d', email: '', action: 'all', status: 'all', ipAddress: '' });
                 setPage(1);
               }}
               disabled={loading}

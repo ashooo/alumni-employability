@@ -3,6 +3,8 @@ import { LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Sett
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
+import { useEffect, useState } from 'react';
+import { DEFAULT_LOGO_URL, fetchSystemLogoUrl } from '@/lib/systemBranding';
 
 const adminNav = [
   { title: 'Analytics Dashboard', url: '/app/admin/analytics', icon: BarChart3 },
@@ -14,7 +16,7 @@ const adminNav = [
 ];
 
 const superAdminNav = [
-  { title: 'System Logs', url: '/app/superadmin/audit-logs/system', icon: ScrollText },
+  { title: 'Audit Logs', url: '/app/superadmin/audit-logs/system', icon: ScrollText },
   { title: 'Security Logs', url: '/app/superadmin/audit-logs/security', icon: Shield },
   { title: 'Admin Management', url: '/app/superadmin/admins', icon: ShieldCheck },
   { title: 'System Settings', url: '/app/superadmin/settings', icon: Settings },
@@ -42,18 +44,27 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
   const location = useLocation();
+  const [logoUrl, setLogoUrl] = useState(DEFAULT_LOGO_URL);
   const isActive = (path: string) => location.pathname === path;
 
   const roleNav = user?.role === 'superadmin' ? superAdminNav : user?.role === 'admin' ? adminNav : alumniNav;
   const roleLabel = user?.role === 'superadmin' ? 'Super Administration' : user?.role === 'admin' ? 'Administration' : 'My Portal';
 
+  useEffect(() => {
+    const run = async () => {
+      const resolvedLogo = await fetchSystemLogoUrl();
+      setLogoUrl(resolvedLogo);
+    };
+    run();
+  }, []);
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 border-b border-sidebar-border group-data-[collapsible=icon]:px-2">
         <NavLink to="/" className="flex items-center gap-3 rounded-md p-1 transition-colors hover:bg-sidebar-accent/40 group-data-[collapsible=icon]:justify-center">
-          <div className="p-2 rounded-xl bg-sidebar-primary/20 shrink-0">
+          <div className="p-2 rounded-xl bg-sidebar-primary/20 dark:bg-sidebar-primary/0 shrink-0">
             <img
-              src="/plp_logo.png"
+              src={logoUrl}
               alt="PLP Logo"
               className="h-5 w-5 object-contain"
             />

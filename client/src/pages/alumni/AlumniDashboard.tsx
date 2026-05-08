@@ -47,7 +47,7 @@ interface LatestPrediction {
 
 const formatEmploymentStatus = (status?: string | null) => {
   if (!status) {
-    return 'Not Specified';
+    return '-';
   }
 
   return String(status)
@@ -55,6 +55,26 @@ const formatEmploymentStatus = (status?: string | null) => {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+};
+
+const getTracerEmploymentStatus = (surveyState: SurveyFlowStatus | null) => {
+  if (!surveyState) {
+    return '-';
+  }
+
+  if (surveyState.employmentStatus) {
+    return formatEmploymentStatus(surveyState.employmentStatus);
+  }
+
+  if (surveyState.resolvedPath === 'EMPLOYED' || surveyState.nextPath === 'EMPLOYED') {
+    return 'Employed';
+  }
+
+  if (surveyState.resolvedPath === 'UNEMPLOYED' || surveyState.nextPath === 'UNEMPLOYED') {
+    return 'Unemployed';
+  }
+
+  return '-';
 };
 
 const getSurveySummary = (surveyState: SurveyFlowStatus | null) => {
@@ -131,7 +151,7 @@ export default function AlumniDashboard() {
     program: '',
     batchYear: new Date().getFullYear(),
     surveyCompleted: false,
-    employmentStatus: 'Not Specified',
+    employmentStatus: '-',
     resultsReady: false,
     surveyStatusLabel: 'Pending',
     surveySummary: 'Survey status unavailable.',
@@ -157,11 +177,10 @@ export default function AlumniDashboard() {
           'Content-Type': 'application/json'
         };
 
-        const [profileResponse, surveyStatusResponse, employmentResponse, surveyResponse] =
+        const [profileResponse, surveyStatusResponse, surveyResponse] =
           await Promise.all([
             fetch(`${API_URL}/alumni/profile/${user.username}`, { headers }),
             fetch(`${API_URL}/alumni/survey/status/${user.username}`, { headers }),
-            fetch(`${API_URL}/alumni/employment/${user.username}`, { headers }),
             fetch(`${API_URL}/alumni/survey/responses/${user.username}`, { headers })
           ]);
 
@@ -181,13 +200,7 @@ export default function AlumniDashboard() {
           surveyCompleted: Boolean(surveyState.completed)
         });
 
-        let employmentStatus = formatEmploymentStatus(surveyState.employmentStatus);
-        if (employmentStatus === 'Not Specified' && employmentResponse.ok) {
-          const empData = await employmentResponse.json();
-          if (empData.length > 0) {
-            employmentStatus = empData[0].status;
-          }
-        }
+        const employmentStatus = getTracerEmploymentStatus(surveyState);
 
         let latestSubmission = undefined;
         if (surveyResponse.ok) {
@@ -334,7 +347,7 @@ export default function AlumniDashboard() {
           icon={Briefcase}
           delay={0.1}
           subtitle={
-            alumniData.employmentStatus !== 'Not Specified' ? 'Current recorded path' : 'Please update'
+            alumniData.employmentStatus !== '-' ? 'From tracer survey path' : 'Set after tracer survey gateway'
           }
         />
 

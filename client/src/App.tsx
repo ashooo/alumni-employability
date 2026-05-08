@@ -30,7 +30,6 @@ import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import AppLayout from "./pages/AppLayout";
-import ModelSimulator from "./pages/shared/ModelSimulator";
 import NotFound from "./pages/NotFound";
 import { ThemeProvider } from "next-themes";
 
@@ -78,7 +77,6 @@ const App = () => (
                 <Route path="alumni/results" element={<AlumniResults />} />
                 <Route path="alumni/jobs" element={<AlumniJobs />} />
                 <Route path="alumni/change-password" element={<AlumniChangePassword />} />
-                <Route path="model-simulator" element={<ModelSimulator />} />
                 <Route path="overview" element={<SystemOverview />} />
                 <Route path="help" element={<HelpGuide />} />
               </Route>

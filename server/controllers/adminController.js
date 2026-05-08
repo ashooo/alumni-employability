@@ -1898,18 +1898,109 @@ const getReports = async (req, res) => {
           'Female Employment (%)': row.female
         }));
     } else if (type === 'Degree Alignment') {
-      reportData = [
-        { 'Alignment Level': 'Highly Relevant', 'Alumni Count': 450, 'Percentage (%)': 45 },
-        { 'Alignment Level': 'Moderately Relevant', 'Alumni Count': 350, 'Percentage (%)': 35 },
-        { 'Alignment Level': 'Slightly Relevant', 'Alumni Count': 150, 'Percentage (%)': 15 },
-        { 'Alignment Level': 'Not Relevant', 'Alumni Count': 50, 'Percentage (%)': 5 }
+      const outcomeWhere = combineWhere(
+        alumniWhere ? { alumni_profile: alumniWhere } : undefined,
+        analyticsEmploymentOutcomeFilter
+      );
+
+      const [alignedCount, notAlignedCount, unknownCount, totalOutcomes] = await Promise.all([
+        refactorPrisma.employmentOutcome.count({
+          where: combineWhere(outcomeWhere, { degree_relevance: true })
+        }),
+        refactorPrisma.employmentOutcome.count({
+          where: combineWhere(outcomeWhere, { degree_relevance: false })
+        }),
+        refactorPrisma.employmentOutcome.count({
+          where: combineWhere(outcomeWhere, { degree_relevance: null })
+        }),
+        refactorPrisma.employmentOutcome.count({
+          where: outcomeWhere
+        })
+      ]);
+
+      const rows = [
+        { label: 'Aligned to Degree', count: alignedCount },
+        { label: 'Not Aligned to Degree', count: notAlignedCount },
+        { label: 'Not Specified', count: unknownCount }
       ];
+
+      reportData = rows
+        .filter((row) => row.count > 0 || totalOutcomes === 0)
+        .map((row) => ({
+          'Alignment Level': row.label,
+          'Alumni Count': row.count,
+          'Percentage (%)':
+            totalOutcomes === 0
+              ? 0
+              : Number(((row.count / totalOutcomes) * 100).toFixed(1))
+        }));
     } else if (type === 'Skills Assessment Summary') {
+      const snapshots = await refactorPrisma.academicSnapshot.findMany({
+        where: alumniWhere,
+        select: {
+          soft_skills_ave: true,
+          hard_skills_ave: true,
+          cgpa: true,
+          ojt_grade: true
+        }
+      });
+
+      const average = (values) => {
+        if (!Array.isArray(values) || values.length === 0) return 0;
+        return values.reduce((sum, value) => sum + value, 0) / values.length;
+      };
+
+      const toScore100FromFive = (value) => {
+        if (!Number.isFinite(value) || value <= 0) return 0;
+        return Math.max(0, Math.min(100, (value / 5) * 100));
+      };
+
+      const toScore100FromTen = (value) => {
+        if (!Number.isFinite(value) || value <= 0) return 0;
+        return Math.max(0, Math.min(100, (value / 10) * 100));
+      };
+
+      const softAvg = average(
+        snapshots
+          .map((row) => Number.parseFloat(String(row.soft_skills_ave ?? '')))
+          .filter((value) => Number.isFinite(value))
+      );
+      const hardAvg = average(
+        snapshots
+          .map((row) => Number.parseFloat(String(row.hard_skills_ave ?? '')))
+          .filter((value) => Number.isFinite(value))
+      );
+      const cgpaAvg = average(
+        snapshots
+          .map((row) => Number.parseFloat(String(row.cgpa ?? '')))
+          .filter((value) => Number.isFinite(value))
+      );
+      const ojtAvg = average(
+        snapshots
+          .map((row) => Number.parseFloat(String(row.ojt_grade ?? '')))
+          .filter((value) => Number.isFinite(value))
+      );
+
       reportData = [
-        { 'Skill Category': 'Technical Skills', 'Average Score (/100)': 85 },
-        { 'Skill Category': 'Communication', 'Average Score (/100)': 78 },
-        { 'Skill Category': 'Problem Solving', 'Average Score (/100)': 82 }
+        {
+          'Skill Category': 'Soft Skills Average',
+          'Average Score (/100)': Number(toScore100FromTen(softAvg).toFixed(1))
+        },
+        {
+          'Skill Category': 'Hard Skills Average',
+          'Average Score (/100)': Number(toScore100FromTen(hardAvg).toFixed(1))
+        },
+        {
+          'Skill Category': 'CGPA Strength',
+          'Average Score (/100)': Number(toInverseFiveScaleScore(cgpaAvg).toFixed(1))
+        },
+        {
+          'Skill Category': 'OJT Strength',
+          'Average Score (/100)': Number(toInverseFiveScaleScore(ojtAvg).toFixed(1))
+        }
       ];
+    } else {
+      return res.status(400).json({ error: 'Invalid report type' });
     }
 
     await writeAuditLogWithReq(refactorPrisma, req, {
@@ -1946,3 +2037,7 @@ module.exports = {
   getContentSettings,
   saveContentSettings
 };
+      const toInverseFiveScaleScore = (value) => {
+        if (!Number.isFinite(value) || value <= 0) return 0;
+        return Math.max(0, Math.min(100, ((5 - value) / 4) * 100));
+      };

@@ -34,7 +34,6 @@ const alumniNav = [
 const sharedNav = [
   { title: 'My Account', url: '/app/alumni/profile', icon: User },
   { title: 'System Overview', url: '/app/overview', icon: Home },
-  { title: 'Model Simulator', url: '/app/model-simulator', icon: Brain },
   { title: 'Help / Guide', url: '/app/help', icon: HelpCircle },
 ];
 

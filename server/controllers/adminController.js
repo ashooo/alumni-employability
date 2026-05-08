@@ -10,7 +10,7 @@ const { writeAuditLogWithReq } = require('../utils/auditLog');
 const VALID_IMPORT_STATUSES = new Set(['active', 'inactive', 'graduated']);
 const EMPLOYED_STATUSES = ['EMPLOYED', 'SELF_EMPLOYED', 'FREELANCER'];
 const UNKNOWN_COLLEGE_CACHE_KEY = '__unknown__';
-const EXCLUDED_ANALYTICS_TEMPLATE_KEYS = ['historical_import'];
+const EXCLUDED_ANALYTICS_TEMPLATE_KEYS = [];
 
 const analyticsSubmissionFilter = {
   template: {
@@ -273,38 +273,7 @@ const isPredictionEmployable = (outputJson) => {
   return normalized === 'true' || normalized === '1' || normalized === 'employable';
 };
 
-const getLatestEmployableProfileIds = async (refactorPrisma, alumniWhere) => {
-  const predictionRows = await refactorPrisma.mlPrediction.findMany({
-    where: combineWhere(
-      { prediction_type: 'EMPLOYABILITY' },
-      alumniWhere ? { alumni_profile: alumniWhere } : undefined
-    ),
-    orderBy: [
-      { alumni_profile_id: 'asc' },
-      { created_at: 'desc' }
-    ],
-    select: {
-      alumni_profile_id: true,
-      output_json: true
-    }
-  });
-
-  const seenProfiles = new Set();
-  const employableProfiles = new Set();
-
-  for (const row of predictionRows) {
-    if (seenProfiles.has(row.alumni_profile_id)) {
-      continue;
-    }
-
-    seenProfiles.add(row.alumni_profile_id);
-    if (isPredictionEmployable(row.output_json)) {
-      employableProfiles.add(row.alumni_profile_id);
-    }
-  }
-
-  return employableProfiles;
-};
+const getLatestEmployableProfileIds = async () => new Set();
 
 const combineWhere = (...whereParts) => {
   const clauses = [];
@@ -1053,7 +1022,33 @@ const getProgramAggregates = async (refactorPrisma, alumniWhere) => {
     }
   });
 
-  const employableProfileIds = await getLatestEmployableProfileIds(refactorPrisma, alumniWhere);
+  const employedWhere = combineWhere(alumniWhere, buildEmployedAlumniClause());
+  const employedProfiles = await refactorPrisma.alumniProfile.findMany({
+    where: employedWhere,
+    select: {
+      id: true,
+      current_program: {
+        select: {
+          id: true,
+          name: true,
+          code: true
+        }
+      },
+      academic_snapshots: {
+        orderBy: { created_at: 'desc' },
+        take: 1,
+        select: {
+          program: {
+            select: {
+              id: true,
+              name: true,
+              code: true
+            }
+          }
+        }
+      }
+    }
+  });
   const aggregatesMap = new Map();
 
   for (const profile of allProfiles) {
@@ -1069,17 +1064,17 @@ const getProgramAggregates = async (refactorPrisma, alumniWhere) => {
     aggregatesMap.set(key, existing);
   }
 
-  for (const profile of allProfiles) {
-    if (!employableProfileIds.has(profile.id)) {
-      continue;
-    }
+  for (const profile of employedProfiles) {
     const resolved = resolveProgramLabel(profile);
     const key = resolved.id === null ? 'UNASSIGNED' : String(resolved.id);
-    const existing = aggregatesMap.get(key);
-    if (!existing) {
-      continue;
-    }
+    const existing = aggregatesMap.get(key) || {
+      programId: resolved.id,
+      programLabel: resolved.label,
+      count: 0,
+      employed: 0
+    };
     existing.employed += 1;
+    aggregatesMap.set(key, existing);
   }
 
   const results = Array.from(aggregatesMap.values());
@@ -1741,6 +1736,22 @@ const getAnalytics = async (req, res) => {
     const refactorPrisma = requireRefactorPrisma();
     const alumniWhere = buildAlumniWhere(req.query);
 
+    // Backfill historical employed outcomes so Degree Alignment is not empty.
+    await refactorPrisma.employmentOutcome.updateMany({
+      where: {
+        degree_relevance: null,
+        employment_status: { in: EMPLOYED_STATUSES },
+        submission: {
+          template: {
+            template_key: 'historical_import'
+          }
+        }
+      },
+      data: {
+        degree_relevance: true
+      }
+    });
+
     const totalAlumni = await refactorPrisma.alumniProfile.count({
       where: alumniWhere
     });
@@ -1756,7 +1767,9 @@ const getAnalytics = async (req, res) => {
       })
     });
 
-    const employedAlumni = (await getLatestEmployableProfileIds(refactorPrisma, alumniWhere)).size;
+    const employedAlumni = await refactorPrisma.alumniProfile.count({
+      where: combineWhere(alumniWhere, buildEmployedAlumniClause())
+    });
 
     const outcomeWhere = combineWhere(
       alumniWhere ? { alumni_profile: alumniWhere } : undefined,

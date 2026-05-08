@@ -174,6 +174,138 @@ const mapEmploymentStatusFilter = (status) => {
   }
 };
 
+const buildEmploymentFilter = (status) => {
+  const normalized = mapEmploymentStatusFilter(status);
+  if (!normalized) {
+    return null;
+  }
+
+  // Tracer flow stores primary employed/unemployed path on survey submissions.
+  if (normalized === 'EMPLOYED') {
+    return buildEmployedAlumniClause();
+  }
+
+  if (normalized === 'UNEMPLOYED') {
+    return {
+      OR: [
+        {
+          survey_submissions: {
+            some: {
+              status: 'COMPLETED',
+              branch_path: 'UNEMPLOYED',
+              ...analyticsSubmissionFilter
+            }
+          }
+        },
+        {
+          employment_outcomes: {
+            some: {
+              ...analyticsEmploymentOutcomeFilter,
+              employment_status: 'UNEMPLOYED'
+            }
+          }
+        }
+      ]
+    };
+  }
+
+  return {
+    employment_outcomes: {
+      some: {
+        ...analyticsEmploymentOutcomeFilter,
+        employment_status: normalized
+      }
+    }
+  };
+};
+
+const buildEmployedAlumniClause = () => ({
+  OR: [
+    {
+      survey_submissions: {
+        some: {
+          status: 'COMPLETED',
+          branch_path: 'EMPLOYED',
+          ...analyticsSubmissionFilter
+        }
+      }
+    },
+    {
+      survey_submissions: {
+        some: {
+          status: 'COMPLETED',
+          ...analyticsSubmissionFilter,
+          survey_answers: {
+            some: {
+              question: {
+                question_key: 'current_employment_status'
+              },
+              answer_text: 'Employed'
+            }
+          }
+        }
+      }
+    },
+    {
+      employment_outcomes: {
+        some: {
+          ...analyticsEmploymentOutcomeFilter,
+          employment_status: {
+            in: EMPLOYED_STATUSES
+          }
+        }
+      }
+    }
+  ]
+});
+
+const isPredictionEmployable = (outputJson) => {
+  if (!outputJson || typeof outputJson !== 'object' || Array.isArray(outputJson)) {
+    return false;
+  }
+
+  const employableValue = outputJson.employable;
+  if (typeof employableValue === 'boolean') {
+    return employableValue;
+  }
+
+  const normalized = String(employableValue || outputJson.label || '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'employable';
+};
+
+const getLatestEmployableProfileIds = async (refactorPrisma, alumniWhere) => {
+  const predictionRows = await refactorPrisma.mlPrediction.findMany({
+    where: combineWhere(
+      { prediction_type: 'EMPLOYABILITY' },
+      alumniWhere ? { alumni_profile: alumniWhere } : undefined
+    ),
+    orderBy: [
+      { alumni_profile_id: 'asc' },
+      { created_at: 'desc' }
+    ],
+    select: {
+      alumni_profile_id: true,
+      output_json: true
+    }
+  });
+
+  const seenProfiles = new Set();
+  const employableProfiles = new Set();
+
+  for (const row of predictionRows) {
+    if (seenProfiles.has(row.alumni_profile_id)) {
+      continue;
+    }
+
+    seenProfiles.add(row.alumni_profile_id);
+    if (isPredictionEmployable(row.output_json)) {
+      employableProfiles.add(row.alumni_profile_id);
+    }
+  }
+
+  return employableProfiles;
+};
+
 const combineWhere = (...whereParts) => {
   const clauses = [];
 
@@ -451,15 +583,9 @@ const buildAlumniWhere = (query = {}) => {
 
   const employmentStatus = normalizeString(query.employmentStatus);
   if (employmentStatus && employmentStatus !== 'all') {
-    const normalizedStatus = mapEmploymentStatusFilter(employmentStatus);
-    if (normalizedStatus) {
-      clauses.push({
-        employment_outcomes: {
-          some: {
-            employment_status: normalizedStatus
-          }
-        }
-      });
+    const employmentClause = buildEmploymentFilter(employmentStatus);
+    if (employmentClause) {
+      clauses.push(employmentClause);
     }
   }
 
@@ -877,70 +1003,86 @@ const persistImportRows = async ({
 };
 
 const getProgramAggregates = async (refactorPrisma, alumniWhere) => {
-  const totalByProgram = await refactorPrisma.alumniProfile.groupBy({
-    by: ['current_program_id'],
+  const resolveProgramLabel = (profile) => {
+    const current = profile.current_program;
+    if (current) {
+      return {
+        id: current.id,
+        label: current.code || current.name || 'UNASSIGNED'
+      };
+    }
+
+    const latestSnapshotProgram = profile.academic_snapshots?.[0]?.program;
+    if (latestSnapshotProgram) {
+      return {
+        id: latestSnapshotProgram.id,
+        label: latestSnapshotProgram.code || latestSnapshotProgram.name || 'UNASSIGNED'
+      };
+    }
+
+    return {
+      id: null,
+      label: 'UNASSIGNED'
+    };
+  };
+
+  const allProfiles = await refactorPrisma.alumniProfile.findMany({
     where: alumniWhere,
-    _count: {
-      _all: true
-    }
-  });
-
-  const employedWhere = combineWhere(alumniWhere, {
-    employment_outcomes: {
-      some: {
-        ...analyticsEmploymentOutcomeFilter,
-        employment_status: {
-          in: EMPLOYED_STATUSES
-        }
-      }
-    }
-  });
-
-  const employedByProgram = await refactorPrisma.alumniProfile.groupBy({
-    by: ['current_program_id'],
-    where: employedWhere,
-    _count: {
-      _all: true
-    }
-  });
-
-  const programIds = totalByProgram
-    .map((row) => row.current_program_id)
-    .filter((id) => id !== null);
-
-  const programs = programIds.length
-    ? await refactorPrisma.program.findMany({
-        where: {
-          id: {
-            in: programIds
-          }
-        },
+    select: {
+      id: true,
+      current_program: {
         select: {
           id: true,
           name: true,
           code: true
         }
-      })
-    : [];
-
-  const programMap = new Map(programs.map((program) => [program.id, program]));
-  const employedMap = new Map(
-    employedByProgram.map((row) => [String(row.current_program_id), row._count._all])
-  );
-
-  const results = totalByProgram.map((row) => {
-    const programId = row.current_program_id;
-    const program = programId ? programMap.get(programId) : null;
-    const count = row._count._all || 0;
-    const employed = employedMap.get(String(programId)) || 0;
-
-    return {
-      programId,
-      programLabel: program?.code || program?.name || 'UNASSIGNED',
-      count,
-      employed
-    };
+      },
+      academic_snapshots: {
+        orderBy: { created_at: 'desc' },
+        take: 1,
+        select: {
+          program: {
+            select: {
+              id: true,
+              name: true,
+              code: true
+            }
+          }
+        }
+      }
+    }
   });
+
+  const employableProfileIds = await getLatestEmployableProfileIds(refactorPrisma, alumniWhere);
+  const aggregatesMap = new Map();
+
+  for (const profile of allProfiles) {
+    const resolved = resolveProgramLabel(profile);
+    const key = resolved.id === null ? 'UNASSIGNED' : String(resolved.id);
+    const existing = aggregatesMap.get(key) || {
+      programId: resolved.id,
+      programLabel: resolved.label,
+      count: 0,
+      employed: 0
+    };
+    existing.count += 1;
+    aggregatesMap.set(key, existing);
+  }
+
+  for (const profile of allProfiles) {
+    if (!employableProfileIds.has(profile.id)) {
+      continue;
+    }
+    const resolved = resolveProgramLabel(profile);
+    const key = resolved.id === null ? 'UNASSIGNED' : String(resolved.id);
+    const existing = aggregatesMap.get(key);
+    if (!existing) {
+      continue;
+    }
+    existing.employed += 1;
+  }
+
+  const results = Array.from(aggregatesMap.values());
 
   results.sort((left, right) => {
     if (left.count !== right.count) {
@@ -966,16 +1108,7 @@ const getBatchTrendData = async (refactorPrisma, alumniWhere) => {
     take: 5
   });
 
-  const employedWhere = combineWhere(alumniWhere, {
-    employment_outcomes: {
-      some: {
-        ...analyticsEmploymentOutcomeFilter,
-        employment_status: {
-          in: EMPLOYED_STATUSES
-        }
-      }
-    }
-  });
+  const employedWhere = combineWhere(alumniWhere, buildEmployedAlumniClause());
 
   const employedRows = await refactorPrisma.alumniProfile.groupBy({
     by: ['batch_year'],
@@ -1623,18 +1756,7 @@ const getAnalytics = async (req, res) => {
       })
     });
 
-    const employedAlumni = await refactorPrisma.alumniProfile.count({
-      where: combineWhere(alumniWhere, {
-        employment_outcomes: {
-          some: {
-            ...analyticsEmploymentOutcomeFilter,
-            employment_status: {
-              in: EMPLOYED_STATUSES
-            }
-          }
-        }
-      })
-    });
+    const employedAlumni = (await getLatestEmployableProfileIds(refactorPrisma, alumniWhere)).size;
 
     const outcomeWhere = combineWhere(
       alumniWhere ? { alumni_profile: alumniWhere } : undefined,

@@ -19,6 +19,7 @@ import AdminContent from "./pages/admin/AdminContent";
 import ActivationPage from "./pages/ActivationPage";
 import { Toaster } from "@/components/ui/toaster";
 import AdminUsers from "./pages/admin/AdminUsers";
+import AdminPrograms from "./pages/admin/AdminPrograms";
 import HelpGuide from "./pages/shared/HelpGuide";
 import SuperAdminAuditLogs from "./pages/superadmin/SuperAdminAuditLogs";
 import SuperAdminSystemLogs from "@/pages/superadmin/SuperAdminSystemLogs";
@@ -60,6 +61,7 @@ const App = () => (
                 <Route path="admin/predictions" element={<AdminPredictions />} />
                 <Route path="admin/reports" element={<AdminReports />} />
                 <Route path="admin/users" element={<AdminUsers />} />
+                <Route path="admin/programs" element={<AdminPrograms />} />
                 <Route path="admin/survey-manager" element={<AdminSurveyManager />} />
                 <Route path="admin/content" element={<AdminContent />} />
                 <Route path="superadmin/audit-logs" element={<SuperAdminAuditLogs />}>

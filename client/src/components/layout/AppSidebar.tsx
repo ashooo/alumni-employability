@@ -1,5 +1,5 @@
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar} from '@/components/ui/sidebar';
-import { LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Briefcase, ShieldCheck, ScrollText, Shield } from 'lucide-react';
+import { LayoutDashboard, BarChart3, Brain, FileText, Users, ClipboardList, Settings, HelpCircle, Home, User, ClipboardCheck, FileCheck, Star, Briefcase, ShieldCheck, ScrollText, Shield, Building2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
@@ -8,6 +8,7 @@ const adminNav = [
   { title: 'Analytics Dashboard', url: '/app/admin/analytics', icon: BarChart3 },
   { title: 'Prediction Models', url: '/app/admin/predictions', icon: Brain },
   { title: 'User Management', url: '/app/admin/users', icon: Users },
+  { title: 'Colleges & Programs', url: '/app/admin/programs', icon: Building2 },
   { title: 'Survey Manager', url: '/app/admin/survey-manager', icon: ClipboardList },
   { title: 'Content Manager', url: '/app/admin/content', icon: Settings },
   { title: 'Reports', url: '/app/admin/reports', icon: FileText },

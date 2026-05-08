@@ -12,6 +12,8 @@ const MAX_TOP_N = 200;
 const INTERNAL_WIDE_TOP_N = 120;
 const { PROGRAM_TITLE_MAPPING } = require('../config/programTitleMapping');
 const PROGRAM_FALLBACK_KEYWORDS = {
+  CBA: ['account', 'audit', 'tax', 'finance', 'business', 'marketing', 'sales', 'operations'],
+  COLLEGE_OF_BUSINESS_AND_ACCOUNTANCY: ['account', 'audit', 'tax', 'finance', 'business', 'marketing', 'sales', 'operations'],
   BSA: ['account', 'audit', 'tax', 'bookkeep', 'finance'],
   BSECE: ['electronics', 'electrical', 'telecom', 'network', 'circuit', 'embedded'],
   BSED: ['teacher', 'education', 'instructor', 'curriculum', 'language'],
@@ -128,6 +130,15 @@ const getProgramTitleSet = (programCode) => {
   if (normalizedProgram === 'BSED_FILIPINO' || normalizedProgram === 'BSED_ENGLISH') aliases.add(normalizedProgram);
   if (normalizedProgram === 'BSBA_ENTREP') aliases.add('BSBA_ENTREPRENEURSHIP');
   if (normalizedProgram === 'BSBA_MARKETING') aliases.add('BSBA_MARKETING_MANAGEMENT');
+  if (normalizedProgram === 'BSBA') {
+    aliases.add('BSBA_ENTREP');
+    aliases.add('BSBA_MARKETING');
+  }
+  if (normalizedProgram === 'CBA' || normalizedProgram === 'COLLEGE_OF_BUSINESS_AND_ACCOUNTANCY') {
+    aliases.add('BSA');
+    aliases.add('BSBA_ENTREP');
+    aliases.add('BSBA_MARKETING');
+  }
 
   const titles = [];
   for (const alias of aliases) {
@@ -385,10 +396,14 @@ const generateJobMatchingPrediction = async ({ studentId, topN, candidateSkills 
   const requestedTopN = clampTopN(topN, 10);
   const programTitles = getProgramTitleList(alumniProfile?.current_program?.code);
 
+  // Run general branch on full title universe.
   const allTitlesPrediction = await runJobMatchingPrediction({
     candidateSkills: resolvedSkills,
     topN: requestedTopN
   });
+
+  // Run in-field branch as true constrained inference using mapped titles.
+  // If no mapped titles are available for the program, fallback to deterministic split.
   let inFieldMatches = [];
   if (programTitles.length > 0) {
     const inFieldPrediction = await runJobMatchingPrediction({
@@ -398,11 +413,10 @@ const generateJobMatchingPrediction = async ({ studentId, topN, candidateSkills 
     });
     inFieldMatches = Array.isArray(inFieldPrediction.matches) ? inFieldPrediction.matches : [];
   } else {
-    const splitMatches = splitMatchesByProgramField(
+    inFieldMatches = splitMatchesByProgramField(
       allTitlesPrediction.matches,
       alumniProfile?.current_program?.code
-    );
-    inFieldMatches = splitMatches.matches_in_field || [];
+    ).matches_in_field || [];
   }
   const enrichedPrediction = {
     ...allTitlesPrediction,

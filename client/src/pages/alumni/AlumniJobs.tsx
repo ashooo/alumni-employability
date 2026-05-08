@@ -60,6 +60,9 @@ const needsJobMatchingRefresh = (prediction: JobMatchingPrediction | null) => {
   const general = prediction.matches_all_titles || prediction.matches || [];
   const inField = prediction.matches_in_field || [];
   if (!general.length) return true;
+  // If an older saved output has zero in-field matches while general matches exist,
+  // force one regeneration so server-side in-field extraction can repopulate.
+  if (general.length > 0 && inField.length === 0) return true;
   if (!prediction.matches_all_titles || !prediction.matches_in_field) return true;
   return general.some((match) => !Array.isArray(match.top_alternates) || match.top_alternates.length < 3) || inField.some((match) => !Array.isArray(match.top_alternates) || match.top_alternates.length < 3);
 };
@@ -75,6 +78,29 @@ const getJobMatchScorePercent = (match: JobMatch) => {
           : null;
   if (rawScore === null) return 0;
   return Math.max(0, Math.min(100, Math.round(rawScore * 100)));
+};
+
+const getJobMatchRawScore = (match: JobMatch) => {
+  if (typeof match.display_score === 'number') return match.display_score;
+  if (typeof match.final_score === 'number') return match.final_score;
+  if (typeof match.score === 'number') return match.score;
+  return 0;
+};
+
+const extractTopMatches = (matches: JobMatch[] | undefined, limit = 3) => {
+  const list = Array.isArray(matches) ? matches : [];
+  const byTitle = new Map<string, JobMatch>();
+  for (const match of list) {
+    const titleKey = String(match?.title || '').trim().toLowerCase();
+    if (!titleKey) continue;
+    const existing = byTitle.get(titleKey);
+    if (!existing || getJobMatchRawScore(match) > getJobMatchRawScore(existing)) {
+      byTitle.set(titleKey, match);
+    }
+  }
+  return Array.from(byTitle.values())
+    .sort((a, b) => getJobMatchRawScore(b) - getJobMatchRawScore(a))
+    .slice(0, limit);
 };
 
 const getCompatibilitySummary = (avgScore: number) => {
@@ -173,8 +199,8 @@ export default function AlumniJobs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.username]);
 
-  const inFieldMatches = (jobMatching?.matches_in_field || []).slice(0, 3);
-  const allTitleMatches = (jobMatching?.matches_all_titles || jobMatching?.matches || []).slice(0, 3);
+  const inFieldMatches = extractTopMatches(jobMatching?.matches_in_field, 3);
+  const allTitleMatches = extractTopMatches(jobMatching?.matches_all_titles || jobMatching?.matches, 3);
   const overallList = jobMatching?.matches_all_titles || jobMatching?.matches || [];
   const normalizedTitle = (title: string) => String(title || '').trim().toLowerCase();
   const shouldMergeSections = useMemo(() => {

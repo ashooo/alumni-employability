@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -32,6 +33,14 @@ interface TrendData {
   female: number;
 }
 
+interface CollegeData {
+  id: number;
+  name: string;
+  code?: string | null;
+  program_count: number;
+  alumni_count: number;
+}
+
 export default function AdminAnalytics() {
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [loading, setLoading] = useState(true);
@@ -45,6 +54,7 @@ export default function AdminAnalytics() {
     degreeAlignment: 0
   });
   const [programData, setProgramData] = useState<ProgramData[]>([]);
+  const [collegeData, setCollegeData] = useState<CollegeData[]>([]);
   const [trendData, setTrendData] = useState<TrendData[]>([]);
   const [predictionData, setPredictionData] = useState<any[]>([]);
   const [predictionMetrics, setPredictionMetrics] = useState<any>(null);
@@ -69,7 +79,7 @@ export default function AdminAnalytics() {
         if (filters.program && filters.program !== 'all') params.append('program', filters.program);
         if (filters.batchYear && filters.batchYear !== 'all') params.append('batchYear', filters.batchYear);
 
-        const [response, predResponse] = await Promise.all([
+        const [response, predResponse, collegeResponse] = await Promise.all([
           fetch(`${API_URL}/admin/analytics?${params.toString()}`, {
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
           }),
@@ -78,10 +88,20 @@ export default function AdminAnalytics() {
           }).catch(err => {
             console.error('Prediction fetch error:', err);
             return { ok: false, status: 500, json: async () => ({}) };
+          }),
+          fetch(`${API_URL}/admin/colleges`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
           })
         ]);
 
-        if (response.status === 401 || response.status === 403 || predResponse.status === 401 || predResponse.status === 403) {
+        if (
+          response.status === 401 ||
+          response.status === 403 ||
+          predResponse.status === 401 ||
+          predResponse.status === 403 ||
+          collegeResponse.status === 401 ||
+          collegeResponse.status === 403
+        ) {
           localStorage.removeItem('token');
           navigate('/login');
           return;
@@ -94,6 +114,12 @@ export default function AdminAnalytics() {
         setKpis(data.kpis);
         setProgramData(data.programData);
         setTrendData(data.trendData);
+        if (collegeResponse.ok) {
+          const colleges = await collegeResponse.json();
+          setCollegeData(Array.isArray(colleges) ? colleges : []);
+        } else {
+          setCollegeData([]);
+        }
 
         if (predResponse.ok) {
           const predData = await predResponse.json();
@@ -237,8 +263,69 @@ export default function AdminAnalytics() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-card p-6">
-              <h3 className="font-display font-semibold mb-1">Total Alumni per Program</h3>
-              <p className="text-xs text-muted-foreground mb-4">Compares the total number of registered alumni (green) against the number who are currently employed (teal) for each academic program. Use this to identify which programs produce the most employable graduates.</p>
+              <Tabs defaultValue="programs" className="w-full">
+                <TabsList className="mb-4">
+                  <TabsTrigger value="programs">Program View</TabsTrigger>
+                  <TabsTrigger value="colleges">College View</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="programs" className="space-y-0">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-display font-semibold">Total Alumni per Program</h3>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="bg-primary/20 text-primary hover:bg-primary/30 border-none">Details</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>Program Distribution Details</DialogTitle>
+                    </DialogHeader>
+                    <div className="mt-4 space-y-6">
+                      {programData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={360}>
+                          <BarChart data={programData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                            <XAxis dataKey="program" tick={{ fontSize: 12 }} />
+                            <YAxis tick={{ fontSize: 12 }} />
+                            <Tooltip contentStyle={{ borderRadius: '0.75rem', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }} />
+                            <Legend />
+                            <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} name="Total Alumni" />
+                            <Bar dataKey="employed" fill="hsl(var(--chart-3))" radius={[6, 6, 0, 0]} name="Employable Alumni" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-[320px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed">
+                          No program data available
+                        </div>
+                      )}
+
+                      <div className="space-y-6">
+                        <div>
+                          <h4 className="font-semibold text-lg mb-3 pb-2 border-b">Legend Explanation</h4>
+                          <ul className="space-y-3 text-sm text-muted-foreground list-none">
+                            <li className="flex gap-2">
+                              <span className="mt-1 flex-shrink-0 w-2 h-2 rounded-full bg-primary"></span>
+                              <span><strong className="text-foreground">Total Alumni:</strong> All alumni records under a program for the selected filters.</span>
+                            </li>
+                            <li className="flex gap-2">
+                              <span className="mt-1 flex-shrink-0 w-2 h-2 rounded-full bg-chart-3"></span>
+                              <span><strong className="text-foreground">Employable Alumni:</strong> Alumni in the same program whose latest employability model result is positive.</span>
+                            </li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <h4 className="font-semibold text-lg mb-3 pb-2 border-b">How To Read This</h4>
+                          <p className="text-sm text-muted-foreground">
+                            Larger gaps between total and employable bars indicate programs where more graduates still need readiness improvement before reaching positive employability outcomes.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">Compares the total number of registered alumni (green) against the number predicted as employable (teal) for each academic program.</p>
               {programData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={programData}>
@@ -247,7 +334,7 @@ export default function AdminAnalytics() {
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip contentStyle={{ borderRadius: '0.75rem', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }} />
                     <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} name="Total" />
-                    <Bar dataKey="employed" fill="hsl(var(--chart-3))" radius={[6, 6, 0, 0]} name="Employed" />
+                    <Bar dataKey="employed" fill="hsl(var(--chart-3))" radius={[6, 6, 0, 0]} name="Employable" />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -255,6 +342,43 @@ export default function AdminAnalytics() {
                   No program data available
                 </div>
               )}
+                </TabsContent>
+
+                <TabsContent value="colleges" className="space-y-3">
+                  <div className="mb-1">
+                    <h3 className="font-display font-semibold">All Colleges</h3>
+                    <p className="text-xs text-muted-foreground">College-level summary across programs and alumni records.</p>
+                  </div>
+                  {collegeData.length > 0 ? (
+                    <div className="max-h-[300px] overflow-auto rounded-lg border">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-background">
+                          <tr className="border-b">
+                            <th className="text-left p-3 font-semibold">College</th>
+                            <th className="text-left p-3 font-semibold">Code</th>
+                            <th className="text-right p-3 font-semibold">Programs</th>
+                            <th className="text-right p-3 font-semibold">Alumni</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {collegeData.map((college) => (
+                            <tr key={college.id} className="border-b last:border-0">
+                              <td className="p-3">{college.name}</td>
+                              <td className="p-3">{college.code || '-'}</td>
+                              <td className="p-3 text-right">{Number(college.program_count || 0).toLocaleString()}</td>
+                              <td className="p-3 text-right">{Number(college.alumni_count || 0).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed">
+                      No college data available
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </motion.div>
 
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-card p-6">

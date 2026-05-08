@@ -101,17 +101,28 @@ interface Prediction {
     prof_grade?: number | string | null;
     elec_grade?: number | string | null;
     ojt_grade?: number | string | null;
+    board_exam?: number | string | null;
     leader_pos?: boolean | string | null;
     act_member_pos?: boolean | string | null;
   } | null;
   submission_summary?: {
     id: number;
     branch_path?: string | null;
+    additional_data?: {
+      academic_data?: Record<string, unknown>;
+      additional_answers?: Record<string, unknown>;
+    } | null;
     survey_answers: Array<{
       question_id: number;
       question_key?: string | null;
       question_text: string;
       value: string | number | boolean | Record<string, unknown> | null;
+    }>;
+    academic_snapshot_skills?: Array<{
+      id: number;
+      skill_name: string;
+      skill_value?: number | null;
+      source_column?: string | null;
     }>;
     competencies: Array<{
       id: number;
@@ -189,6 +200,20 @@ const COMPETENCY_GROUP_LABELS = {
   TECHNOLOGY: 'Technology Skills'
 } as const;
 
+const EXPERIENCE_LABEL_MAP: Array<{ key: string; label: string }> = [
+  { key: 'internship_completed', label: 'Internship Completed' },
+  { key: 'internship_length', label: 'Internship Length' },
+  { key: 'internship_relatedness', label: 'Internship Relatedness' },
+  { key: 'internship_responsibilities', label: 'Internship Responsibilities' },
+  { key: 'internship_improvement', label: 'Internship Improvement' },
+  { key: 'certifications_completed', label: 'Certifications Completed' },
+  { key: 'certifications_type', label: 'Certification Type' },
+  { key: 'certifications_count', label: 'Certification Count' },
+  { key: 'certifications_relatedness', label: 'Certification Relatedness' },
+  { key: 'board_taken', label: 'Board Exam Taken' },
+  { key: 'board_result', label: 'Board Exam Result' }
+];
+
 const formatChoiceValue = (value: unknown) => {
   if (value === null || value === undefined || value === '') {
     return 'Not provided';
@@ -257,6 +282,26 @@ const toSkillPercent = (value: unknown) => {
   }
 
   return Math.max(0, Math.min(100, numeric));
+};
+
+const toFiveScalePercent = (value: unknown) => {
+  const numeric = parseNumericValue(value);
+  if (numeric > 0 && numeric <= 5) {
+    return Math.max(0, Math.min(100, (numeric / 5) * 100));
+  }
+  return Math.max(0, Math.min(100, numeric));
+};
+
+const toBinaryPercent = (value: unknown) => {
+  if (typeof value === 'boolean') {
+    return value ? 100 : 0;
+  }
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'yes' || normalized === 'true' || normalized === '1' || normalized === 'passed') {
+    return 100;
+  }
+  const numeric = parseNumericValue(value);
+  return numeric > 0 ? 100 : 0;
 };
 
 const toCgpaPercent = (value: unknown) => {
@@ -447,8 +492,53 @@ export default function AlumniResults() {
   const isEmployable = Boolean(prediction.employable);
   const snapshot = prediction.input_snapshot || {};
   const submissionSummary = prediction.submission_summary;
+  const summaryAcademicData = (submissionSummary?.additional_data?.academic_data || {}) as Record<string, unknown>;
+  const experienceItems = EXPERIENCE_LABEL_MAP
+    .map(({ key, label }) => ({ label, value: summaryAcademicData[key] }))
+    .filter((item) => item.value !== undefined && item.value !== null && item.value !== '');
+  const snapshotCrucialSkills = (submissionSummary?.academic_snapshot_skills || [])
+    .filter((skill) => skill.source_column === 'program_skill_rating' || !skill.source_column)
+    .map((skill) => ({ name: skill.skill_name, value: skill.skill_value }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const payloadCrucialSkills = Array.isArray(summaryAcademicData.program_skill_ratings)
+    ? summaryAcademicData.program_skill_ratings
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null;
+        const name = String((entry as Record<string, unknown>).skill_name || (entry as Record<string, unknown>).skill || '').trim();
+        const valueRaw = (entry as Record<string, unknown>).skill_value ?? (entry as Record<string, unknown>).score;
+        const value = valueRaw === null || valueRaw === undefined || valueRaw === '' ? null : Number(valueRaw);
+        if (!name) return null;
+        return { name, value: Number.isFinite(value) ? value : null };
+      })
+      .filter((item): item is { name: string; value: number | null } => Boolean(item))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+  const crucialSkills = snapshotCrucialSkills.length ? snapshotCrucialSkills : payloadCrucialSkills;
   const hasJobMatches = Boolean(jobMatching?.matches?.length);
+  const cgpaRaw = prediction.student_academic?.cgpa ?? snapshot.CGPA;
+  const profRaw = prediction.student_academic?.prof_grade ?? snapshot['Average Prof Grade'];
+  const elecRaw = prediction.student_academic?.elec_grade ?? snapshot['Average Elec Grade'];
+  const ojtRaw = prediction.student_academic?.ojt_grade ?? snapshot['OJT Grade'];
+  const softRaw = snapshot['Soft Skills Ave'];
+  const hardRaw = snapshot['Hard Skills Ave'];
+  const internshipRaw = snapshot['Internship Experience'] ?? summaryAcademicData.internship_score;
+  const certificationRaw = snapshot.Certifications ?? summaryAcademicData.certification_score;
+  const boardRaw = snapshot['Board Exam'] ?? prediction.student_academic?.board_exam;
+
+  const academicComposite = Math.round(
+    (toCgpaPercent(cgpaRaw) + toGradePercent(profRaw) + toGradePercent(elecRaw) + toGradePercent(ojtRaw)) / 4
+  );
+  const skillsComposite = Math.round((toSkillPercent(softRaw) + toSkillPercent(hardRaw)) / 2);
+  const internshipPercent = Math.round(toFiveScalePercent(internshipRaw));
+  const certificationPercent = Math.round(toFiveScalePercent(certificationRaw));
+  const boardPercent = Math.round(toBinaryPercent(boardRaw));
+  const leadershipRaw = prediction.student_academic?.leader_pos ?? snapshot['Leadership POS'];
+  const activeMemberRaw = prediction.student_academic?.act_member_pos ?? snapshot['Act Member POS'];
+  const leadershipPercent = toBinaryPercent(leadershipRaw);
+  const activeMemberPercent = toBinaryPercent(activeMemberRaw);
+
   const academicSummary = [
+    { label: 'Program', value: snapshot.Program || prediction.student_academic?.degree_name || 'Not provided' },
     { label: 'Degree', value: prediction.student_academic?.degree_name || snapshot.Degree || 'Not provided' },
     { label: 'Gender', value: prediction.student_academic?.gender || snapshot.Gender || 'Not provided' },
     { label: 'Age', value: prediction.student_academic?.age || snapshot.Age || 'Not provided' },
@@ -457,27 +547,47 @@ export default function AlumniResults() {
     { label: 'Average Prof Grade', value: prediction.student_academic?.prof_grade || snapshot['Average Prof Grade'] || 'Not provided' },
     { label: 'Average Elec Grade', value: prediction.student_academic?.elec_grade || snapshot['Average Elec Grade'] || 'Not provided' },
     { label: 'OJT Grade', value: prediction.student_academic?.ojt_grade || snapshot['OJT Grade'] || 'Not provided' },
+    { label: 'Internship Experience', value: snapshot['Internship Experience'] || summaryAcademicData.internship_score || 'Not provided' },
+    { label: 'Certifications', value: snapshot.Certifications || summaryAcademicData.certification_score || 'Not provided' },
+    { label: 'Board Exam', value: snapshot['Board Exam'] ?? 'Not provided' },
     { label: 'Leadership Position', value: formatChoiceValue(prediction.student_academic?.leader_pos ?? snapshot['Leadership POS']) },
     { label: 'Active Membership', value: formatChoiceValue(prediction.student_academic?.act_member_pos ?? snapshot['Act Member POS']) },
     { label: 'Soft Skills Average', value: snapshot['Soft Skills Ave'] || 'Not provided' },
     { label: 'Hard Skills Average', value: snapshot['Hard Skills Ave'] || 'Not provided' }
   ];
 
+  const experienceAchievementComposite = Math.round(
+    (internshipPercent + certificationPercent + boardPercent) / 3
+  );
+
   const radarData = [
-    { skill: 'CGPA', value: toCgpaPercent(prediction.student_academic?.cgpa || snapshot.CGPA) },
-    { skill: 'Prof Grade', value: toGradePercent(prediction.student_academic?.prof_grade || snapshot['Average Prof Grade']) },
-    { skill: 'Soft Skills', value: toSkillPercent(snapshot['Soft Skills Ave']) },
-    { skill: 'Hard Skills', value: toSkillPercent(snapshot['Hard Skills Ave']) },
-    { skill: 'OJT', value: toGradePercent(prediction.student_academic?.ojt_grade || snapshot['OJT Grade']) }
+    { skill: 'Academic Features', value: academicComposite },
+    { skill: 'Skill Features', value: skillsComposite },
+    { skill: 'Experience and Achievement', value: experienceAchievementComposite },
+    { skill: 'Board Exam', value: boardPercent },
+    {
+      skill: 'Involvement',
+      value: Math.round((leadershipPercent + activeMemberPercent) / 2)
+    }
   ];
 
   const barData = [
-    { name: 'Prof Grade', value: parseNumericValue(prediction.student_academic?.prof_grade || snapshot['Average Prof Grade']), color: 'hsl(var(--primary))' },
-    { name: 'Elec Grade', value: parseNumericValue(prediction.student_academic?.elec_grade || snapshot['Average Elec Grade']), color: 'hsl(var(--secondary))' },
-    { name: 'OJT Grade', value: parseNumericValue(prediction.student_academic?.ojt_grade || snapshot['OJT Grade']), color: 'hsl(var(--accent))' },
-    { name: 'Soft Skills', value: parseNumericValue(snapshot['Soft Skills Ave']) * 10, color: 'hsl(var(--success))' },
-    { name: 'Hard Skills', value: parseNumericValue(snapshot['Hard Skills Ave']) * 10, color: 'hsl(var(--info))' }
+    { name: 'Academic Features', value: academicComposite, color: 'hsl(var(--primary))' },
+    { name: 'Skill Features', value: skillsComposite, color: 'hsl(var(--secondary))' },
+    { name: 'Internship Experience', value: internshipPercent, color: 'hsl(var(--accent))' },
+    { name: 'Certifications', value: certificationPercent, color: 'hsl(var(--success))' },
+    { name: 'Board Exam', value: boardPercent, color: 'hsl(var(--info))' }
   ];
+
+  const strongestIndicators = [
+    { label: 'Academic Features', value: `${academicComposite}%`, score: academicComposite },
+    { label: 'Skill Features', value: `${skillsComposite}%`, score: skillsComposite },
+    { label: 'Internship Experience', value: `${internshipPercent}%`, score: internshipPercent },
+    { label: 'Certifications', value: `${certificationPercent}%`, score: certificationPercent },
+    { label: 'Board Exam', value: boardPercent > 0 ? 'Passed' : 'Not passed/not taken', score: boardPercent }
+  ]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
 
   const openJobSite = (site: (typeof JOB_SITES)[number], roleTitle: string) => {
     const location = 'Manila';
@@ -601,11 +711,7 @@ export default function AlumniResults() {
         >
           <p className="mb-3 text-sm text-muted-foreground">Strongest Indicators</p>
           <div className="space-y-2">
-            {[
-              { label: 'CGPA', value: snapshot.CGPA },
-              { label: 'Leadership', value: snapshot['Leadership POS'] },
-              { label: 'Hard Skills', value: snapshot['Hard Skills Ave'] }
-            ].map((item) => (
+            {strongestIndicators.map((item) => (
               <div key={item.label} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Target className="h-3 w-3 text-primary" />
@@ -638,10 +744,10 @@ export default function AlumniResults() {
                     </p>
                     <div className="space-y-2">
                       {[
-                        { label: 'Academic Excellence (CGPA)', weight: 0.35, trend: 'positive' },
-                        { label: 'Professional Readiness (OJT)', weight: 0.28, trend: 'positive' },
-                        { label: 'Leadership Soft Skills', weight: 0.22, trend: 'positive' },
-                        { label: 'Specialized Elective Average', weight: 0.15, trend: 'neutral' }
+                        { label: 'Academic Features', weight: academicComposite / 100, trend: 'positive' },
+                        { label: 'Skill Features', weight: skillsComposite / 100, trend: 'positive' },
+                        { label: 'Experience and Achievement', weight: experienceAchievementComposite / 100, trend: 'positive' },
+                        { label: 'Board Exam Signal', weight: boardPercent / 100, trend: 'neutral' }
                       ].map((feat) => (
                         <div key={feat.label} className="space-y-1">
                           <div className="flex justify-between text-xs font-medium">
@@ -666,19 +772,19 @@ export default function AlumniResults() {
                       <div className="mt-1 h-5 w-5 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
                         <span className="text-[10px] font-bold text-primary">1</span>
                       </div>
-                      <p>Your <strong>{snapshot.CGPA} CGPA</strong> is a strong baseline. To further improve marketability, consider obtaining a professional certification in <strong>{snapshot.Degree || 'your field'}</strong>.</p>
+                      <p>Your Academic Features score is <strong>{academicComposite}%</strong>. Keep grade consistency while building practical outputs related to <strong>{snapshot.Program || snapshot.Degree || 'your program'}</strong>.</p>
                     </li>
                     <li className="flex gap-3 text-sm">
                       <div className="mt-1 h-5 w-5 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
                         <span className="text-[10px] font-bold text-primary">2</span>
                       </div>
-                      <p>The <strong>{snapshot['Soft Skills Ave']}</strong> soft skills score suggests strong communication. Highlighting your <strong>{snapshot['Leadership POS'] === 'Yes' ? 'leadership experience' : 'collaborative projects'}</strong> on your resume would be highly beneficial.</p>
+                      <p>Your Skill Features score is <strong>{skillsComposite}%</strong>. Highlight your strongest crucial skills and concrete project outcomes to improve recruiter confidence.</p>
                     </li>
                     <li className="flex gap-3 text-sm">
                       <div className="mt-1 h-5 w-5 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
                         <span className="text-[10px] font-bold text-primary">3</span>
                       </div>
-                      <p>Leverage your <strong>{snapshot['OJT Grade']} OJT performance</strong> as concrete evidence of your practical application skills during interviews.</p>
+                      <p>Your Experience and Achievement profile shows <strong>{internshipPercent}% internship</strong> and <strong>{certificationPercent}% certifications</strong>{boardPercent > 0 ? ', with a passed board exam.' : '.'} Strengthening this area can raise your readiness quickly.</p>
                     </li>
                   </ul>
                 </div>
@@ -725,7 +831,7 @@ export default function AlumniResults() {
             </RadarChart>
           </ResponsiveContainer>
           <p className="mt-4 text-center text-xs italic text-muted-foreground">
-            Radar view of normalized core features.
+            Radar view using model documentation feature groups.
           </p>
         </div>
 
@@ -756,7 +862,7 @@ export default function AlumniResults() {
             </BarChart>
           </ResponsiveContainer>
           <p className="mt-4 text-center text-xs italic text-muted-foreground">
-            Performance metrics across key academic and skill categories.
+            Normalized percentages for model-v2 feature interpretation.
           </p>
         </div>
       </div>
@@ -816,6 +922,59 @@ export default function AlumniResults() {
                       </div>
                     ))}
                   </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Submission Path</h4>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border bg-muted/20 p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Branch</p>
+                      <p className="mt-1 font-medium">{submissionSummary?.branch_path || 'Not provided'}</p>
+                    </div>
+                    <div className="rounded-xl border bg-muted/20 p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Flow</p>
+                      <p className="mt-1 font-medium">
+                        {String(submissionSummary?.branch_path || '').toUpperCase() === 'EMPLOYED'
+                          ? 'Save-only (employed path)'
+                          : 'Save + predict (unemployed path)'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Experience and Achievement</h4>
+                  {experienceItems.length ? (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {experienceItems.map((item) => (
+                        <div key={item.label} className="rounded-xl border bg-muted/20 p-4">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                          <p className="mt-1 font-medium">{formatChoiceValue(item.value)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                      No experience and achievement details were saved for this submission.
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Crucial Skills Ratings</h4>
+                  {crucialSkills.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {crucialSkills.map((skill) => (
+                        <Badge key={skill.name} variant="outline" className="bg-primary/5 text-foreground">
+                          {skill.name} | {skill.value ?? 'N/A'}/10
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                      No crucial skills ratings are attached to this submission.
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3">

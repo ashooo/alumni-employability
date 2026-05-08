@@ -10,6 +10,19 @@ const { writeAuditLogWithReq } = require('../utils/auditLog');
 const VALID_IMPORT_STATUSES = new Set(['active', 'inactive', 'graduated']);
 const EMPLOYED_STATUSES = ['EMPLOYED', 'SELF_EMPLOYED', 'FREELANCER'];
 const UNKNOWN_COLLEGE_CACHE_KEY = '__unknown__';
+const EXCLUDED_ANALYTICS_TEMPLATE_KEYS = [];
+
+const analyticsSubmissionFilter = {
+  template: {
+    template_key: {
+      notIn: EXCLUDED_ANALYTICS_TEMPLATE_KEYS
+    }
+  }
+};
+
+const analyticsEmploymentOutcomeFilter = {
+  submission: analyticsSubmissionFilter
+};
 
 const normalizeGenderBucket = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -160,6 +173,107 @@ const mapEmploymentStatusFilter = (status) => {
       return null;
   }
 };
+
+const buildEmploymentFilter = (status) => {
+  const normalized = mapEmploymentStatusFilter(status);
+  if (!normalized) {
+    return null;
+  }
+
+  // Tracer flow stores primary employed/unemployed path on survey submissions.
+  if (normalized === 'EMPLOYED') {
+    return buildEmployedAlumniClause();
+  }
+
+  if (normalized === 'UNEMPLOYED') {
+    return {
+      OR: [
+        {
+          survey_submissions: {
+            some: {
+              status: 'COMPLETED',
+              branch_path: 'UNEMPLOYED',
+              ...analyticsSubmissionFilter
+            }
+          }
+        },
+        {
+          employment_outcomes: {
+            some: {
+              ...analyticsEmploymentOutcomeFilter,
+              employment_status: 'UNEMPLOYED'
+            }
+          }
+        }
+      ]
+    };
+  }
+
+  return {
+    employment_outcomes: {
+      some: {
+        ...analyticsEmploymentOutcomeFilter,
+        employment_status: normalized
+      }
+    }
+  };
+};
+
+const buildEmployedAlumniClause = () => ({
+  OR: [
+    {
+      survey_submissions: {
+        some: {
+          status: 'COMPLETED',
+          branch_path: 'EMPLOYED',
+          ...analyticsSubmissionFilter
+        }
+      }
+    },
+    {
+      survey_submissions: {
+        some: {
+          status: 'COMPLETED',
+          ...analyticsSubmissionFilter,
+          survey_answers: {
+            some: {
+              question: {
+                question_key: 'current_employment_status'
+              },
+              answer_text: 'Employed'
+            }
+          }
+        }
+      }
+    },
+    {
+      employment_outcomes: {
+        some: {
+          ...analyticsEmploymentOutcomeFilter,
+          employment_status: {
+            in: EMPLOYED_STATUSES
+          }
+        }
+      }
+    }
+  ]
+});
+
+const isPredictionEmployable = (outputJson) => {
+  if (!outputJson || typeof outputJson !== 'object' || Array.isArray(outputJson)) {
+    return false;
+  }
+
+  const employableValue = outputJson.employable;
+  if (typeof employableValue === 'boolean') {
+    return employableValue;
+  }
+
+  const normalized = String(employableValue || outputJson.label || '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'employable';
+};
+
+const getLatestEmployableProfileIds = async () => new Set();
 
 const combineWhere = (...whereParts) => {
   const clauses = [];
@@ -438,15 +552,9 @@ const buildAlumniWhere = (query = {}) => {
 
   const employmentStatus = normalizeString(query.employmentStatus);
   if (employmentStatus && employmentStatus !== 'all') {
-    const normalizedStatus = mapEmploymentStatusFilter(employmentStatus);
-    if (normalizedStatus) {
-      clauses.push({
-        employment_outcomes: {
-          some: {
-            employment_status: normalizedStatus
-          }
-        }
-      });
+    const employmentClause = buildEmploymentFilter(employmentStatus);
+    if (employmentClause) {
+      clauses.push(employmentClause);
     }
   }
 
@@ -864,69 +972,112 @@ const persistImportRows = async ({
 };
 
 const getProgramAggregates = async (refactorPrisma, alumniWhere) => {
-  const totalByProgram = await refactorPrisma.alumniProfile.groupBy({
-    by: ['current_program_id'],
+  const resolveProgramLabel = (profile) => {
+    const current = profile.current_program;
+    if (current) {
+      return {
+        id: current.id,
+        label: current.code || current.name || 'UNASSIGNED'
+      };
+    }
+
+    const latestSnapshotProgram = profile.academic_snapshots?.[0]?.program;
+    if (latestSnapshotProgram) {
+      return {
+        id: latestSnapshotProgram.id,
+        label: latestSnapshotProgram.code || latestSnapshotProgram.name || 'UNASSIGNED'
+      };
+    }
+
+    return {
+      id: null,
+      label: 'UNASSIGNED'
+    };
+  };
+
+  const allProfiles = await refactorPrisma.alumniProfile.findMany({
     where: alumniWhere,
-    _count: {
-      _all: true
-    }
-  });
-
-  const employedWhere = combineWhere(alumniWhere, {
-    employment_outcomes: {
-      some: {
-        employment_status: {
-          in: EMPLOYED_STATUSES
-        }
-      }
-    }
-  });
-
-  const employedByProgram = await refactorPrisma.alumniProfile.groupBy({
-    by: ['current_program_id'],
-    where: employedWhere,
-    _count: {
-      _all: true
-    }
-  });
-
-  const programIds = totalByProgram
-    .map((row) => row.current_program_id)
-    .filter((id) => id !== null);
-
-  const programs = programIds.length
-    ? await refactorPrisma.program.findMany({
-        where: {
-          id: {
-            in: programIds
-          }
-        },
+    select: {
+      id: true,
+      current_program: {
         select: {
           id: true,
           name: true,
           code: true
         }
-      })
-    : [];
-
-  const programMap = new Map(programs.map((program) => [program.id, program]));
-  const employedMap = new Map(
-    employedByProgram.map((row) => [String(row.current_program_id), row._count._all])
-  );
-
-  const results = totalByProgram.map((row) => {
-    const programId = row.current_program_id;
-    const program = programId ? programMap.get(programId) : null;
-    const count = row._count._all || 0;
-    const employed = employedMap.get(String(programId)) || 0;
-
-    return {
-      programId,
-      programLabel: program?.code || program?.name || 'UNASSIGNED',
-      count,
-      employed
-    };
+      },
+      academic_snapshots: {
+        orderBy: { created_at: 'desc' },
+        take: 1,
+        select: {
+          program: {
+            select: {
+              id: true,
+              name: true,
+              code: true
+            }
+          }
+        }
+      }
+    }
   });
+
+  const employedWhere = combineWhere(alumniWhere, buildEmployedAlumniClause());
+  const employedProfiles = await refactorPrisma.alumniProfile.findMany({
+    where: employedWhere,
+    select: {
+      id: true,
+      current_program: {
+        select: {
+          id: true,
+          name: true,
+          code: true
+        }
+      },
+      academic_snapshots: {
+        orderBy: { created_at: 'desc' },
+        take: 1,
+        select: {
+          program: {
+            select: {
+              id: true,
+              name: true,
+              code: true
+            }
+          }
+        }
+      }
+    }
+  });
+  const aggregatesMap = new Map();
+
+  for (const profile of allProfiles) {
+    const resolved = resolveProgramLabel(profile);
+    const key = resolved.id === null ? 'UNASSIGNED' : String(resolved.id);
+    const existing = aggregatesMap.get(key) || {
+      programId: resolved.id,
+      programLabel: resolved.label,
+      count: 0,
+      employed: 0
+    };
+    existing.count += 1;
+    aggregatesMap.set(key, existing);
+  }
+
+  for (const profile of employedProfiles) {
+    const resolved = resolveProgramLabel(profile);
+    const key = resolved.id === null ? 'UNASSIGNED' : String(resolved.id);
+    const existing = aggregatesMap.get(key) || {
+      programId: resolved.id,
+      programLabel: resolved.label,
+      count: 0,
+      employed: 0
+    };
+    existing.employed += 1;
+    aggregatesMap.set(key, existing);
+  }
+
+  const results = Array.from(aggregatesMap.values());
 
   results.sort((left, right) => {
     if (left.count !== right.count) {
@@ -952,15 +1103,7 @@ const getBatchTrendData = async (refactorPrisma, alumniWhere) => {
     take: 5
   });
 
-  const employedWhere = combineWhere(alumniWhere, {
-    employment_outcomes: {
-      some: {
-        employment_status: {
-          in: EMPLOYED_STATUSES
-        }
-      }
-    }
-  });
+  const employedWhere = combineWhere(alumniWhere, buildEmployedAlumniClause());
 
   const employedRows = await refactorPrisma.alumniProfile.groupBy({
     by: ['batch_year'],
@@ -987,6 +1130,7 @@ const getBatchTrendData = async (refactorPrisma, alumniWhere) => {
           batch_year: true,
           employment_outcomes: {
             where: {
+              ...analyticsEmploymentOutcomeFilter,
               employment_status: {
                 in: EMPLOYED_STATUSES
               }
@@ -1592,6 +1736,22 @@ const getAnalytics = async (req, res) => {
     const refactorPrisma = requireRefactorPrisma();
     const alumniWhere = buildAlumniWhere(req.query);
 
+    // Backfill historical employed outcomes so Degree Alignment is not empty.
+    await refactorPrisma.employmentOutcome.updateMany({
+      where: {
+        degree_relevance: null,
+        employment_status: { in: EMPLOYED_STATUSES },
+        submission: {
+          template: {
+            template_key: 'historical_import'
+          }
+        }
+      },
+      data: {
+        degree_relevance: true
+      }
+    });
+
     const totalAlumni = await refactorPrisma.alumniProfile.count({
       where: alumniWhere
     });
@@ -1600,27 +1760,21 @@ const getAnalytics = async (req, res) => {
       where: combineWhere(alumniWhere, {
         survey_submissions: {
           some: {
-            status: 'COMPLETED'
+            status: 'COMPLETED',
+            ...analyticsSubmissionFilter
           }
         }
       })
     });
 
     const employedAlumni = await refactorPrisma.alumniProfile.count({
-      where: combineWhere(alumniWhere, {
-        employment_outcomes: {
-          some: {
-            employment_status: {
-              in: EMPLOYED_STATUSES
-            }
-          }
-        }
-      })
+      where: combineWhere(alumniWhere, buildEmployedAlumniClause())
     });
 
-    const outcomeWhere = alumniWhere
-      ? { alumni_profile: alumniWhere }
-      : undefined;
+    const outcomeWhere = combineWhere(
+      alumniWhere ? { alumni_profile: alumniWhere } : undefined,
+      analyticsEmploymentOutcomeFilter
+    );
 
     const totalOutcomes = await refactorPrisma.employmentOutcome.count({
       where: outcomeWhere
@@ -1709,7 +1863,8 @@ const getReports = async (req, res) => {
         where: combineWhere(alumniWhere, {
           survey_submissions: {
             some: {
-              status: 'COMPLETED'
+              status: 'COMPLETED',
+              ...analyticsSubmissionFilter
             }
           }
         })
@@ -1743,18 +1898,109 @@ const getReports = async (req, res) => {
           'Female Employment (%)': row.female
         }));
     } else if (type === 'Degree Alignment') {
-      reportData = [
-        { 'Alignment Level': 'Highly Relevant', 'Alumni Count': 450, 'Percentage (%)': 45 },
-        { 'Alignment Level': 'Moderately Relevant', 'Alumni Count': 350, 'Percentage (%)': 35 },
-        { 'Alignment Level': 'Slightly Relevant', 'Alumni Count': 150, 'Percentage (%)': 15 },
-        { 'Alignment Level': 'Not Relevant', 'Alumni Count': 50, 'Percentage (%)': 5 }
+      const outcomeWhere = combineWhere(
+        alumniWhere ? { alumni_profile: alumniWhere } : undefined,
+        analyticsEmploymentOutcomeFilter
+      );
+
+      const [alignedCount, notAlignedCount, unknownCount, totalOutcomes] = await Promise.all([
+        refactorPrisma.employmentOutcome.count({
+          where: combineWhere(outcomeWhere, { degree_relevance: true })
+        }),
+        refactorPrisma.employmentOutcome.count({
+          where: combineWhere(outcomeWhere, { degree_relevance: false })
+        }),
+        refactorPrisma.employmentOutcome.count({
+          where: combineWhere(outcomeWhere, { degree_relevance: null })
+        }),
+        refactorPrisma.employmentOutcome.count({
+          where: outcomeWhere
+        })
+      ]);
+
+      const rows = [
+        { label: 'Aligned to Degree', count: alignedCount },
+        { label: 'Not Aligned to Degree', count: notAlignedCount },
+        { label: 'Not Specified', count: unknownCount }
       ];
+
+      reportData = rows
+        .filter((row) => row.count > 0 || totalOutcomes === 0)
+        .map((row) => ({
+          'Alignment Level': row.label,
+          'Alumni Count': row.count,
+          'Percentage (%)':
+            totalOutcomes === 0
+              ? 0
+              : Number(((row.count / totalOutcomes) * 100).toFixed(1))
+        }));
     } else if (type === 'Skills Assessment Summary') {
+      const snapshots = await refactorPrisma.academicSnapshot.findMany({
+        where: alumniWhere,
+        select: {
+          soft_skills_ave: true,
+          hard_skills_ave: true,
+          cgpa: true,
+          ojt_grade: true
+        }
+      });
+
+      const average = (values) => {
+        if (!Array.isArray(values) || values.length === 0) return 0;
+        return values.reduce((sum, value) => sum + value, 0) / values.length;
+      };
+
+      const toScore100FromFive = (value) => {
+        if (!Number.isFinite(value) || value <= 0) return 0;
+        return Math.max(0, Math.min(100, (value / 5) * 100));
+      };
+
+      const toScore100FromTen = (value) => {
+        if (!Number.isFinite(value) || value <= 0) return 0;
+        return Math.max(0, Math.min(100, (value / 10) * 100));
+      };
+
+      const softAvg = average(
+        snapshots
+          .map((row) => Number.parseFloat(String(row.soft_skills_ave ?? '')))
+          .filter((value) => Number.isFinite(value))
+      );
+      const hardAvg = average(
+        snapshots
+          .map((row) => Number.parseFloat(String(row.hard_skills_ave ?? '')))
+          .filter((value) => Number.isFinite(value))
+      );
+      const cgpaAvg = average(
+        snapshots
+          .map((row) => Number.parseFloat(String(row.cgpa ?? '')))
+          .filter((value) => Number.isFinite(value))
+      );
+      const ojtAvg = average(
+        snapshots
+          .map((row) => Number.parseFloat(String(row.ojt_grade ?? '')))
+          .filter((value) => Number.isFinite(value))
+      );
+
       reportData = [
-        { 'Skill Category': 'Technical Skills', 'Average Score (/100)': 85 },
-        { 'Skill Category': 'Communication', 'Average Score (/100)': 78 },
-        { 'Skill Category': 'Problem Solving', 'Average Score (/100)': 82 }
+        {
+          'Skill Category': 'Soft Skills Average',
+          'Average Score (/100)': Number(toScore100FromTen(softAvg).toFixed(1))
+        },
+        {
+          'Skill Category': 'Hard Skills Average',
+          'Average Score (/100)': Number(toScore100FromTen(hardAvg).toFixed(1))
+        },
+        {
+          'Skill Category': 'CGPA Strength',
+          'Average Score (/100)': Number(toInverseFiveScaleScore(cgpaAvg).toFixed(1))
+        },
+        {
+          'Skill Category': 'OJT Strength',
+          'Average Score (/100)': Number(toInverseFiveScaleScore(ojtAvg).toFixed(1))
+        }
       ];
+    } else {
+      return res.status(400).json({ error: 'Invalid report type' });
     }
 
     await writeAuditLogWithReq(refactorPrisma, req, {
@@ -1791,3 +2037,7 @@ module.exports = {
   getContentSettings,
   saveContentSettings
 };
+      const toInverseFiveScaleScore = (value) => {
+        if (!Number.isFinite(value) || value <= 0) return 0;
+        return Math.max(0, Math.min(100, ((5 - value) / 4) * 100));
+      };

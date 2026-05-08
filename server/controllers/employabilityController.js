@@ -4,6 +4,7 @@ const {
   getLatestRefactorPrediction,
   submitEmployabilitySurvey: persistEmployabilitySurvey
 } = require('../services/employabilityDataService');
+const { generateJobMatchingPrediction } = require('../services/jobMatchingDataService');
 
 const HARD_SKILL_MIN_SELECTIONS = 4;
 const HARD_SKILL_MAX_SELECTIONS = 10;
@@ -78,8 +79,8 @@ const ensureSubmissionAccess = (req, res, studentId) => {
   return true;
 };
 
-const buildModelInput = (academicData, degreeName, hardAve, softAve) => {
-  return {
+const buildModelInput = (academicData, programCode, hardAve, softAve, internshipExp, certifications) => {
+  const base = {
     CGPA: parseNumeric(academicData.cgpa),
     'Average Prof Grade': parseNumeric(academicData.prof_grade),
     'Average Elec Grade': parseNumeric(academicData.elec_grade),
@@ -87,8 +88,31 @@ const buildModelInput = (academicData, degreeName, hardAve, softAve) => {
     'Leadership POS': academicData.leader_pos === 'Yes' || academicData.leader_pos === true ? 'Yes' : 'No',
     'Act Member POS': academicData.act_member_pos === 'Yes' || academicData.act_member_pos === true ? 'Yes' : 'No',
     'Soft Skills Ave': parseNumeric(softAve.toFixed(2)),
-    'Hard Skills Ave': parseNumeric(hardAve.toFixed(2))
+    'Hard Skills Ave': parseNumeric(hardAve.toFixed(2)),
+    'Board Exam': parseNumeric(academicData.board_exam),
+    'Internship Experience': parseNumeric(internshipExp.toFixed(1)),
+    'Certifications': Math.round(certifications),
+    'Program': programCode
   };
+  const programSkillRatings = Array.isArray(academicData.program_skill_ratings)
+    ? academicData.program_skill_ratings
+    : [];
+  for (const entry of programSkillRatings) {
+    const skillName = String(entry?.skill_name || entry?.skill || '').trim();
+    if (!skillName) continue;
+    base[skillName] = parseNumeric(entry?.skill_value ?? entry?.score);
+  }
+  return base;
+};
+
+const normalizeEmploymentStatus = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'unemployed') return 'UNEMPLOYED';
+  if (normalized === 'employed') {
+    return 'EMPLOYED';
+  }
+  return null;
 };
 
 /**
@@ -199,6 +223,10 @@ const submitEmployabilitySurvey = async (req, res) => {
       age: snapshot.age || 0,
       year_graduated: snapshot.year_graduated || new Date().getFullYear(),
       degree_id: program.id,
+      board_exam:
+        academicData?.board_exam !== undefined && academicData?.board_exam !== null
+          ? Number(academicData.board_exam) ? 1 : 0
+          : snapshot.board_exam ? 1 : 0,
       leader_pos: academicData?.leader_pos === true || academicData?.leader_pos === 'Yes',
       act_member_pos: academicData?.act_member_pos === true || academicData?.act_member_pos === 'Yes'
     };
@@ -221,10 +249,23 @@ const submitEmployabilitySurvey = async (req, res) => {
 
     const hardAve = computeAverageScore(hardSkills);
     const softAve = computeAverageScore(softSkills);
+    const programHardScores = Array.isArray(academicData?.program_skill_ratings)
+      ? academicData.program_skill_ratings
+          .map((entry) => parseNumeric(entry?.skill_value ?? entry?.score))
+          .filter((value) => Number.isFinite(value) && value > 0)
+      : [];
+    const mergedHardScores = [
+      ...hardSkills.map((skill) => parseNumeric(skill.score)),
+      ...programHardScores
+    ].filter((value) => Number.isFinite(value) && value > 0);
+    const mergedHardAve =
+      mergedHardScores.length > 0
+        ? mergedHardScores.reduce((sum, value) => sum + value, 0) / mergedHardScores.length
+        : hardAve;
     const adjustedHardAve = applyCoverageAdjustment(
-      hardAve,
-      hardSkills.length,
-      HARD_SKILL_TARGET_COUNT
+      mergedHardAve,
+      hardSkills.length + programHardScores.length,
+      HARD_SKILL_TARGET_COUNT + programHardScores.length
     );
     const adjustedSoftAve = applyCoverageAdjustment(
       softAve,
@@ -232,41 +273,85 @@ const submitEmployabilitySurvey = async (req, res) => {
       SOFT_SKILL_TARGET_COUNT
     );
 
+    // Derive synthetic features for model consistency (1-5 scale)
+    // Use explicit normalized values when provided, fallback to legacy derivation.
+    let internshipExp = 2.0; // Default
+    if (academicData?.internship_score !== undefined && academicData?.internship_score !== null) {
+      internshipExp = Math.min(5.0, Math.max(1.0, parseNumeric(academicData.internship_score)));
+    } else {
+      if (dbAcademicData.ojt_grade <= 1.3) internshipExp = 4.5;
+      else if (dbAcademicData.ojt_grade <= 1.6) internshipExp = 4.0;
+      else if (dbAcademicData.ojt_grade <= 1.9) internshipExp = 3.5;
+      else if (dbAcademicData.ojt_grade <= 2.2) internshipExp = 3.0;
+      else if (dbAcademicData.ojt_grade <= 2.5) internshipExp = 2.5;
+      else internshipExp = 1.5;
+
+      if (dbAcademicData.leader_pos) internshipExp += 0.4;
+      if (dbAcademicData.act_member_pos) internshipExp += 0.3;
+      internshipExp = Math.min(5.0, Math.max(1.0, internshipExp));
+    }
+
+    // Certifications logic: Board exam + Skills + Program (or explicit normalized value)
+    let certifications = 1.0; // Baseline
+    if (academicData?.certification_score !== undefined && academicData?.certification_score !== null) {
+      certifications = Math.min(5, Math.max(1, parseNumeric(academicData.certification_score)));
+    } else {
+      if (dbAcademicData.board_exam) certifications += 1.2;
+      if (adjustedHardAve >= 8.0) certifications += 1.0;
+      else if (adjustedHardAve >= 6.0) certifications += 0.5;
+
+      const techPrograms = ['BSCS', 'BSIT', 'BSECE'];
+      if (techPrograms.includes(program.code)) certifications += 0.6;
+      if (adjustedSoftAve >= 8.0) certifications += 0.5;
+      certifications = Math.min(5, Math.max(1, Math.round(certifications)));
+    }
+
+    const forcedPath = String(req.body.assessmentPath || '').toUpperCase();
+    const employmentFromAnswers = normalizeEmploymentStatus(additionalAnswers?.current_employment_status);
+    const resolvedPath =
+      forcedPath === 'EMPLOYED' || forcedPath === 'UNEMPLOYED'
+        ? forcedPath
+        : employmentFromAnswers || 'UNEMPLOYED';
+
     const modelInput = buildModelInput(
       dbAcademicData,
-      program.name,
+      program.code,
       adjustedHardAve,
-      adjustedSoftAve
+      adjustedSoftAve,
+      internshipExp,
+      certifications
     );
 
-    let mlResult;
-    try {
-      mlResult = await runMlScript({
-        scriptPath: 'scripts/predict_employability.py',
-        input: modelInput
-      });
-    } catch (error) {
-      console.error('[ML] Failed to start Python process in submit:', error);
-      return res.status(500).json({ error: 'Failed to start ML pipeline' });
-    }
+    let predictionResult = null;
+    if (resolvedPath === 'UNEMPLOYED') {
+      let mlResult;
+      try {
+        mlResult = await runMlScript({
+          scriptPath: 'scripts/predict_employability.py',
+          input: modelInput
+        });
+      } catch (error) {
+        console.error('[ML] Failed to start Python process in submit:', error);
+        return res.status(500).json({ error: 'Failed to start ML pipeline' });
+      }
 
-    if (mlResult.code !== 0) {
-      console.error('ML Prediction Process Error:', mlResult.stderr);
-      return res.status(500).json({ error: 'ML Prediction service failed' });
-    }
+      if (mlResult.code !== 0) {
+        console.error('ML Prediction Process Error:', mlResult.stderr);
+        return res.status(500).json({ error: 'ML Prediction service failed' });
+      }
 
-    let predictionResult;
-    try {
-      predictionResult = JSON.parse(mlResult.stdout);
-    } catch (error) {
-      console.error('Error parsing ML result:', error, mlResult.stdout);
-      return res.status(500).json({ error: 'Failed to parse prediction result' });
-    }
+      try {
+        predictionResult = JSON.parse(mlResult.stdout);
+      } catch (error) {
+        console.error('Error parsing ML result:', error, mlResult.stdout);
+        return res.status(500).json({ error: 'Failed to parse prediction result' });
+      }
 
-    if (predictionResult.status !== 'success') {
-      return res.status(500).json({
-        error: predictionResult.message || 'Prediction script returned error'
-      });
+      if (predictionResult.status !== 'success') {
+        return res.status(500).json({
+          error: predictionResult.message || 'Prediction script returned error'
+        });
+      }
     }
 
     const stored = await persistEmployabilitySurvey({
@@ -279,24 +364,38 @@ const submitEmployabilitySurvey = async (req, res) => {
       skillRatings,
       additionalAnswers: additionalAnswers || {},
       modelInput,
-      predictionResult
+      predictionResult,
+      assessmentPath: resolvedPath
     });
 
-    return res.json({
+    const baseResponse = {
       success: true,
-      message: 'Survey processed and prediction generated',
+      message:
+        resolvedPath === 'UNEMPLOYED'
+          ? 'Assessment saved and prediction generated'
+          : 'Assessment saved',
       storage: {
         refactor: true,
         refactor_submission_id: stored.surveySubmissionId
-      },
-      prediction: {
+      }
+    };
+
+    if (resolvedPath === 'UNEMPLOYED' && predictionResult) {
+      baseResponse.prediction = {
         employable: Boolean(predictionResult.employable),
         probability: predictionResult.probability,
         label: predictionResult.label,
         confidence: predictionResult.confidence,
         model_type: predictionResult.model_type || null
-      }
-    });
+      };
+      generateJobMatchingPrediction({
+        studentId: String(studentId),
+        topN: 5
+      }).catch((jobMatchError) => {
+        console.warn('Job-matching auto-generation skipped:', jobMatchError?.message || jobMatchError);
+      });
+    }
+    return res.json(baseResponse);
   } catch (error) {
     console.error('Employability survey error:', error);
     res.status(error.statusCode || 500).json({

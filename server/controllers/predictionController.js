@@ -5,6 +5,15 @@ const path = require('path');
 
 const ARIMA_MODEL_PATH = path.resolve(__dirname, '../../ml/models/arima/model.pkl');
 const ARIMA_REPORT_PATH = path.resolve(__dirname, '../../ml/models/arima/training_report.json');
+const EMPLOYABILITY_TRAINING_REPORT_PATH = path.resolve(
+  __dirname,
+  '../../ml/models/employability/training_report.json'
+);
+const EMPLOYABILITY_CLASSIFICATION_REPORT_PATH = path.resolve(
+  __dirname,
+  '../../ml/models/employability/evaluation/classification_report.json'
+);
+const JOB_MATCHING_CONFIG_PATH = path.resolve(__dirname, '../../ml/models/job_matcher_config.json');
 
 const arimaTrainingState = {
   isRunning: false,
@@ -239,8 +248,196 @@ const rerunArimaTraining = async (req, res) => {
   }
 };
 
+const readJsonIfExists = (filePath) => {
+  if (!fs.existsSync(filePath)) return null;
+  const raw = fs.readFileSync(filePath, 'utf8');
+  return JSON.parse(raw);
+};
+
+const toNumberOrNull = (value) => {
+  const parsed = Number.parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getModelEvaluations = async (req, res) => {
+  try {
+    const refactorPrisma = requireRefactorPrisma();
+    const employabilityTrainingReport = readJsonIfExists(EMPLOYABILITY_TRAINING_REPORT_PATH);
+    const employabilityClassificationReport = readJsonIfExists(EMPLOYABILITY_CLASSIFICATION_REPORT_PATH);
+    const jobMatchingConfig = readJsonIfExists(JOB_MATCHING_CONFIG_PATH);
+
+    const [employabilityPredictions, jobMatchingPredictions] = await Promise.all([
+      refactorPrisma.mlPrediction.findMany({
+        where: { prediction_type: 'EMPLOYABILITY' },
+        orderBy: { created_at: 'desc' },
+        take: 5000,
+        select: {
+          id: true,
+          alumni_profile_id: true,
+          confidence: true,
+          created_at: true,
+          output_json: true
+        }
+      }),
+      refactorPrisma.mlPrediction.findMany({
+        where: { prediction_type: 'JOB_MATCHING' },
+        orderBy: { created_at: 'desc' },
+        take: 5000,
+        select: {
+          id: true,
+          alumni_profile_id: true,
+          confidence: true,
+          created_at: true,
+          output_json: true
+        }
+      })
+    ]);
+
+    const latestEmployabilityByProfile = new Map();
+    for (const row of employabilityPredictions) {
+      if (latestEmployabilityByProfile.has(row.alumni_profile_id)) continue;
+      latestEmployabilityByProfile.set(row.alumni_profile_id, row);
+    }
+    const employabilityLatest = Array.from(latestEmployabilityByProfile.values());
+
+    const employabilityPositive = employabilityLatest.filter((row) => {
+      const output = row.output_json || {};
+      if (typeof output?.employable === 'boolean') {
+        return output.employable;
+      }
+      return String(output?.label || '').toLowerCase() === 'employable';
+    });
+    const avgEmployabilityProbability =
+      employabilityLatest.length > 0
+        ? employabilityLatest
+            .map((row) => toNumberOrNull(row.output_json?.probability))
+            .filter((v) => v !== null)
+            .reduce((sum, v) => sum + v, 0) /
+          Math.max(
+            1,
+            employabilityLatest.map((row) => toNumberOrNull(row.output_json?.probability)).filter((v) => v !== null)
+              .length
+          )
+        : 0;
+    const avgEmployabilityConfidence =
+      employabilityLatest.length > 0
+        ? employabilityLatest
+            .map((row) => toNumberOrNull(row.output_json?.confidence) ?? toNumberOrNull(row.confidence))
+            .filter((v) => v !== null)
+            .reduce((sum, v) => sum + v, 0) /
+          Math.max(
+            1,
+            employabilityLatest
+              .map((row) => toNumberOrNull(row.output_json?.confidence) ?? toNumberOrNull(row.confidence))
+              .filter((v) => v !== null).length
+          )
+        : 0;
+
+    const latestJobByProfile = new Map();
+    for (const row of jobMatchingPredictions) {
+      if (latestJobByProfile.has(row.alumni_profile_id)) continue;
+      latestJobByProfile.set(row.alumni_profile_id, row);
+    }
+    const jobLatest = Array.from(latestJobByProfile.values());
+    const topMatches = jobLatest
+      .map((row) => {
+        const matches = Array.isArray(row.output_json?.matches) ? row.output_json.matches : [];
+        return matches.length > 0 ? matches[0] : null;
+      })
+      .filter(Boolean);
+    const avgTopMatchScore =
+      topMatches.length > 0
+        ? topMatches
+            .map((match) => toNumberOrNull(match.display_score ?? match.final_score ?? match.score))
+            .filter((v) => v !== null)
+            .reduce((sum, v) => sum + v, 0) /
+          Math.max(
+            1,
+            topMatches
+              .map((match) => toNumberOrNull(match.display_score ?? match.final_score ?? match.score))
+              .filter((v) => v !== null).length
+          )
+        : 0;
+    const avgMatchedCompetencies =
+      topMatches.length > 0
+        ? topMatches
+            .map((match) => toNumberOrNull(match.matched_competency_count))
+            .filter((v) => v !== null)
+            .reduce((sum, v) => sum + v, 0) /
+          Math.max(
+            1,
+            topMatches.map((match) => toNumberOrNull(match.matched_competency_count)).filter((v) => v !== null).length
+          )
+        : 0;
+    const avgCandidateMatchPct =
+      topMatches.length > 0
+        ? topMatches
+            .map((match) => toNumberOrNull(match.candidate_match_percentage))
+            .filter((v) => v !== null)
+            .reduce((sum, v) => sum + v, 0) /
+          Math.max(
+            1,
+            topMatches.map((match) => toNumberOrNull(match.candidate_match_percentage)).filter((v) => v !== null).length
+          )
+        : 0;
+
+    return res.json({
+      employability: {
+        total_predictions: employabilityPredictions.length,
+        latest_unique_profiles: employabilityLatest.length,
+        positive_predictions: employabilityPositive.length,
+        positive_rate: employabilityLatest.length > 0 ? (employabilityPositive.length / employabilityLatest.length) * 100 : 0,
+        avg_probability: avgEmployabilityProbability,
+        avg_confidence: avgEmployabilityConfidence,
+        last_prediction_at: employabilityPredictions[0]?.created_at || null
+      },
+      employability_training: employabilityTrainingReport
+        ? {
+            trained_at: employabilityTrainingReport.trained_at || null,
+            dataset_size: employabilityTrainingReport.dataset_size ?? null,
+            train_size: employabilityTrainingReport.train_size ?? null,
+            test_size: employabilityTrainingReport.test_size ?? null,
+            model_type: employabilityTrainingReport.model_type || null,
+            final_metrics: employabilityTrainingReport.final_metrics || null,
+            weighted_f1: employabilityClassificationReport?.['weighted avg']?.['f1-score'] ?? null,
+            macro_f1: employabilityClassificationReport?.['macro avg']?.['f1-score'] ?? null,
+            employable_precision: employabilityClassificationReport?.Employable?.precision ?? null,
+            employable_recall: employabilityClassificationReport?.Employable?.recall ?? null,
+            not_employable_precision: employabilityClassificationReport?.['Not Employable']?.precision ?? null,
+            not_employable_recall: employabilityClassificationReport?.['Not Employable']?.recall ?? null,
+            confusion_matrix: employabilityTrainingReport.confusion_matrix || null,
+            selection_rationale: employabilityTrainingReport.selection_rationale || null
+          }
+        : null,
+      job_matching: {
+        total_predictions: jobMatchingPredictions.length,
+        latest_unique_profiles: jobLatest.length,
+        avg_top_match_score: avgTopMatchScore * 100,
+        avg_matched_competencies: avgMatchedCompetencies,
+        avg_candidate_match_percentage: avgCandidateMatchPct,
+        last_prediction_at: jobMatchingPredictions[0]?.created_at || null
+      },
+      job_matching_training: jobMatchingConfig
+        ? {
+            model_name: jobMatchingConfig.model_name || null,
+            embedding_backend: jobMatchingConfig.embedding_backend || null,
+            embedding_dim: jobMatchingConfig.embedding_dim ?? null,
+            max_length_cap: jobMatchingConfig.max_length_cap ?? null,
+            has_training_metrics: false
+          }
+        : null
+    });
+  } catch (error) {
+    console.error('Get model evaluations error:', error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || 'Failed to fetch model evaluation metrics'
+    });
+  }
+};
+
 module.exports = {
   getArimaPrediction,
   rerunArimaTraining,
+  getModelEvaluations,
   initializeArimaOnStartup
 };

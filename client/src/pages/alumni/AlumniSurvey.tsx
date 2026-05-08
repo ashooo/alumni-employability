@@ -5,11 +5,10 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
-import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
@@ -126,14 +125,19 @@ const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('
 
 const WIZARD_STEPS = [
   { step: 1, label: 'Academic Performance' },
-  { step: 2, label: 'Hard Skills' },
-  { step: 3, label: 'Soft Skills' },
-  { step: 4, label: 'Knowledge' },
-  { step: 5, label: 'Abilities' },
-  { step: 6, label: 'Interests' },
-  { step: 7, label: 'Technology Skills' },
-  { step: 8, label: 'Skill Proficiency' },
-  { step: 9, label: 'Additional Questions' }
+  { step: 2, label: 'Internship Experience' },
+  { step: 3, label: 'Certifications' },
+  { step: 4, label: 'Board Exam' },
+  { step: 5, label: 'Involvement' },
+  { step: 6, label: 'Hard Skills' },
+  { step: 7, label: 'Soft Skills' },
+  { step: 8, label: 'Knowledge' },
+  { step: 9, label: 'Abilities' },
+  { step: 10, label: 'Interests' },
+  { step: 11, label: 'Technology Skills' },
+  { step: 12, label: 'Crucial Skills Rating' },
+  { step: 13, label: 'Skill Proficiency' },
+  { step: 14, label: 'Additional Questions' }
 ];
 
 const TECHNOLOGY_VISIBLE_LIMIT = 120;
@@ -144,8 +148,8 @@ const SOFT_SKILL_MIN_SELECTIONS = 3;
 const SOFT_SKILL_MAX_SELECTIONS = 7;
 
 const COMPETENCY_STEP_CONFIGS: Record<number, CompetencyStepConfig> = {
-  2: {
-    step: 2,
+  6: {
+    step: 6,
     kind: 'HARD_SKILL',
     title: `Select ${HARD_SKILL_MIN_SELECTIONS}-${HARD_SKILL_MAX_SELECTIONS} Hard Skills`,
     min: HARD_SKILL_MIN_SELECTIONS,
@@ -155,8 +159,8 @@ const COMPETENCY_STEP_CONFIGS: Record<number, CompetencyStepConfig> = {
     searchPlaceholder: 'Search hard skills',
     emptyMessage: 'No hard skills matched your current search or filter.'
   },
-  3: {
-    step: 3,
+  7: {
+    step: 7,
     kind: 'SOFT_SKILL',
     title: `Select ${SOFT_SKILL_MIN_SELECTIONS}-${SOFT_SKILL_MAX_SELECTIONS} Soft Skills`,
     min: SOFT_SKILL_MIN_SELECTIONS,
@@ -166,8 +170,8 @@ const COMPETENCY_STEP_CONFIGS: Record<number, CompetencyStepConfig> = {
     searchPlaceholder: 'Search soft skills',
     emptyMessage: 'No soft skills matched your current search or filter.'
   },
-  4: {
-    step: 4,
+  8: {
+    step: 8,
     kind: 'KNOWLEDGE',
     title: 'Select Knowledge Areas',
     min: 1,
@@ -175,8 +179,8 @@ const COMPETENCY_STEP_CONFIGS: Record<number, CompetencyStepConfig> = {
     searchPlaceholder: 'Search knowledge areas',
     emptyMessage: 'No knowledge areas matched your current search or filter.'
   },
-  5: {
-    step: 5,
+  9: {
+    step: 9,
     kind: 'ABILITY',
     title: 'Select Abilities',
     min: 1,
@@ -184,8 +188,8 @@ const COMPETENCY_STEP_CONFIGS: Record<number, CompetencyStepConfig> = {
     searchPlaceholder: 'Search abilities',
     emptyMessage: 'No abilities matched your current search or filter.'
   },
-  6: {
-    step: 6,
+  10: {
+    step: 10,
     kind: 'INTEREST',
     title: 'Select Interests',
     min: 1,
@@ -193,8 +197,8 @@ const COMPETENCY_STEP_CONFIGS: Record<number, CompetencyStepConfig> = {
     searchPlaceholder: 'Search interests',
     emptyMessage: 'No interests matched your current search or filter.'
   },
-  7: {
-    step: 7,
+  11: {
+    step: 11,
     kind: 'TECHNOLOGY',
     title: 'Select Technology Skills',
     min: 1,
@@ -244,6 +248,169 @@ const createInitialAcademicData = (degreeId = '') => ({
   degree_id: degreeId
 });
 
+const BOARD_PROGRAMS = new Set(['BSA', 'BSECE', 'BSED_FILIPINO', 'BSED_ENGLISH', 'BSN']);
+
+const PROGRAM_REQUIRED_SKILLS: Record<string, string[]> = {
+  BSA: [
+    'Auditing Skills',
+    'Budgeting & Analysis Skills',
+    'Financial Accounting Skills',
+    'Taxation Skills',
+    'Risk Management Skills'
+  ],
+  BSECE: [
+    'Leadership & Decision-Making Skills',
+    'Networking Skills',
+    'Programming Logic Skills',
+    'Python Programming Skills',
+    'English Communication & Writing Skills',
+    'Filipino Communication & Writing Skills',
+    'Artificial Intelligence Skills',
+    'Cybersecurity Skills',
+    'Circuit Design Skills',
+    'Communication Systems Skills',
+    'Problem-Solving Skills'
+  ],
+  BSED_FILIPINO: [
+    'Filipino Communication & Writing Skills',
+    'Cloud Computing Skills',
+    'Curriculum Development Skills',
+    'Classroom Management Skills',
+    'Educational Technology Skills',
+    'Teaching Skills'
+  ],
+  BSED_ENGLISH: [
+    'English Communication & Writing Skills',
+    'Curriculum Development Skills',
+    'Classroom Management Skills',
+    'Educational Technology Skills',
+    'Teaching Skills'
+  ],
+  BSN: [
+    'Leadership & Decision-Making Skills',
+    'English Communication & Writing Skills',
+    'Filipino Communication & Writing Skills',
+    'Problem-Solving Skills',
+    'Clinical Skills',
+    'Patient Care Skills',
+    'Health Assessment Skills',
+    'Emergency Response Skills'
+  ],
+  BSBA_ENTREP: [
+    'Financial Management Skills',
+    'Java Programming Skills',
+    'Leadership & Decision-Making Skills',
+    'Machine Learning Skills',
+    'Marketing Skills',
+    'Strategic Planning Skills',
+    'Innovation & Business Planning Skills'
+  ],
+  BSBA_MARKETING: [
+    'Financial Management Skills',
+    'Leadership & Decision-Making Skills',
+    'Marketing Skills',
+    'Strategic Planning Skills',
+    'Consumer Behavior Analysis',
+    'Sales Management Skills'
+  ],
+  BSCS: [
+    'Machine Learning Skills',
+    'Programming Logic Skills',
+    'Python Programming Skills',
+    'Artificial Intelligence Skills',
+    'Cloud Computing Skills',
+    'Curriculum Development Skills',
+    'Data Structures & Algorithms',
+    'Software Engineering Skills'
+  ],
+  BSIT: [
+    'Java Programming Skills',
+    'Networking Skills',
+    'Programming Logic Skills',
+    'Python Programming Skills',
+    'Cybersecurity Skills',
+    'Database Management Skills',
+    'System Design Skills',
+    'Web Development Skills'
+  ]
+};
+
+const normalizeProgramKey = (programCode: string) =>
+  String(programCode || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+
+const PROGRAM_CODE_ALIASES: Record<string, string> = {
+  BSBA_ENTREPRENEURSHIP: 'BSBA_ENTREP',
+  BSBA_ENTREP: 'BSBA_ENTREP',
+  BSBA_MARKETING: 'BSBA_MARKETING',
+  BSED_FILIPINO: 'BSED_FILIPINO',
+  BSED_ENGLISH: 'BSED_ENGLISH',
+  BS_ECE: 'BSECE',
+  BSIT: 'BSIT',
+  BSCS: 'BSCS',
+  BSA: 'BSA',
+  BSN: 'BSN',
+  BSECE: 'BSECE'
+};
+
+const getRequiredSkillsForProgram = (programCode?: string | null) => {
+  const normalized = normalizeProgramKey(String(programCode || ''));
+  const key = PROGRAM_CODE_ALIASES[normalized] || normalized;
+  return PROGRAM_REQUIRED_SKILLS[key] || [];
+};
+
+const buildProgramSkillRatingsPayload = (
+  programCode: string | null | undefined,
+  ratings: Record<string, number>
+) =>
+  getRequiredSkillsForProgram(programCode).map((skill) => ({
+    skill_name: skill,
+    skill_value: ratings[skill] || 5
+  }));
+
+const createInitialExperienceAnswers = () => ({
+  internshipCompleted: '',
+  internshipLength: '',
+  internshipRelatedness: '',
+  internshipResponsibilities: '',
+  internshipImprovement: '',
+  certificationsCompleted: '',
+  certificationsType: '',
+  certificationsCount: '',
+  certificationsRelatedness: '',
+  boardTaken: '',
+  boardResult: '',
+  leadershipHeld: '',
+  activeMember: ''
+});
+
+const normalizeOneToFive = (score: number, maxScore: number) =>
+  Math.min(5, Math.max(1, Number(((score / maxScore) * 5).toFixed(2))));
+
+const internshipScoreFromAnswers = (a: ReturnType<typeof createInitialExperienceAnswers>) => {
+  let score = 0;
+  if (a.internshipCompleted === 'No') score += 1;
+  if (a.internshipCompleted === 'Yes') {
+    if (a.internshipLength === '1-2 months') score += 1;
+    if (a.internshipLength === '3-4 months' || a.internshipLength === '5+ months') score += 2;
+    if (a.internshipRelatedness === 'Highly related') score += 2;
+    if (a.internshipResponsibilities === 'Worked on major responsibilities/projects') score += 2;
+    if (a.internshipImprovement === 'Strongly Agree') score += 2;
+  }
+  return normalizeOneToFive(score, 10);
+};
+
+const certificationScoreFromAnswers = (a: ReturnType<typeof createInitialExperienceAnswers>) => {
+  let score = 0;
+  if (a.certificationsType === 'Online short courses') score += 1;
+  if (a.certificationsType === 'Technical/professional certifications' || a.certificationsType === 'National/international certifications') score += 2;
+  if (a.certificationsCount === '6+') score += 2;
+  if (a.certificationsRelatedness === 'Highly related') score += 2;
+  return normalizeOneToFive(score, 6);
+};
+
 const mapCompetencyKindToSubmissionType = (kind: CompetencyKind) => {
   switch (kind) {
     case 'HARD_SKILL':
@@ -269,10 +436,6 @@ const mapEmploymentStatusToAnswer = (status?: string | null) => {
       return 'Employed';
     case 'UNEMPLOYED':
       return 'Unemployed';
-    case 'SELF_EMPLOYED':
-      return 'Self-Employed';
-    case 'FREELANCER':
-      return 'Freelancer';
     default:
       return '';
   }
@@ -322,7 +485,7 @@ const resolveSurveyStage = (
 
   // Employed path — survey manager questions only, no models
   if (surveyStatus.status === 'pending_employed_survey') {
-    return 'employedSurvey';
+    return 'wizard';
   }
 
   // Has prediction result — show it
@@ -392,8 +555,44 @@ export default function AlumniSurvey() {
     createInitialViewState
   );
   const [skillRatings, setSkillRatings] = useState<Record<number, number>>({});
+  const [programSkillRatings, setProgramSkillRatings] = useState<Record<string, number>>({});
   const [predictionResult, setPredictionResult] = useState<Prediction | null>(null);
   const [academicProfileLoaded, setAcademicProfileLoaded] = useState(false);
+  const [experienceAnswers, setExperienceAnswers] = useState(createInitialExperienceAnswers);
+  const completionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const completionNotifiedRef = useRef<{ employability: boolean; jobMatching: boolean }>({
+    employability: false,
+    jobMatching: false
+  });
+
+  useEffect(() => {
+    if (locationState?.retake) {
+      setRetakeMode(true);
+    }
+  }, [locationState?.retake]);
+
+  useEffect(() => {
+    return () => {
+      if (completionPollRef.current) {
+        clearInterval(completionPollRef.current);
+        completionPollRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const required = getRequiredSkillsForProgram(surveyStatus?.programCode);
+    if (required.length === 0) {
+      return;
+    }
+    setProgramSkillRatings((prev) => {
+      const next = { ...prev };
+      for (const skill of required) {
+        if (!next[skill]) next[skill] = 5;
+      }
+      return next;
+    });
+  }, [surveyStatus?.programCode]);
 
   const syncSurveyStatus = (nextSurveyStatus: SurveyFlowStatus) => {
     setSurveyStatus(nextSurveyStatus);
@@ -554,10 +753,21 @@ export default function AlumniSurvey() {
           });
 
           if (surveyResponse.ok) {
-            const surveyData: SurveyDefinitionResponse = await surveyResponse.json();
+            let surveyData: SurveyDefinitionResponse = await surveyResponse.json();
+            let fullSurveyCategories = surveyData.survey || [];
+            const hasQuestions = fullSurveyCategories.some((category) => category.questions.length > 0);
+            if (!hasQuestions && fetchPath !== 'INITIAL') {
+              const fallbackResponse = await fetch(
+                `${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=INITIAL`,
+                { headers }
+              );
+              if (fallbackResponse.ok) {
+                surveyData = await fallbackResponse.json();
+                fullSurveyCategories = surveyData.survey || [];
+              }
+            }
             const nextDecisionQuestionKey =
               surveyData.branching?.decision_question_key || 'current_employment_status';
-            const fullSurveyCategories = surveyData.survey || [];
             const gatewayCategories = getGatewayCategories(fullSurveyCategories, nextDecisionQuestionKey);
             const nextStage = resolveSurveyStage(nextSurveyStatus, false);
 
@@ -578,15 +788,7 @@ export default function AlumniSurvey() {
               }));
             }
 
-            const canRetakeAssessment =
-              retakeMode &&
-              (
-                nextSurveyStatus.employmentStatus === 'UNEMPLOYED' ||
-                nextSurveyStatus.hasEmployabilityPrediction ||
-                nextSurveyStatus.hasEmployabilityAssessment
-              );
-
-            if (canRetakeAssessment) {
+            if (retakeMode) {
               // Retake always restarts at employment gateway so alumni can switch path.
               setWizardStep(1);
               setPredictionResult(null);
@@ -594,7 +796,10 @@ export default function AlumniSurvey() {
               setCompetencySearch(createInitialSearchState());
               setCompetencyView(createInitialViewState());
               setSkillRatings({});
+              setProgramSkillRatings({});
               setAnswers({});
+              setExperienceAnswers(createInitialExperienceAnswers());
+              setCategories(gatewayCategories);
               setSurveyStage('initial');
               return;
             }
@@ -626,6 +831,64 @@ export default function AlumniSurvey() {
 
   const setAnswer = (questionId: string, value: string | string[] | number) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  };
+
+  const clearCompletionPolling = () => {
+    if (completionPollRef.current) {
+      clearInterval(completionPollRef.current);
+      completionPollRef.current = null;
+    }
+  };
+
+  const startCompletionPolling = (token: string) => {
+    if (!user?.username) return;
+    clearCompletionPolling();
+
+    let attempts = 0;
+    const maxAttempts = 24; // ~2 minutes at 5s interval
+    completionPollRef.current = setInterval(async () => {
+      attempts += 1;
+      try {
+        if (!completionNotifiedRef.current.employability) {
+          const employabilityRes = await fetch(
+            `${API_URL}/prediction/employability/latest/${user.username}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (employabilityRes.ok) {
+            completionNotifiedRef.current.employability = true;
+            toast({
+              title: 'Employability Model Complete',
+              description: 'Your employability prediction is ready.'
+            });
+          }
+        }
+
+        if (!completionNotifiedRef.current.jobMatching) {
+          const jobRes = await fetch(
+            `${API_URL}/prediction/job-matching/latest/${user.username}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (jobRes.ok) {
+            completionNotifiedRef.current.jobMatching = true;
+            toast({
+              title: 'Job Matcher Complete',
+              description: 'Your job-match recommendations are now ready.'
+            });
+          }
+        }
+      } catch {
+        // keep polling within bounds
+      }
+
+      if (
+        completionNotifiedRef.current.employability &&
+        completionNotifiedRef.current.jobMatching
+      ) {
+        clearCompletionPolling();
+      } else if (attempts >= maxAttempts) {
+        clearCompletionPolling();
+      }
+    }, 5000);
   };
 
   const getCompetenciesByKind = (kind: CompetencyKind) =>
@@ -660,7 +923,11 @@ export default function AlumniSurvey() {
                     <SelectValue placeholder="Select an option" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(question.options || []).map((option) => (
+                    {(
+                      question.question_key === decisionQuestionKey
+                        ? ['Employed', 'Unemployed']
+                        : (question.options || [])
+                    ).map((option) => (
                       <SelectItem key={option} value={option}>
                         {option}
                       </SelectItem>
@@ -937,13 +1204,37 @@ export default function AlumniSurvey() {
 
       const nextSurveyStatus = await fetchSurveyStatus(token);
       await fetchLatestSubmission(token);
+      const selectedPath =
+        String(selectedAnswer).trim().toLowerCase() === 'employed' ? 'EMPLOYED' : 'UNEMPLOYED';
+      const statusForStage = retakeMode
+        ? {
+            ...nextSurveyStatus,
+            completed: false,
+            requiresSurvey: true,
+            shouldPromptSurvey: true,
+            employmentStatus: selectedPath,
+            resolvedPath: selectedPath,
+            nextPath: selectedPath,
+            nextStep:
+              selectedPath === 'EMPLOYED'
+                ? 'take_employed_survey'
+                : 'take_unemployed_assessment',
+            status:
+              selectedPath === 'EMPLOYED'
+                ? 'pending_employed_survey'
+                : 'pending_unemployed_assessment'
+          }
+        : nextSurveyStatus;
 
-      // If employed, fetch the EMPLOYED survey template for the next stage
-      if (nextSurveyStatus.status === 'pending_employed_survey') {
-        const resolvedCollegeId = nextSurveyStatus.collegeId || surveyStatus?.collegeId || null;
+      if (
+        statusForStage.status === 'pending_employed_survey' ||
+        statusForStage.status === 'pending_unemployed_assessment'
+      ) {
+        const resolvedCollegeId = statusForStage.collegeId || surveyStatus?.collegeId || null;
         if (resolvedCollegeId) {
+          const path = statusForStage.nextPath || selectedPath;
           const surveyResponse = await fetch(
-            `${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=EMPLOYED`,
+            `${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=${path}`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
           if (surveyResponse.ok) {
@@ -967,36 +1258,8 @@ export default function AlumniSurvey() {
         }
       }
 
-      // If unemployed, fetch the UNEMPLOYED survey template (will be shown as wizard step 9)
-      if (nextSurveyStatus.status === 'pending_unemployed_assessment') {
-        const resolvedCollegeId = nextSurveyStatus.collegeId || surveyStatus?.collegeId || null;
-        if (resolvedCollegeId) {
-          const surveyResponse = await fetch(
-            `${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=UNEMPLOYED`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          if (surveyResponse.ok) {
-            const surveyData: SurveyDefinitionResponse = await surveyResponse.json();
-            const pathSurvey = surveyData.survey || [];
-            if (countAnswerableQuestions(pathSurvey, decisionQuestionKey) > 0) {
-              setCategories(pathSurvey);
-            } else {
-              const fallbackResponse = await fetch(
-                `${API_URL}/alumni/survey/college/${resolvedCollegeId}?path=INITIAL`,
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
-              if (fallbackResponse.ok) {
-                const fallbackData: SurveyDefinitionResponse = await fallbackResponse.json();
-                setCategories(fallbackData.survey || []);
-              } else {
-                setCategories(pathSurvey);
-              }
-            }
-          }
-        }
-      }
-
-      setSurveyStage(resolveSurveyStage(nextSurveyStatus, Boolean(predictionResult)));
+      syncSurveyStatus(statusForStage);
+      setSurveyStage(resolveSurveyStage(statusForStage, Boolean(predictionResult)));
     } catch (error) {
       console.error('Initial survey submit error:', error);
       toast({
@@ -1081,6 +1344,9 @@ export default function AlumniSurvey() {
           }))
       );
 
+      const isEmployedPath = surveyStatus?.status === 'pending_employed_survey';
+      const assessmentPath = isEmployedPath ? 'EMPLOYED' : 'UNEMPLOYED';
+
       const response = await fetch(`${API_URL}/prediction/employability/submit`, {
         method: 'POST',
         headers: {
@@ -1089,9 +1355,37 @@ export default function AlumniSurvey() {
         },
         body: JSON.stringify({
           studentId: user.username,
-          academicData,
+          academicData: {
+            ...academicData,
+            internship_score: internshipScoreFromAnswers(experienceAnswers),
+            certification_score: certificationScoreFromAnswers(experienceAnswers),
+            board_exam:
+              experienceAnswers.boardTaken === 'Yes' && experienceAnswers.boardResult === 'Passed'
+                ? 1
+                : 0,
+            leader_pos: experienceAnswers.leadershipHeld === 'Yes',
+            act_member_pos: experienceAnswers.activeMember === 'Yes',
+            program_skill_ratings: buildProgramSkillRatingsPayload(
+              surveyStatus?.programCode,
+              programSkillRatings
+            )
+          },
           skillRatings: skillRatingsFormatted,
-          additionalAnswers: answers
+          additionalAnswers: {
+            ...answers,
+            internship_completed: experienceAnswers.internshipCompleted,
+            internship_length: experienceAnswers.internshipLength,
+            internship_relatedness: experienceAnswers.internshipRelatedness,
+            internship_responsibilities: experienceAnswers.internshipResponsibilities,
+            internship_improvement: experienceAnswers.internshipImprovement,
+            certifications_completed: experienceAnswers.certificationsCompleted,
+            certifications_type: experienceAnswers.certificationsType,
+            certifications_count: experienceAnswers.certificationsCount,
+            certifications_relatedness: experienceAnswers.certificationsRelatedness,
+            board_taken: experienceAnswers.boardTaken,
+            board_result: experienceAnswers.boardResult
+          },
+          assessmentPath
         })
       });
 
@@ -1100,17 +1394,30 @@ export default function AlumniSurvey() {
         throw new Error(result?.error || 'Failed to submit assessment');
       }
 
-      setPredictionResult(result.prediction);
-      completeSurvey();
+      if (!isEmployedPath) {
+        setPredictionResult(result.prediction);
+        completeSurvey();
+        completionNotifiedRef.current.employability = Boolean(result?.prediction);
+        completionNotifiedRef.current.jobMatching = false;
+        startCompletionPolling(token);
+      }
       setRetakeMode(false);
 
       const nextSurveyStatus = await fetchSurveyStatus(token);
       await fetchLatestSubmission(token);
 
-      setSurveyStage(resolveSurveyStage(nextSurveyStatus, true));
+      if (!isEmployedPath && result?.prediction) {
+        // Show prediction immediately even if status endpoint still reports a transient
+        // "assessment_submitted_prediction_missing" state.
+        setSurveyStage('finished');
+      } else {
+        setSurveyStage(resolveSurveyStage(nextSurveyStatus, !isEmployedPath));
+      }
       toast({
-        title: 'Assessment Complete',
-        description: 'Your employability prediction has been generated.'
+        title: isEmployedPath ? 'Survey Complete' : 'Assessment Complete',
+        description: isEmployedPath
+          ? 'Your employed survey responses have been recorded.'
+          : 'Your employability prediction has been generated.'
       });
     } catch (error) {
       console.error('Wizard submission error:', error);
@@ -1256,6 +1563,13 @@ export default function AlumniSurvey() {
             <Button variant="outline" size="lg" onClick={() => navigate('/app/alumni/dashboard')}>
               Go to Dashboard
             </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => navigate('/app/alumni/survey', { state: { retake: true } })}
+            >
+              Retake Assessment
+            </Button>
             <Button size="lg" onClick={() => navigate('/app/alumni/results')}>
               View Detailed Breakdown
             </Button>
@@ -1291,6 +1605,12 @@ export default function AlumniSurvey() {
               Back to Dashboard
             </Button>
             <Button
+              variant="outline"
+              onClick={() => navigate('/app/alumni/survey', { state: { retake: true } })}
+            >
+              Retake Assessment
+            </Button>
+            <Button
               onClick={() =>
                 navigate(
                   surveyStatus?.hasEmployabilityPrediction ? '/app/alumni/results' : '/app/alumni/submissions'
@@ -1306,6 +1626,7 @@ export default function AlumniSurvey() {
   }
 
   if (surveyStage === 'wizard') {
+    const isBoardProgram = BOARD_PROGRAMS.has(String(surveyStatus?.programCode || '').toUpperCase());
     const currentStep = WIZARD_STEPS.find((step) => step.step === wizardStep) || WIZARD_STEPS[0];
     const totalWizardSteps = WIZARD_STEPS.length;
     const competencyStepConfig = COMPETENCY_STEP_CONFIGS[wizardStep];
@@ -1321,7 +1642,39 @@ export default function AlumniSurvey() {
         return false;
       }
 
-      if (wizardStep === 2 && selectedHardSkills.length < HARD_SKILL_MIN_SELECTIONS) {
+      if (wizardStep === 2 && !experienceAnswers.internshipCompleted) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please complete internship experience questions.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 3 && !experienceAnswers.certificationsCompleted) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please complete certification questions.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 4 && isBoardProgram && !experienceAnswers.boardTaken) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please complete board exam questions.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 5 && (!experienceAnswers.leadershipHeld || !experienceAnswers.activeMember)) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please complete involvement questions.'
+        });
+        return false;
+      }
+
+      if (wizardStep === 6 && selectedHardSkills.length < HARD_SKILL_MIN_SELECTIONS) {
         toast({
           title: 'Validation Error',
           description: `Please select at least ${HARD_SKILL_MIN_SELECTIONS} hard skills.`
@@ -1329,7 +1682,7 @@ export default function AlumniSurvey() {
         return false;
       }
 
-      if (wizardStep === 3 && selectedSoftSkills.length < SOFT_SKILL_MIN_SELECTIONS) {
+      if (wizardStep === 7 && selectedSoftSkills.length < SOFT_SKILL_MIN_SELECTIONS) {
         toast({
           title: 'Validation Error',
           description: `Please select at least ${SOFT_SKILL_MIN_SELECTIONS} soft skills.`
@@ -1337,7 +1690,7 @@ export default function AlumniSurvey() {
         return false;
       }
 
-      if (wizardStep === 4 && selectedCompetencies.KNOWLEDGE.length < 1) {
+      if (wizardStep === 8 && selectedCompetencies.KNOWLEDGE.length < 1) {
         toast({
           title: 'Validation Error',
           description: 'Please select at least 1 knowledge area.'
@@ -1345,7 +1698,7 @@ export default function AlumniSurvey() {
         return false;
       }
 
-      if (wizardStep === 5 && selectedCompetencies.ABILITY.length < 1) {
+      if (wizardStep === 9 && selectedCompetencies.ABILITY.length < 1) {
         toast({
           title: 'Validation Error',
           description: 'Please select at least 1 ability.'
@@ -1353,7 +1706,7 @@ export default function AlumniSurvey() {
         return false;
       }
 
-      if (wizardStep === 6 && selectedCompetencies.INTEREST.length < 1) {
+      if (wizardStep === 10 && selectedCompetencies.INTEREST.length < 1) {
         toast({
           title: 'Validation Error',
           description: 'Please select at least 1 interest.'
@@ -1361,7 +1714,7 @@ export default function AlumniSurvey() {
         return false;
       }
 
-      if (wizardStep === 7 && selectedCompetencies.TECHNOLOGY.length < 1) {
+      if (wizardStep === 11 && selectedCompetencies.TECHNOLOGY.length < 1) {
         toast({
           title: 'Validation Error',
           description: 'Please select at least 1 technology skill.'
@@ -1394,7 +1747,7 @@ export default function AlumniSurvey() {
         </div>
 
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
-          Your initial employment answer has been recorded as <strong>Unemployed</strong>. This flow
+          Your initial employment answer has been recorded as <strong>{surveyStatus?.status === 'pending_employed_survey' ? 'Employed' : 'Unemployed'}</strong>. This flow
           now captures hard skills, soft skills, knowledge, abilities, interests, and technology
           skills. Every competency section includes search plus an <strong>All / Selected</strong>{' '}
           filter to make long lists easier to review, and the employability model now treats very
@@ -1451,34 +1804,167 @@ export default function AlumniSurvey() {
                   <Input value={academicData.year_graduated || 'N/A'} disabled className="bg-muted/50" />
                 </div>
               </div>
-              <div className="flex flex-col gap-4 pt-4 border-t">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-base">Leadership Position</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Did you hold a leadership role in any student organization?
-                    </p>
-                  </div>
-                  <Switch
-                    checked={academicData.leader_pos}
-                    onCheckedChange={(value) =>
-                      setAcademicData((prev) => ({ ...prev, leader_pos: value }))
-                    }
-                  />
+            </div>
+          )}
+
+          {wizardStep === 2 && (
+            <div className="space-y-6 flex-1">
+              <h3 className="text-xl font-semibold">A. Internship Experience</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Did you complete an internship/OJT?</Label>
+                  <Select value={experienceAnswers.internshipCompleted} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, internshipCompleted: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent><SelectItem value="Yes">Yes</SelectItem><SelectItem value="No">No</SelectItem></SelectContent>
+                  </Select>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-base">Active Membership</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Were you an active member of organization(s)?
-                    </p>
-                  </div>
-                  <Switch
-                    checked={academicData.act_member_pos}
-                    onCheckedChange={(value) =>
-                      setAcademicData((prev) => ({ ...prev, act_member_pos: value }))
-                    }
-                  />
+                <div className="space-y-2">
+                  <Label>How long was your internship?</Label>
+                  <Select disabled={experienceAnswers.internshipCompleted !== 'Yes'} value={experienceAnswers.internshipLength} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, internshipLength: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Less than 1 month">Less than 1 month</SelectItem>
+                      <SelectItem value="1-2 months">1-2 months</SelectItem>
+                      <SelectItem value="3-4 months">3-4 months</SelectItem>
+                      <SelectItem value="5+ months">5+ months</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Was your internship related to your course/program?</Label>
+                  <Select disabled={experienceAnswers.internshipCompleted !== 'Yes'} value={experienceAnswers.internshipRelatedness} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, internshipRelatedness: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Not related">Not related</SelectItem>
+                      <SelectItem value="Slightly related">Slightly related</SelectItem>
+                      <SelectItem value="Moderately related">Moderately related</SelectItem>
+                      <SelectItem value="Highly related">Highly related</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Internship responsibilities</Label>
+                  <Select disabled={experienceAnswers.internshipCompleted !== 'Yes'} value={experienceAnswers.internshipResponsibilities} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, internshipResponsibilities: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Mostly observation only">Mostly observation only</SelectItem>
+                      <SelectItem value="Assisted simple tasks">Assisted simple tasks</SelectItem>
+                      <SelectItem value="Handled regular tasks">Handled regular tasks</SelectItem>
+                      <SelectItem value="Worked on major responsibilities/projects">Worked on major responsibilities/projects</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Did your internship improve your professional skills?</Label>
+                  <Select disabled={experienceAnswers.internshipCompleted !== 'Yes'} value={experienceAnswers.internshipImprovement} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, internshipImprovement: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Strongly Disagree">Strongly Disagree</SelectItem>
+                      <SelectItem value="Disagree">Disagree</SelectItem>
+                      <SelectItem value="Neutral">Neutral</SelectItem>
+                      <SelectItem value="Agree">Agree</SelectItem>
+                      <SelectItem value="Strongly Agree">Strongly Agree</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 3 && (
+            <div className="space-y-6 flex-1">
+              <h3 className="text-xl font-semibold">B. Certifications</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Have you completed certifications/training programs?</Label>
+                  <Select value={experienceAnswers.certificationsCompleted} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, certificationsCompleted: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent><SelectItem value="Yes">Yes</SelectItem><SelectItem value="No">No</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Type of certifications</Label>
+                  <Select disabled={experienceAnswers.certificationsCompleted !== 'Yes'} value={experienceAnswers.certificationsType} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, certificationsType: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="School seminars only">School seminars only</SelectItem>
+                      <SelectItem value="Online short courses">Online short courses</SelectItem>
+                      <SelectItem value="Technical/professional certifications">Technical/professional certifications</SelectItem>
+                      <SelectItem value="National/international certifications">National/international certifications</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>How many certifications/trainings?</Label>
+                  <Select disabled={experienceAnswers.certificationsCompleted !== 'Yes'} value={experienceAnswers.certificationsCount} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, certificationsCount: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="None">None</SelectItem>
+                      <SelectItem value="1-2">1-2</SelectItem>
+                      <SelectItem value="3-5">3-5</SelectItem>
+                      <SelectItem value="6+">6+</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Are certifications related to your degree/career path?</Label>
+                  <Select disabled={experienceAnswers.certificationsCompleted !== 'Yes'} value={experienceAnswers.certificationsRelatedness} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, certificationsRelatedness: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Not related">Not related</SelectItem>
+                      <SelectItem value="Slightly related">Slightly related</SelectItem>
+                      <SelectItem value="Mostly related">Mostly related</SelectItem>
+                      <SelectItem value="Highly related">Highly related</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 4 && (
+            <div className="space-y-6 flex-1">
+              <h3 className="text-xl font-semibold">C. Board Exam</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {isBoardProgram && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Have you taken a licensure/board exam?</Label>
+                      <Select value={experienceAnswers.boardTaken} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, boardTaken: v, boardResult: v === 'No' ? 'Failed' : p.boardResult }))}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent><SelectItem value="Yes">Yes</SelectItem><SelectItem value="No">No</SelectItem></SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Board exam result</Label>
+                      <Select disabled={experienceAnswers.boardTaken !== 'Yes'} value={experienceAnswers.boardResult} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, boardResult: v }))}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent><SelectItem value="Passed">Passed</SelectItem><SelectItem value="Failed">Failed</SelectItem></SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 5 && (
+            <div className="space-y-6 flex-1">
+              <h3 className="text-xl font-semibold">D. Involvement</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Have you held a leadership position?</Label>
+                  <Select value={experienceAnswers.leadershipHeld} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, leadershipHeld: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent><SelectItem value="Yes">Yes</SelectItem><SelectItem value="No">No</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Were you an active member in organizations?</Label>
+                  <Select value={experienceAnswers.activeMember} onValueChange={(v) => setExperienceAnswers((p) => ({ ...p, activeMember: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent><SelectItem value="Yes">Yes</SelectItem><SelectItem value="No">No</SelectItem></SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>
@@ -1486,7 +1972,45 @@ export default function AlumniSurvey() {
 
           {competencyStepConfig && renderCompetencySelectionStep(competencyStepConfig)}
 
-          {wizardStep === 8 && (
+          {wizardStep === 12 && (
+            <div className="space-y-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-2">
+                <h3 className="text-xl font-semibold">E. Crucial Skills Rating (1-10)</h3>
+                <p className="text-sm text-muted-foreground">
+                  Rate these crucial skills required for your program. These are used directly by the employability model.
+                </p>
+              </div>
+              <div className="space-y-6 pt-2 max-w-3xl mx-auto">
+                {getRequiredSkillsForProgram(surveyStatus?.programCode).length > 0 ? (
+                  getRequiredSkillsForProgram(surveyStatus?.programCode).map((skill) => (
+                    <div key={skill} className="space-y-3">
+                      <div className="flex justify-between">
+                        <Label className="text-base font-medium">{skill}</Label>
+                        <span className="font-bold text-primary">{programSkillRatings[skill] || 5}</span>
+                      </div>
+                      <Slider
+                        min={1}
+                        max={10}
+                        step={1}
+                        value={[programSkillRatings[skill] || 5]}
+                        onValueChange={(value) =>
+                          setProgramSkillRatings((prev) => ({ ...prev, [skill]: value[0] }))
+                        }
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center border-2 border-dashed rounded-lg bg-muted/30">
+                    <p className="text-muted-foreground">
+                      No crucial skills configured for your program. You can continue.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 13 && (
             <div className="space-y-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
               <div className="space-y-2">
                 <h3 className="text-xl font-semibold">Rate your Proficiency (1-10)</h3>
@@ -1523,7 +2047,7 @@ export default function AlumniSurvey() {
             </div>
           )}
 
-          {wizardStep === 9 && (
+          {wizardStep === 14 && (
             <div className="space-y-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
               <div className="space-y-2">
                 <h3 className="text-xl font-semibold">Additional Tracer Questions</h3>
@@ -1589,7 +2113,7 @@ export default function AlumniSurvey() {
                 ) : (
                   <CheckCircle2 className="mr-2 h-4 w-4" />
                 )}
-                {submitting ? 'Analyzing...' : 'Generate Prediction'}
+                {submitting ? 'Processing...' : (surveyStatus?.status === 'pending_employed_survey' ? 'Complete Survey' : 'Generate Prediction')}
               </Button>
             )}
           </div>

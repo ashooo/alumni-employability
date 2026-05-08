@@ -61,6 +61,22 @@ def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def _normalize_title_list(values) -> List[str]:
+    if not isinstance(values, list):
+        return []
+    normalized = []
+    seen = set()
+    for value in values:
+        text = _normalize_text(value)
+        if not text:
+            continue
+        if text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+    return normalized
+
+
 def _normalize_set(values: List[str]) -> set:
     normalized = {_normalize_text(v) for v in values if str(v).strip()}
     return {v for v in normalized if v}
@@ -398,14 +414,27 @@ class JobMatcher:
             "domain_penalty": float(domain_penalty),
         }
 
-    def match(self, candidate_skills: List[str], top_n: int = 10, include_overlap: bool = True) -> List[Dict]:
+    def match(
+        self,
+        candidate_skills: List[str],
+        top_n: int = 10,
+        include_overlap: bool = True,
+        candidate_titles: List[str] = None
+    ) -> List[Dict]:
         if not candidate_skills:
             raise ValueError("candidate_skills cannot be empty")
 
         top_n = max(1, int(top_n))
         candidate_embedding = self._embed_candidate(candidate_skills)
 
-        initial_k = min(self.index.ntotal, max(top_n, top_n * self.rerank_multiplier))
+        normalized_candidate_titles = _normalize_title_list(candidate_titles)
+        has_title_constraint = len(normalized_candidate_titles) > 0
+        # In constrained in-field mode, search the full index so mapped titles
+        # are not accidentally excluded by a narrow ANN pre-candidate window.
+        if has_title_constraint:
+            initial_k = self.index.ntotal
+        else:
+            initial_k = min(self.index.ntotal, max(top_n, top_n * self.rerank_multiplier))
         scores, indices = self.index.search(candidate_embedding, initial_k)
 
         results = []
@@ -414,6 +443,19 @@ class JobMatcher:
                 continue
 
             occ = self.metadata[idx]
+            occ_title_normalized = _normalize_text(occ.get("title", ""))
+            if has_title_constraint:
+                title_match = False
+                for candidate_title in normalized_candidate_titles:
+                    if occ_title_normalized == candidate_title:
+                        title_match = True
+                        break
+                    if occ_title_normalized in candidate_title or candidate_title in occ_title_normalized:
+                        title_match = True
+                        break
+                if not title_match:
+                    continue
+
             profile = self.occupation_profiles[idx]
             rerank = self._rerank_score(candidate_skills, occ, profile, float(cosine_score))
 

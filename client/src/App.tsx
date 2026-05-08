@@ -19,6 +19,7 @@ import AdminContent from "./pages/admin/AdminContent";
 import ActivationPage from "./pages/ActivationPage";
 import { Toaster } from "@/components/ui/toaster";
 import AdminUsers from "./pages/admin/AdminUsers";
+import AdminPrograms from "./pages/admin/AdminPrograms";
 import HelpGuide from "./pages/shared/HelpGuide";
 import SuperAdminAuditLogs from "./pages/superadmin/SuperAdminAuditLogs";
 import SuperAdminSystemLogs from "@/pages/superadmin/SuperAdminSystemLogs";
@@ -29,7 +30,6 @@ import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import AppLayout from "./pages/AppLayout";
-import ModelSimulator from "./pages/shared/ModelSimulator";
 import NotFound from "./pages/NotFound";
 import { ThemeProvider } from "next-themes";
 
@@ -60,6 +60,7 @@ const App = () => (
                 <Route path="admin/predictions" element={<AdminPredictions />} />
                 <Route path="admin/reports" element={<AdminReports />} />
                 <Route path="admin/users" element={<AdminUsers />} />
+                <Route path="admin/programs" element={<AdminPrograms />} />
                 <Route path="admin/survey-manager" element={<AdminSurveyManager />} />
                 <Route path="admin/content" element={<AdminContent />} />
                 <Route path="superadmin/audit-logs" element={<SuperAdminAuditLogs />}>
@@ -76,7 +77,6 @@ const App = () => (
                 <Route path="alumni/results" element={<AlumniResults />} />
                 <Route path="alumni/jobs" element={<AlumniJobs />} />
                 <Route path="alumni/change-password" element={<AlumniChangePassword />} />
-                <Route path="model-simulator" element={<ModelSimulator />} />
                 <Route path="overview" element={<SystemOverview />} />
                 <Route path="help" element={<HelpGuide />} />
               </Route>

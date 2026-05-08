@@ -60,7 +60,13 @@ def build_single_response(matcher, payload):
         raise ValueError("candidate_skills cannot be empty")
 
     top_n = parse_top_n(payload.get("top_n", 10))
-    matches = matcher.match(candidate_skills, top_n=top_n, include_overlap=True)
+    candidate_titles = payload.get("candidate_titles")
+    matches = matcher.match(
+        candidate_skills,
+        top_n=top_n,
+        include_overlap=True,
+        candidate_titles=candidate_titles
+    )
 
     return {
         "status": "success",
@@ -89,7 +95,12 @@ def build_batch_response(matcher, payload):
         if not normalized_candidate:
             raise ValueError("Each candidate must include candidate_skills")
 
-        matches = matcher.match(normalized_candidate, top_n=top_n, include_overlap=True)
+        matches = matcher.match(
+            normalized_candidate,
+            top_n=top_n,
+            include_overlap=True,
+            candidate_titles=candidate.get("candidate_titles")
+        )
         results.append(
             {
                 "id": candidate.get("id"),

@@ -3,12 +3,27 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { StatusBadge } from '@/components/StatusBadge';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
 import { Eye, Loader2 } from 'lucide-react';
 
 // API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+const EXPERIENCE_LABEL_MAP: Array<{ key: string; label: string }> = [
+  { key: 'internship_completed', label: 'Internship Completed' },
+  { key: 'internship_length', label: 'Internship Length' },
+  { key: 'internship_relatedness', label: 'Internship Relatedness' },
+  { key: 'internship_responsibilities', label: 'Internship Responsibilities' },
+  { key: 'internship_improvement', label: 'Internship Improvement' },
+  { key: 'certifications_completed', label: 'Certifications Completed' },
+  { key: 'certifications_type', label: 'Certification Type' },
+  { key: 'certifications_count', label: 'Certification Count' },
+  { key: 'certifications_relatedness', label: 'Certification Relatedness' },
+  { key: 'board_taken', label: 'Board Exam Taken' },
+  { key: 'board_result', label: 'Board Exam Result' }
+];
 
 interface Submission {
   id: number;
@@ -26,6 +41,19 @@ interface Submission {
   submission_summary?: {
     id: number;
     branch_path?: string | null;
+    additional_data?: {
+      academic_data?: Record<string, unknown>;
+      additional_answers?: Record<string, unknown>;
+    } | null;
+    academic_snapshot?: {
+      board_exam?: number | null;
+    } | null;
+    academic_snapshot_skills?: Array<{
+      id: number;
+      skill_name: string;
+      skill_value?: number | null;
+      source_column?: string | null;
+    }>;
     survey_answers?: Array<{
       question_id: number;
       question_key?: string | null;
@@ -161,6 +189,49 @@ export default function AlumniSubmissions() {
     return '—';
   };
 
+  const getSubmissionAcademicData = (submission: Submission | null) => (
+    (submission?.submission_summary?.additional_data?.academic_data || {}) as Record<string, unknown>
+  );
+
+  const getExperienceItems = (submission: Submission | null) => {
+    const academicData = getSubmissionAcademicData(submission);
+    return EXPERIENCE_LABEL_MAP
+      .map(({ key, label }) => ({ label, value: academicData[key] }))
+      .filter((item) => item.value !== undefined && item.value !== null && item.value !== '');
+  };
+
+  const getProgramSkillRatings = (submission: Submission | null) => (
+    (() => {
+      const summary = submission?.submission_summary;
+      const academicData = (summary?.additional_data?.academic_data || {}) as Record<string, unknown>;
+      const fromSnapshot = (summary?.academic_snapshot_skills || [])
+        .filter((skill) => skill.source_column === 'program_skill_rating' || !skill.source_column)
+        .map((skill) => ({ key: String(skill.id), name: skill.skill_name, value: skill.skill_value ?? null }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      if (fromSnapshot.length > 0) {
+        return fromSnapshot;
+      }
+
+      if (!Array.isArray(academicData.program_skill_ratings)) {
+        return [];
+      }
+
+      return academicData.program_skill_ratings
+        .map((entry, index) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const row = entry as Record<string, unknown>;
+          const name = String(row.skill_name || row.skill || '').trim();
+          const valueRaw = row.skill_value ?? row.score;
+          const value = valueRaw === null || valueRaw === undefined || valueRaw === '' ? null : Number(valueRaw);
+          if (!name) return null;
+          return { key: `payload-${index}-${name}`, name, value: Number.isFinite(value) ? value : null };
+        })
+        .filter((item): item is { key: string; name: string; value: number | null } => Boolean(item))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    })()
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -252,6 +323,9 @@ export default function AlumniSubmissions() {
                   <p className="text-xs text-muted-foreground">
                     Branch: {viewSub.submission_summary.branch_path || 'N/A'}
                   </p>
+                  <p className="text-xs text-muted-foreground">
+                    Flow: {String(viewSub.submission_summary.branch_path || '').toUpperCase() === 'EMPLOYED' ? 'Save-only (employed path)' : 'Save + predict (unemployed path)'}
+                  </p>
                   {viewSub.submission_summary.competencies?.length ? (
                     <div className="flex flex-wrap gap-2">
                       {viewSub.submission_summary.competencies.slice(0, 12).map((item) => (
@@ -266,6 +340,33 @@ export default function AlumniSubmissions() {
                       )}
                     </div>
                   ) : null}
+                </div>
+              ) : null}
+
+              {getExperienceItems(viewSub).length ? (
+                <div className="space-y-2 border-b pb-3">
+                  <p className="text-sm font-semibold">Experience and Achievement</p>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {getExperienceItems(viewSub).map((item) => (
+                      <div key={item.label} className="rounded-md border bg-muted/20 p-2">
+                        <p className="text-xs text-muted-foreground">{item.label}</p>
+                        <p className="text-sm font-medium">{String(item.value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {getProgramSkillRatings(viewSub).length ? (
+                <div className="space-y-2 border-b pb-3">
+                  <p className="text-sm font-semibold">Crucial Skills Ratings</p>
+                  <div className="flex flex-wrap gap-2">
+                    {getProgramSkillRatings(viewSub).map((skill) => (
+                      <Badge key={skill.key} variant="outline">
+                        {skill.name}: {skill.value ?? 'N/A'}/10
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               ) : null}
 

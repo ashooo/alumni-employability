@@ -8,60 +8,166 @@ const bcrypt = require('bcrypt');
 const { createPlaceholderPasswordHash } = require('../utils/refactorAuth');
 
 const COMPETENCY_FILE = path.resolve(__dirname, '../../ml/data/competency_compilation.csv');
-const ALUMNI_DATA_FILE = path.resolve(__dirname, '../../ml/data/processed/student-dataset-merged.csv');
+const ALUMNI_DATA_FILE = process.env.ALUMNI_DATA_FILE
+  ? path.resolve(__dirname, process.env.ALUMNI_DATA_FILE)
+  : path.resolve(__dirname, '../../ml/data/employability/combined_employability_v2.csv');
 
-const FIRST_NAMES = [
-  'James', 'Mary', 'Robert', 'Patricia', 'John', 'Jennifer', 'Michael', 'Linda',
-  'David', 'Elizabeth', 'William', 'Barbara', 'Richard', 'Susan', 'Joseph', 'Jessica',
-  'Thomas', 'Sarah', 'Christopher', 'Karen', 'Charles', 'Nancy', 'Daniel', 'Lisa',
-  'Matthew', 'Betty', 'Anthony', 'Margaret', 'Donald', 'Sandra', 'Mark', 'Ashley',
-  'Paul', 'Dorothy', 'Steven', 'Kimberly', 'Andrew', 'Emily', 'Kenneth', 'Donna',
-  'Joshua', 'Michelle', 'Kevin', 'Carol', 'Brian', 'Amanda', 'George', 'Melissa',
-  'Edward', 'Deborah'
+const SYNTHETIC_FIRST_NAMES = [
+  'Adrian', 'Aileen', 'Aira', 'Albert', 'Aldrin', 'Alexa', 'Alexis', 'Allen', 'Alvin', 'Amanda',
+  'Andrea', 'Angela', 'Angelica', 'Anthony', 'Aris', 'Arthur', 'Ashley', 'Audrey', 'Ava', 'Bea',
+  'Beatrice', 'Benjamin', 'Bianca', 'Brandon', 'Bryan', 'Camille', 'Carla', 'Carlo', 'Catherine', 'Cedric',
+  'Charlene', 'Charles', 'Chester', 'Chloe', 'Christian', 'Christine', 'Claire', 'Clarisse', 'Coleen', 'Daisy',
+  'Daniel', 'Danielle', 'Daphne', 'Darren', 'David', 'Denise', 'Derrick', 'Diana', 'Dominic', 'Donna',
+  'Dwayne', 'Elaine', 'Elijah', 'Eliza', 'Ella', 'Emerson', 'Emmanuel', 'Enzo', 'Erica', 'Erika',
+  'Ethan', 'Eugene', 'Faith', 'Felix', 'Frances', 'Franco', 'Franz', 'Gabriel', 'Gail', 'Gavin',
+  'Gelo', 'Gene', 'Geoffrey', 'Gian', 'Gina', 'Grace', 'Harvey', 'Hazel', 'Heidi', 'Ian',
+  'Iris', 'Isaac', 'Isabel', 'Janelle', 'Janine', 'Jasper', 'Jayson', 'Jean', 'Jefferson', 'Jenna',
+  'Jericho', 'Jerome', 'Jessica', 'Jillian', 'Joanna', 'John', 'Jonas', 'Jordan', 'Jose', 'Joshua',
+  'Joy', 'Judith', 'Julia', 'Justin', 'Karen', 'Karla', 'Karl', 'Kate', 'Kathryn', 'Katrina',
+  'Kevin', 'Kim', 'Kyle', 'Lance', 'Lara', 'Lauren', 'Leah', 'Leo', 'Lester', 'Liam',
+  'Liezl', 'Liza', 'Louis', 'Louise', 'Lucas', 'Lucille', 'Luis', 'Luna', 'Mabel', 'Marco',
+  'Maria', 'Mariel', 'Marvin', 'Mason', 'Matteo', 'Maxine', 'Megan', 'Melanie', 'Mia', 'Miguel',
+  'Mika', 'Mikaela', 'Mary', 'Monica', 'Nadine', 'Nathan', 'Nathaniel', 'Neil', 'Nicole', 'Nina',
+  'Noah', 'Olivia', 'Oscar', 'Patricia', 'Paolo', 'Paul', 'Paula', 'Phoebe', 'Quentin', 'Rafael',
+  'Raquel', 'Raymond', 'Reina', 'Renz', 'Rica', 'Rico', 'Rina', 'Riza', 'Roberto', 'Rochelle',
+  'Rogelio', 'Rona', 'Ronald', 'Rose', 'Rowena', 'Ryan', 'Sabrina', 'Samantha', 'Samson', 'Sarah',
+  'Sean', 'Shane', 'Sheila', 'Sophia', 'Stella', 'Stephen', 'Teresa', 'Thea', 'Timothy', 'Trisha',
+  'Vanessa', 'Vera', 'Vincent', 'Violet', 'Wayne', 'Wendy', 'Willard', 'Xander', 'Yana', 'Zachary'
+];
+const SYNTHETIC_LAST_NAMES = [
+  'Abad', 'Aguilar', 'Alcantara', 'Alfonso', 'Alvarez', 'Aquino', 'Arevalo', 'Atienza', 'Bacani', 'Bautista',
+  'Beltran', 'Bernardo', 'Bonifacio', 'Buenaventura', 'Cabrera', 'Calderon', 'Camacho', 'Campos', 'Candelaria', 'Capistrano',
+  'Carreon', 'Castillo', 'Castro', 'Cervantes', 'Chavez', 'Concepcion', 'Contreras', 'Corpuz', 'Cortez', 'Cruz',
+  'Cuevas', 'Dalisay', 'Dela Cruz', 'Del Rosario', 'Diaz', 'Domingo', 'Duran', 'Enriquez', 'Escobar', 'Espinosa',
+  'Estrella', 'Evangelista', 'Fabian', 'Fajardo', 'Fernandez', 'Flores', 'Franco', 'Fuentes', 'Garcia', 'Gonzales',
+  'Guerrero', 'Gutierrez', 'Hernandez', 'Ilagan', 'Jacinto', 'Jimenez', 'Labrador', 'Lacsamana', 'Lao', 'Legaspi',
+  'Lim', 'Llamas', 'Lopez', 'Luna', 'Mabini', 'Macapagal', 'Magsaysay', 'Malvar', 'Manalo', 'Mendoza',
+  'Mercado', 'Miranda', 'Navarro', 'Nolasco', 'Ocampo', 'Ortega', 'Pacheco', 'Padilla', 'Palma', 'Panganiban',
+  'Pascual', 'Pineda', 'Quinto', 'Ramos', 'Reyes', 'Rivera', 'Robles', 'Rodriguez', 'Rojas', 'Romero',
+  'Rosales', 'Rosario', 'Roxas', 'Salazar', 'Salvador', 'Sanchez', 'Santos', 'Soriano', 'Suarez', 'Tolentino',
+  'Torres', 'Trinidad', 'Valdez', 'Valencia', 'Vargas', 'Velasco', 'Ventura', 'Vergara', 'Villanueva', 'Yap'
 ];
 
-const LAST_NAMES = [
-  'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis',
-  'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson',
-  'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson',
-  'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker',
-  'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill', 'Flores',
-  'Green', 'Adams', 'Nelson', 'Baker', 'Hall', 'Rivera', 'Campbell', 'Mitchell',
-  'Carter', 'Roberts'
-];
+function hashString(value) {
+  let hash = 0;
+  const text = String(value || '');
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function parseNumericOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseBool(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'yes' || normalized === 'true' || normalized === '1';
+}
+
+function parseIntegerOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number.parseInt(String(value).trim(), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+const RESERVED_ALUMNI_COLUMNS = new Set([
+  'Student Number',
+  'Name',
+  'First Name',
+  'Middle Name',
+  'Last Name',
+  'Suffix',
+  'first_name',
+  'middle_name',
+  'last_name',
+  'suffix',
+  'Gender',
+  'Age',
+  'Program',
+  'Degree',
+  'Year Graduated',
+  'CGPA',
+  'Average Prof Grade',
+  'Average Elec Grade',
+  'OJT Grade',
+  'Leadership POS',
+  'Act Member POS',
+  'Soft Skills Ave',
+  'Hard Skills Ave',
+  'Board Exam',
+  'Employability',
+  'Employability Reason',
+  'Internship Experience',
+  'Certifications',
+  'source_file'
+]);
+
+function normalizeSkillName(raw) {
+  return String(raw || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractSnapshotSkills(row) {
+  const skillEntries = [];
+  for (const [columnName, rawValue] of Object.entries(row || {})) {
+    if (RESERVED_ALUMNI_COLUMNS.has(columnName)) continue;
+    const skillName = normalizeSkillName(columnName);
+    if (!skillName) continue;
+
+    const numericValue = parseNumericOrNull(rawValue);
+    if (numericValue === null) continue;
+
+    skillEntries.push({
+      skill_name: skillName.slice(0, 150),
+      skill_value: numericValue
+    });
+  }
+
+  return skillEntries;
+}
 
 async function clearData() {
   console.log('Clearing existing data for a fresh start...');
-  
-  // Delete in order of dependencies to avoid foreign key violations
-  await prisma.mlPrediction.deleteMany({});
-  await prisma.followupSchedule.deleteMany({});
-  await prisma.employmentOutcome.deleteMany({});
-  await prisma.surveyAnswer.deleteMany({});
-  await prisma.submissionCompetency.deleteMany({});
-  
-  // Handle self-referencing foreign keys in SurveySubmission
-  await prisma.surveySubmission.updateMany({
-    data: { 
-      trigger_submission_id: null,
-      parent_submission_id: null 
+
+  const safeDelete = async (label, fn) => {
+    try {
+      await fn();
+    } catch (err) {
+      if (err && err.code === 'P2021') {
+        console.log(`Skipping ${label}: backing table is missing in current DB.`);
+        return;
+      }
+      throw err;
     }
-  });
-  await prisma.surveySubmission.deleteMany({});
-  
-  await prisma.academicSnapshot.deleteMany({});
-  await prisma.alumniProfile.deleteMany({});
-  
-  // Also clear audit logs that might reference users
-  await prisma.auditLog.deleteMany({});
-  await prisma.userNotification.deleteMany({});
-  await prisma.notification.deleteMany({});
-  
-  await prisma.user.deleteMany({ 
-    where: { 
-      role: { in: ['ALUMNI', 'ADMIN', 'SUPERADMIN'] } 
-    } 
-  });
+  };
+
+  await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
+  try {
+    await safeDelete('mlPrediction', () => prisma.mlPrediction.deleteMany({}));
+    await safeDelete('followupSchedule', () => prisma.followupSchedule.deleteMany({}));
+    await safeDelete('employmentOutcome', () => prisma.employmentOutcome.deleteMany({}));
+    await safeDelete('surveyAnswer', () => prisma.surveyAnswer.deleteMany({}));
+    await safeDelete('submissionCompetency', () => prisma.submissionCompetency.deleteMany({}));
+    await safeDelete('surveySubmission', () => prisma.surveySubmission.deleteMany({}));
+    await safeDelete('academicSnapshotSkill', () => prisma.academicSnapshotSkill.deleteMany({}));
+    await safeDelete('academicSnapshot', () => prisma.academicSnapshot.deleteMany({}));
+    await safeDelete('alumniProfile', () => prisma.alumniProfile.deleteMany({}));
+    await safeDelete('auditLog', () => prisma.auditLog.deleteMany({}));
+    await safeDelete('userNotification', () => prisma.userNotification.deleteMany({}));
+    await safeDelete('notification', () => prisma.notification.deleteMany({}));
+    await safeDelete('user', () => prisma.user.deleteMany({
+      where: {
+        role: 'ALUMNI'
+      }
+    }));
+  } finally {
+    await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+  }
 }
 
 async function seedAdmins() {
@@ -136,30 +242,62 @@ async function seedCompetencies() {
 
 async function seedCollegesAndPrograms() {
   console.log('Seeding colleges and programs...');
-  const colleges = [{ name: 'College of Computer Studies', code: 'CCS' }, { name: 'College of Business and Accountancy', code: 'CBA' }];
+  const colleges = [
+    { name: 'College of Computer Studies', code: 'CCS' },
+    { name: 'College of Business and Accountancy', code: 'CBA' },
+    { name: 'College of Education, Arts, and Sciences', code: 'CEAS' },
+    { name: 'College of Nursing', code: 'CON' }
+  ];
   for (const c of colleges) await prisma.college.upsert({ where: { code: c.code }, update: {}, create: { name: c.name, code: c.code } });
   const ccs = await prisma.college.findUnique({ where: { code: 'CCS' } });
   const cba = await prisma.college.findUnique({ where: { code: 'CBA' } });
+  const ceas = await prisma.college.findUnique({ where: { code: 'CEAS' } });
+  const con = await prisma.college.findUnique({ where: { code: 'CON' } });
   const programs = [
-    { name: 'Bachelor of Science in Information Technology', code: 'BSIT', college_id: ccs.id },
-    { name: 'Bachelor of Science in Computer Science', code: 'BSCS', college_id: ccs.id },
-    { name: 'Bachelor of Science in Business Administration', code: 'BSBA', college_id: cba.id },
-    { name: 'BSBA-Entrepreneurship', code: 'BSBA-ENTREP', college_id: cba.id }
+    { name: 'Accountancy - Bachelor of Science in Accountancy', code: 'BSA', college_id: cba.id },
+    { name: 'Entrepreneurship - Bachelor of Science in Business Administration major in Entrepreneurship', code: 'BSBA_ENTREP', college_id: cba.id },
+    { name: 'Marketing - Bachelor of Science in Business Administration major in Marketing Management', code: 'BSBA_MARKETING', college_id: cba.id },
+    { name: 'Electronics Engineering - Bachelor of Science in Electronics Engineering', code: 'BSECE', college_id: ccs.id },
+    { name: 'Computer Science - Bachelor of Science in Computer Science', code: 'BSCS', college_id: ccs.id },
+    { name: 'English Education - Bachelor of Secondary Education major in English', code: 'BSED_ENGLISH', college_id: ceas.id },
+    { name: 'Filipino Education - Bachelor of Secondary Education major in Filipino', code: 'BSED_FILIPINO', college_id: ceas.id },
+    { name: 'Information Technology - Bachelor of Science in Information Technology', code: 'BSIT', college_id: ccs.id },
+    { name: 'Nursing - Bachelor of Science in Nursing', code: 'BSN', college_id: con.id }
   ];
   for (const p of programs) await prisma.program.upsert({ where: { code: p.code }, update: {}, create: { name: p.name, code: p.code, college_id: p.college_id } });
 }
 
 async function seedHistoricalAlumni() {
   console.log('Seeding historical alumni data...');
-  if (!fs.existsSync(ALUMNI_DATA_FILE)) return;
+  if (!fs.existsSync(ALUMNI_DATA_FILE)) {
+    console.log(`Alumni data file not found: ${ALUMNI_DATA_FILE}`);
+    return;
+  }
 
   const workbook = xlsx.readFile(ALUMNI_DATA_FILE);
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const targetSheetName = workbook.SheetNames.includes('Alumni Data') ? 'Alumni Data' : workbook.SheetNames[0];
+  const sheet = workbook.Sheets[targetSheetName];
   const rows = xlsx.utils.sheet_to_json(sheet);
   const programs = await prisma.program.findMany();
   const programIdMap = Object.fromEntries(programs.map(p => [p.code, p.id]));
-  const defaultProgramId = programIdMap['BSIT'];
-  const degreeMap = { 'BSIT': 'BSIT', 'BSCS': 'BSCS', 'BSBA-Entrepreneurship': 'BSBA-ENTREP', 'BSBA': 'BSBA' };
+  const degreeMap = {
+    // Canonical dataset terms
+    'BSA': 'BSA',
+    'BSBA ENTREPRENEURSHIP': 'BSBA_ENTREP',
+    'BSBA MARKETING': 'BSBA_MARKETING',
+    'BSECE': 'BSECE',
+    'BSCS': 'BSCS',
+    'BSED ENGLISH': 'BSED_ENGLISH',
+    'BSED FILIPINO': 'BSED_FILIPINO',
+    'BSIT': 'BSIT',
+    'BSN': 'BSN',
+    // Compatibility aliases
+    'BSBA-ENTREPRENEURSHIP': 'BSBA_ENTREP',
+    'BSBA ENTREPRENEURSHIP ': 'BSBA_ENTREP',
+    'BSBA-MARKETING': 'BSBA_MARKETING',
+    'BSED-ENGLISH': 'BSED_ENGLISH',
+    'BSED-FILIPINO': 'BSED_FILIPINO'
+  };
 
 
   // Historical Template
@@ -171,79 +309,185 @@ async function seedHistoricalAlumni() {
 
   console.log(`Processing ${rows.length} records...`);
 
+  let skippedRows = 0;
+  const unmappedPrograms = new Set();
+
+  for (const row of rows) {
+    const rawProgram = String(row.Program || row.Degree || '').trim().toUpperCase();
+    if (!degreeMap[rawProgram]) {
+      unmappedPrograms.add(rawProgram || '(blank)');
+    }
+  }
+  if (unmappedPrograms.size > 0) {
+    throw new Error(`Dataset contains unmapped program/degree values: ${Array.from(unmappedPrograms).sort().join(', ')}`);
+  }
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    // Correct ID format: 25-0XXXX
-    const studentId = `25-${String(i + 1).padStart(5, '0')}`;
-    const firstName = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
-    const lastName = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
-    const programCode = degreeMap[row.Degree] || 'BSIT';
-    const programId = programIdMap[programCode] || defaultProgramId;
+    const studentId = String(row['Student Number'] || '').trim() || `SYN-${String(i + 1).padStart(6, '0')}`;
+    const fallbackFirstName = SYNTHETIC_FIRST_NAMES[hashString(`${studentId}:first`) % SYNTHETIC_FIRST_NAMES.length];
+    const fallbackLastName = SYNTHETIC_LAST_NAMES[hashString(`${studentId}:last`) % SYNTHETIC_LAST_NAMES.length];
+    const firstName = String(row['First Name'] || row.first_name || '').trim() || fallbackFirstName;
+    const middleName = String(row['Middle Name'] || row.middle_name || '').trim() || null;
+    const lastName = String(row['Last Name'] || row.last_name || '').trim() || fallbackLastName;
+    const suffix = String(row['Suffix'] || row.suffix || '').trim() || null;
+    const rawProgram = String(row.Program || row.Degree || '').trim().toUpperCase();
+    const programCode = degreeMap[rawProgram];
+    const programId = programCode ? programIdMap[programCode] : null;
     const isEmployable = row.Employability === 'Employable';
+    const yearGraduated = parseInt(row['Year Graduated'], 10);
+    const snapshotSkills = extractSnapshotSkills(row);
+    if (!Number.isFinite(yearGraduated)) {
+      skippedRows += 1;
+      continue;
+    }
+    if (!programId) throw new Error(`Mapped program code missing in DB: ${programCode}`);
 
     try {
       const passwordHash = await createPlaceholderPasswordHash(studentId);
       await prisma.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: {
+        const user = await tx.user.upsert({
+          where: { username: studentId },
+          update: {
+            password_hash: passwordHash,
+            role: 'ALUMNI',
+            email: `${studentId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}@alumni.local`,
+            first_name: firstName,
+            middle_name: middleName,
+            last_name: lastName,
+            suffix
+          },
+          create: {
             username: studentId,
             password_hash: passwordHash,
             role: 'ALUMNI',
-            email: `${studentId.replace('-', '')}@example.com`,
+            email: `${studentId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}@alumni.local`,
             first_name: firstName,
-            last_name: lastName
+            middle_name: middleName,
+            last_name: lastName,
+            suffix
           }
         });
 
-        const profile = await tx.alumniProfile.create({
-          data: {
+        const profile = await tx.alumniProfile.upsert({
+          where: { user_id: user.id },
+          update: {
+            student_id: studentId,
+            batch_year: yearGraduated,
+            current_program_id: programId,
+            lifecycle_status: 'PENDING'
+          },
+          create: {
             user_id: user.id,
             student_id: studentId,
-            batch_year: parseInt(row['Year Graduated']) || 2020,
+            batch_year: yearGraduated,
             current_program_id: programId,
             lifecycle_status: 'PENDING'
           }
         });
 
-        const snapshot = await tx.academicSnapshot.create({
-          data: {
-            alumni_profile: { connect: { id: profile.id } },
-            program: { connect: { id: programId } },
-            gender: row.Gender || (Math.random() > 0.5 ? 'Male' : 'Female'),
-            age: parseInt(row.Age) || 22,
-            year_graduated: parseInt(row['Year Graduated']) || 2020,
-            cgpa: parseFloat(row.CGPA) || (Math.random() * 2 + 1).toFixed(2),
-            prof_grade: parseFloat(row['Average Prof Grade']) || (Math.random() * 20 + 75).toFixed(2),
-            elec_grade: parseFloat(row['Average Elec Grade']) || (Math.random() * 20 + 75).toFixed(2),
-            ojt_grade: parseFloat(row['OJT Grade']) || (Math.random() * 15 + 80).toFixed(2),
-            leader_pos: row['Leadership POS'] === 'Yes' || (Math.random() > 0.8),
-            act_member_pos: row['Act Member POS'] === 'Yes' || (Math.random() > 0.7),
-            soft_skills_ave: parseFloat(row['Soft Skills Ave']) || (Math.random() * 30 + 65).toFixed(2),
-            hard_skills_ave: parseFloat(row['Hard Skills Ave']) || (Math.random() * 30 + 60).toFixed(2),
-            is_employable: isEmployable
+        let snapshot = await tx.academicSnapshot.findFirst({
+          where: {
+            alumni_profile_id: profile.id,
+            program_id: programId,
+            year_graduated: yearGraduated
           }
         });
 
-        const submission = await tx.surveySubmission.create({
-          data: {
-            alumni_profile: { connect: { id: profile.id } },
-            academic_snapshot: { connect: { id: snapshot.id } },
-            template: { connect: { id: historicalTemplate.id } },
-            branch_path: 'FOLLOWUP',
-            status: 'COMPLETED',
-            submitted_at: new Date(`${row['Year Graduated'] || 2020}-01-01`)
-          }
-        });
-
-        if (row.Employability) {
-          await tx.employmentOutcome.create({
+        if (!snapshot) {
+          snapshot = await tx.academicSnapshot.create({
             data: {
               alumni_profile: { connect: { id: profile.id } },
-              submission: { connect: { id: submission.id } },
-              employment_status: isEmployable ? 'EMPLOYED' : 'UNEMPLOYED',
-              outcome_date: new Date(`${row['Year Graduated'] || 2020}-01-01`)
+              program: { connect: { id: programId } },
+              gender: String(row.Gender || '').trim() || null,
+              age: parseNumericOrNull(row.Age),
+              year_graduated: yearGraduated,
+              cgpa: parseNumericOrNull(row.CGPA),
+              prof_grade: parseNumericOrNull(row['Average Prof Grade']),
+              elec_grade: parseNumericOrNull(row['Average Elec Grade']),
+              ojt_grade: parseNumericOrNull(row['OJT Grade']),
+              leader_pos: parseIntegerOrNull(row['Leadership POS']),
+              act_member_pos: parseIntegerOrNull(row['Act Member POS']),
+              soft_skills_ave: parseNumericOrNull(row['Soft Skills Ave']),
+              hard_skills_ave: parseNumericOrNull(row['Hard Skills Ave']),
+              internship_experience: parseNumericOrNull(row['Internship Experience']),
+              certifications: parseIntegerOrNull(row['Certifications']),
+              board_exam: parseIntegerOrNull(row['Board Exam']),
+              is_employable: isEmployable
             }
           });
+        } else {
+          snapshot = await tx.academicSnapshot.update({
+            where: { id: snapshot.id },
+            data: {
+              gender: String(row.Gender || '').trim() || null,
+              age: parseNumericOrNull(row.Age),
+              cgpa: parseNumericOrNull(row.CGPA),
+              prof_grade: parseNumericOrNull(row['Average Prof Grade']),
+              elec_grade: parseNumericOrNull(row['Average Elec Grade']),
+              ojt_grade: parseNumericOrNull(row['OJT Grade']),
+              leader_pos: parseIntegerOrNull(row['Leadership POS']),
+              act_member_pos: parseIntegerOrNull(row['Act Member POS']),
+              soft_skills_ave: parseNumericOrNull(row['Soft Skills Ave']),
+              hard_skills_ave: parseNumericOrNull(row['Hard Skills Ave']),
+              internship_experience: parseNumericOrNull(row['Internship Experience']),
+              certifications: parseIntegerOrNull(row['Certifications']),
+              board_exam: parseIntegerOrNull(row['Board Exam']),
+              is_employable: isEmployable
+            }
+          });
+        }
+
+        let submission = await tx.surveySubmission.findFirst({
+          where: {
+            alumni_profile_id: profile.id,
+            academic_snapshot_id: snapshot.id,
+            template_id: historicalTemplate.id
+          }
+        });
+
+        if (!submission) {
+          submission = await tx.surveySubmission.create({
+            data: {
+              alumni_profile: { connect: { id: profile.id } },
+              academic_snapshot: { connect: { id: snapshot.id } },
+              template: { connect: { id: historicalTemplate.id } },
+              branch_path: 'FOLLOWUP',
+              status: 'COMPLETED',
+              submitted_at: new Date(`${yearGraduated}-01-01`)
+            }
+          });
+        }
+
+        if (snapshotSkills.length > 0) {
+          await tx.academicSnapshotSkill.createMany({
+            data: snapshotSkills.map((entry) => ({
+              academic_snapshot_id: snapshot.id,
+              skill_name: entry.skill_name,
+              skill_value: entry.skill_value,
+              source_column: null
+            })),
+            skipDuplicates: true
+          });
+        }
+
+        if (row.Employability) {
+          const existingOutcome = await tx.employmentOutcome.findFirst({
+            where: {
+              alumni_profile_id: profile.id,
+              submission_id: submission.id
+            }
+          });
+          if (!existingOutcome) {
+            await tx.employmentOutcome.create({
+              data: {
+                alumni_profile: { connect: { id: profile.id } },
+                submission: { connect: { id: submission.id } },
+                employment_status: isEmployable ? 'EMPLOYED' : 'UNEMPLOYED',
+                outcome_date: new Date(`${yearGraduated}-01-01`)
+              }
+            });
+          }
         }
       });
     } catch (err) {
@@ -251,11 +495,19 @@ async function seedHistoricalAlumni() {
     }
     if ((i + 1) % 100 === 0) console.log(`Seeded ${i + 1} alumni...`);
   }
+  if (skippedRows > 0) {
+    console.log(`Skipped ${skippedRows} rows due to missing required dataset identifiers/fields.`);
+  }
 }
 
 async function main() {
   try {
-    await clearData();
+    const skipClear = String(process.env.SKIP_CLEAR || '').trim() === '1';
+    if (!skipClear) {
+      await clearData();
+    } else {
+      console.log('SKIP_CLEAR=1 detected. Keeping existing data and appending seed rows.');
+    }
     await seedAdmins();
     await seedCompetencies();
     await seedCollegesAndPrograms();

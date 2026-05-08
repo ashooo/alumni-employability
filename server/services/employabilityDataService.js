@@ -2,6 +2,7 @@ const { getPrisma, getDatabaseSetupStatus } = require('../config/db');
 
 const REFACTOR_TEMPLATE_KEYS = {
   EMPLOYABILITY_ASSESSMENT: 'employability_assessment',
+  EMPLOYED_ASSESSMENT: 'employed_assessment',
   FOLLOWUP: 'employment_followup'
 };
 
@@ -180,6 +181,27 @@ const ensureTemplates = async (refactorPrisma) => {
     }
   });
 
+  const employedTemplate = await refactorPrisma.surveyTemplate.upsert({
+    where: { template_key: REFACTOR_TEMPLATE_KEYS.EMPLOYED_ASSESSMENT },
+    update: {
+      name: 'Employed Assessment',
+      description: 'Save-only employed path intake.',
+      kind: 'EMPLOYED',
+      path_key: 'EMPLOYED',
+      is_followup: false,
+      is_active: true
+    },
+    create: {
+      template_key: REFACTOR_TEMPLATE_KEYS.EMPLOYED_ASSESSMENT,
+      name: 'Employed Assessment',
+      description: 'Save-only employed path intake.',
+      kind: 'EMPLOYED',
+      path_key: 'EMPLOYED',
+      is_followup: false,
+      is_active: true
+    }
+  });
+
   const followupTemplate = await refactorPrisma.surveyTemplate.upsert({
     where: { template_key: REFACTOR_TEMPLATE_KEYS.FOLLOWUP },
     update: {
@@ -205,6 +227,7 @@ const ensureTemplates = async (refactorPrisma) => {
 
   return {
     assessmentTemplate,
+    employedTemplate,
     followupTemplate
   };
 };
@@ -357,7 +380,8 @@ const submitEmployabilitySurvey = async ({
   skillRatings,
   additionalAnswers,
   modelInput,
-  predictionResult
+  predictionResult,
+  assessmentPath = 'UNEMPLOYED'
 }) => {
   const refactorPrisma = requireRefactorPrisma();
   const now = new Date();
@@ -398,11 +422,13 @@ const submitEmployabilitySurvey = async ({
     batchYear
   );
 
-  const { assessmentTemplate, followupTemplate } = await ensureTemplates(refactorPrisma);
+  const { assessmentTemplate, employedTemplate, followupTemplate } = await ensureTemplates(refactorPrisma);
+  const resolvedPath = String(assessmentPath || 'UNEMPLOYED').toUpperCase() === 'EMPLOYED' ? 'EMPLOYED' : 'UNEMPLOYED';
+  const selectedTemplate = resolvedPath === 'EMPLOYED' ? employedTemplate : assessmentTemplate;
   const competencies = await ensureCompetencies(refactorPrisma, skillRatings);
   const questions = await ensureSubmissionQuestions(
     refactorPrisma,
-    assessmentTemplate.id,
+    selectedTemplate.id,
     additionalAnswers
   );
 
@@ -417,10 +443,11 @@ const submitEmployabilitySurvey = async ({
       prof_grade: parseOptionalFloat(academicData.prof_grade),
       elec_grade: parseOptionalFloat(academicData.elec_grade),
       ojt_grade: parseOptionalFloat(academicData.ojt_grade),
-      leader_pos: parseBooleanFlag(academicData.leader_pos),
-      act_member_pos: parseBooleanFlag(academicData.act_member_pos),
+      leader_pos: parseOptionalInt(academicData.leader_pos),
+      act_member_pos: parseOptionalInt(academicData.act_member_pos),
       soft_skills_ave: parseOptionalFloat(academicData.soft_skills_ave),
-      hard_skills_ave: parseOptionalFloat(academicData.hard_skills_ave)
+      hard_skills_ave: parseOptionalFloat(academicData.hard_skills_ave),
+      board_exam: parseOptionalInt(academicData.board_exam)
     }
   });
 
@@ -428,8 +455,8 @@ const submitEmployabilitySurvey = async ({
     data: {
       alumni_profile_id: alumniProfile.id,
       academic_snapshot_id: academicSnapshot.id,
-      template_id: assessmentTemplate.id,
-      branch_path: 'UNEMPLOYED',
+      template_id: selectedTemplate.id,
+      branch_path: resolvedPath,
       started_at: now,
       submitted_at: now,
       status: 'COMPLETED',
@@ -497,38 +524,69 @@ const submitEmployabilitySurvey = async ({
     });
   }
 
-  const mlPrediction = await refactorPrisma.mlPrediction.create({
-    data: {
-      prediction_type: 'EMPLOYABILITY',
-      model_name: 'employability_model',
-      model_version: predictionResult.model_type || '1.0.0',
-      alumni_profile_id: alumniProfile.id,
-      academic_snapshot_id: academicSnapshot.id,
-      submission_id: surveySubmission.id,
-      input_snapshot: modelInput || null,
-      output_json: predictionResult,
-      confidence: parseOptionalFloat(predictionResult.confidence)
+  // Persist program-required skill ratings on the academic snapshot for model traceability.
+  if (Array.isArray(academicData.program_skill_ratings) && academicData.program_skill_ratings.length > 0) {
+    const rows = academicData.program_skill_ratings
+      .map((entry) => {
+        const skillName = String(entry?.skill_name || entry?.skill || '').trim();
+        const value = parseOptionalFloat(
+          entry?.skill_value !== undefined ? entry?.skill_value : entry?.score
+        );
+        if (!skillName || value === null) return null;
+        return {
+          academic_snapshot_id: academicSnapshot.id,
+          skill_name: skillName.slice(0, 150),
+          skill_value: value,
+          source_column: 'program_skill_rating'
+        };
+      })
+      .filter(Boolean);
+    if (rows.length > 0) {
+      await refactorPrisma.academicSnapshotSkill.createMany({
+        data: rows,
+        skipDuplicates: true
+      });
     }
-  });
+  }
 
-  const followupDueDate = new Date(now);
-  followupDueDate.setMonth(followupDueDate.getMonth() + 2);
+  let mlPrediction = null;
+  if (resolvedPath === 'UNEMPLOYED' && predictionResult) {
+    mlPrediction = await refactorPrisma.mlPrediction.create({
+      data: {
+        prediction_type: 'EMPLOYABILITY',
+        model_name: 'employability_model',
+        model_version: predictionResult.model_type || '1.0.0',
+        alumni_profile_id: alumniProfile.id,
+        academic_snapshot_id: academicSnapshot.id,
+        submission_id: surveySubmission.id,
+        input_snapshot: modelInput || null,
+        output_json: predictionResult,
+        confidence: parseOptionalFloat(predictionResult.confidence)
+      }
+    });
+  }
 
-  const followupSchedule = await refactorPrisma.followupSchedule.create({
-    data: {
-      alumni_profile_id: alumniProfile.id,
-      trigger_submission_id: surveySubmission.id,
-      target_template_id: followupTemplate.id,
-      due_at: followupDueDate,
-      status: 'PENDING'
-    }
-  });
+  let followupSchedule = null;
+  if (mlPrediction) {
+    const followupDueDate = new Date(now);
+    followupDueDate.setMonth(followupDueDate.getMonth() + 2);
+
+    followupSchedule = await refactorPrisma.followupSchedule.create({
+      data: {
+        alumni_profile_id: alumniProfile.id,
+        trigger_submission_id: surveySubmission.id,
+        target_template_id: followupTemplate.id,
+        due_at: followupDueDate,
+        status: 'PENDING'
+      }
+    });
+  }
 
   return {
     academicSnapshotId: academicSnapshot.id,
     surveySubmissionId: surveySubmission.id,
-    mlPredictionId: mlPrediction.id,
-    followupScheduleId: followupSchedule.id
+    mlPredictionId: mlPrediction?.id || null,
+    followupScheduleId: followupSchedule?.id || null
   };
 };
 
@@ -548,7 +606,10 @@ const getLatestRefactorPrediction = async (studentId) => {
       alumni_profile: true,
       academic_snapshot: {
         include: {
-          program: true
+          program: true,
+          skill_values: {
+            orderBy: [{ skill_name: 'asc' }]
+          }
         }
       },
       submission: {
@@ -656,7 +717,17 @@ const getLatestRefactorPrediction = async (studentId) => {
       ? {
           id: prediction.submission.id,
           branch_path: prediction.submission.branch_path,
+          additional_data: prediction.submission.additional_data || null,
           survey_answers: surveyAnswers,
+          academic_snapshot_skills: (prediction.academic_snapshot?.skill_values || []).map((skill) => ({
+            id: skill.id,
+            skill_name: skill.skill_name,
+            skill_value:
+              skill.skill_value === null || skill.skill_value === undefined
+                ? null
+                : Number(skill.skill_value),
+            source_column: skill.source_column || null
+          })),
           competencies: submissionCompetencies,
           competencies_by_kind: competenciesByKind
         }
@@ -668,3 +739,4 @@ module.exports = {
   getLatestRefactorPrediction,
   submitEmployabilitySurvey
 };
+

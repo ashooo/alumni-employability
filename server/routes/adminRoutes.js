@@ -28,6 +28,7 @@ router.get('/colleges', authenticateToken, adminController.getColleges);
 router.get('/analytics', authenticateToken, adminController.getAnalytics);
 router.get('/reports', authenticateToken, adminController.getReports);
 router.get('/predictions/arima', authenticateToken, predictionController.getArimaPrediction);
+router.get('/predictions/evaluations', authenticateToken, predictionController.getModelEvaluations);
 router.post('/predictions/arima/run', authenticateToken, predictionController.rerunArimaTraining);
 
 // Program management

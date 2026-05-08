@@ -510,8 +510,15 @@ const updateEmploymentRecord = async (req, res) => {
 
 const getCollegeSurvey = async (req, res) => {
   try {
-    const { path } = req.query;
-    const survey = await getSurveyDefinition(path);
+    const { path, programCode } = req.query;
+    let survey = await getSurveyDefinition(path, programCode || null);
+    const hasQuestions = Array.isArray(survey?.categories)
+      && survey.categories.some((category) => Array.isArray(category.questions) && category.questions.length > 0);
+
+    if (!hasQuestions && String(path || 'INITIAL').toUpperCase() !== 'INITIAL') {
+      survey = await getSurveyDefinition('INITIAL', null);
+    }
+
     res.json({
       survey: survey.categories,
       version: survey.version,

@@ -528,8 +528,10 @@ const submitEmployabilitySurvey = async ({
   if (Array.isArray(academicData.program_skill_ratings) && academicData.program_skill_ratings.length > 0) {
     const rows = academicData.program_skill_ratings
       .map((entry) => {
-        const skillName = String(entry?.skill || '').trim();
-        const value = parseOptionalFloat(entry?.score);
+        const skillName = String(entry?.skill_name || entry?.skill || '').trim();
+        const value = parseOptionalFloat(
+          entry?.skill_value !== undefined ? entry?.skill_value : entry?.score
+        );
         if (!skillName || value === null) return null;
         return {
           academic_snapshot_id: academicSnapshot.id,

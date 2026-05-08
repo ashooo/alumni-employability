@@ -541,6 +541,43 @@ const ensureSubmissionProfile = async (refactorPrisma, user, studentId) => {
 const submitSurveyResponse = async ({ studentId, answers, version, pathKey = 'INITIAL' }) => {
   const refactorPrisma = requireRefactorPrisma();
   const { template } = await getSurveyDefinition(pathKey);
+  const normalizedPathKey = String(pathKey || 'INITIAL').toUpperCase();
+
+  if (normalizedPathKey === 'INITIAL') {
+    const questionIds = (answers || [])
+      .map((answer) => parseOptionalInt(answer?.question_id))
+      .filter((id) => id !== null);
+    const questions = await refactorPrisma.surveyQuestion.findMany({
+      where: {
+        id: {
+          in: questionIds
+        }
+      },
+      select: {
+        id: true,
+        question_key: true
+      }
+    });
+    const byId = new Map(questions.map((question) => [question.id, question.question_key]));
+
+    const gatewayAnswer = (answers || []).find((answer) => {
+      const questionId = parseOptionalInt(answer?.question_id);
+      const questionKey = questionId ? byId.get(questionId) : null;
+      if (questionKey !== 'current_employment_status') {
+        return false;
+      }
+      const raw = String(answer?.answer_text || '').trim();
+      return raw === 'Employed' || raw === 'Unemployed';
+    });
+
+    if (!gatewayAnswer) {
+      const error = new Error(
+        'Invalid employment status. Allowed values are exactly "Employed" or "Unemployed".'
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+  }
 
   const user = await refactorPrisma.user.findUnique({
     where: { username: String(studentId) }

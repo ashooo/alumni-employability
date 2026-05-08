@@ -8,7 +8,7 @@ import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
@@ -559,12 +559,26 @@ export default function AlumniSurvey() {
   const [predictionResult, setPredictionResult] = useState<Prediction | null>(null);
   const [academicProfileLoaded, setAcademicProfileLoaded] = useState(false);
   const [experienceAnswers, setExperienceAnswers] = useState(createInitialExperienceAnswers);
+  const completionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const completionNotifiedRef = useRef<{ employability: boolean; jobMatching: boolean }>({
+    employability: false,
+    jobMatching: false
+  });
 
   useEffect(() => {
     if (locationState?.retake) {
       setRetakeMode(true);
     }
   }, [locationState?.retake]);
+
+  useEffect(() => {
+    return () => {
+      if (completionPollRef.current) {
+        clearInterval(completionPollRef.current);
+        completionPollRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const required = getRequiredSkillsForProgram(surveyStatus?.programCode);
@@ -817,6 +831,64 @@ export default function AlumniSurvey() {
 
   const setAnswer = (questionId: string, value: string | string[] | number) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  };
+
+  const clearCompletionPolling = () => {
+    if (completionPollRef.current) {
+      clearInterval(completionPollRef.current);
+      completionPollRef.current = null;
+    }
+  };
+
+  const startCompletionPolling = (token: string) => {
+    if (!user?.username) return;
+    clearCompletionPolling();
+
+    let attempts = 0;
+    const maxAttempts = 24; // ~2 minutes at 5s interval
+    completionPollRef.current = setInterval(async () => {
+      attempts += 1;
+      try {
+        if (!completionNotifiedRef.current.employability) {
+          const employabilityRes = await fetch(
+            `${API_URL}/prediction/employability/latest/${user.username}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (employabilityRes.ok) {
+            completionNotifiedRef.current.employability = true;
+            toast({
+              title: 'Employability Model Complete',
+              description: 'Your employability prediction is ready.'
+            });
+          }
+        }
+
+        if (!completionNotifiedRef.current.jobMatching) {
+          const jobRes = await fetch(
+            `${API_URL}/prediction/job-matching/latest/${user.username}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (jobRes.ok) {
+            completionNotifiedRef.current.jobMatching = true;
+            toast({
+              title: 'Job Matcher Complete',
+              description: 'Your job-match recommendations are now ready.'
+            });
+          }
+        }
+      } catch {
+        // keep polling within bounds
+      }
+
+      if (
+        completionNotifiedRef.current.employability &&
+        completionNotifiedRef.current.jobMatching
+      ) {
+        clearCompletionPolling();
+      } else if (attempts >= maxAttempts) {
+        clearCompletionPolling();
+      }
+    }, 5000);
   };
 
   const getCompetenciesByKind = (kind: CompetencyKind) =>
@@ -1325,13 +1397,22 @@ export default function AlumniSurvey() {
       if (!isEmployedPath) {
         setPredictionResult(result.prediction);
         completeSurvey();
+        completionNotifiedRef.current.employability = Boolean(result?.prediction);
+        completionNotifiedRef.current.jobMatching = false;
+        startCompletionPolling(token);
       }
       setRetakeMode(false);
 
       const nextSurveyStatus = await fetchSurveyStatus(token);
       await fetchLatestSubmission(token);
 
-      setSurveyStage(resolveSurveyStage(nextSurveyStatus, !isEmployedPath));
+      if (!isEmployedPath && result?.prediction) {
+        // Show prediction immediately even if status endpoint still reports a transient
+        // "assessment_submitted_prediction_missing" state.
+        setSurveyStage('finished');
+      } else {
+        setSurveyStage(resolveSurveyStage(nextSurveyStatus, !isEmployedPath));
+      }
       toast({
         title: isEmployedPath ? 'Survey Complete' : 'Assessment Complete',
         description: isEmployedPath

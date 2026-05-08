@@ -388,14 +388,12 @@ const submitEmployabilitySurvey = async (req, res) => {
         confidence: predictionResult.confidence,
         model_type: predictionResult.model_type || null
       };
-      try {
-        await generateJobMatchingPrediction({
-          studentId: String(studentId),
-          topN: 5
-        });
-      } catch (jobMatchError) {
+      generateJobMatchingPrediction({
+        studentId: String(studentId),
+        topN: 5
+      }).catch((jobMatchError) => {
         console.warn('Job-matching auto-generation skipped:', jobMatchError?.message || jobMatchError);
-      }
+      });
     }
     return res.json(baseResponse);
   } catch (error) {

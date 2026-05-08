@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { DEFAULT_LOGO_URL, fetchSystemLogoUrl } from '@/lib/systemBranding';
 
 export default function LoginPage() {
   const [userId, setUserId] = useState('');
@@ -15,9 +16,18 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
+  const [logoUrl, setLogoUrl] = useState(DEFAULT_LOGO_URL);
   const { login, isLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  useEffect(() => {
+    const run = async () => {
+      const resolvedLogo = await fetchSystemLogoUrl();
+      setLogoUrl(resolvedLogo);
+    };
+    run();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +57,7 @@ export default function LoginPage() {
         >
           <div className="p-3 rounded-2xl bg-white/10 inline-block mb-8">
               <img
-                src="/plp_logo.png"
+                src={logoUrl}
                 alt="PLP Logo"
                 className="h-12 w-12 object-contain"
               />
@@ -82,7 +92,7 @@ export default function LoginPage() {
               <div className="relative mt-1.5">
                 <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="Enter password" value={password} onChange={e => setPassword(e.target.value)} />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                 </button>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { Save, Eye, EyeOff } from 'lucide-react';
+import { Save, Eye, EyeOff, ShieldCheck, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
@@ -19,6 +19,7 @@ export default function AlumniChangePassword() {
   const [saving, setSaving] = useState(false);
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [showSecurityDialog, setShowSecurityDialog] = useState(false);
   const { toast } = useToast();
 
@@ -132,7 +133,7 @@ export default function AlumniChangePassword() {
           <div className="relative mt-1.5">
             <Input type={showCurrent ? 'text' : 'password'} value={current} onChange={e => setCurrent(e.target.value)} />
             <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-              {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showCurrent ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
             </button>
           </div>
         </div>
@@ -141,7 +142,7 @@ export default function AlumniChangePassword() {
           <div className="relative mt-1.5">
             <Input type={showNew ? 'text' : 'password'} value={newPw} onChange={e => setNewPw(e.target.value)} />
             <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-              {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showNew ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
             </button>
           </div>
           {newPw && (
@@ -153,18 +154,22 @@ export default function AlumniChangePassword() {
         </div>
         <div>
           <Label>Confirm New Password</Label>
-          <Input
-            type="password"
-            value={confirm}
-            onChange={e => {
-              setConfirm(e.target.value);
-            }}
-            onBlur={() => {
-              // Let users finish typing first; then offer the OTP popup.
-              if (confirm.trim().length > 0) setShowSecurityDialog(true);
-            }}
-            className="mt-1.5"
-          />
+          <div className="relative mt-1.5">
+            <Input
+              type={showConfirm ? 'text' : 'password'}
+              value={confirm}
+              onChange={e => {
+                setConfirm(e.target.value);
+              }}
+              onBlur={() => {
+                // Let users finish typing first; then offer the OTP popup.
+                if (confirm.trim().length > 0) setShowSecurityDialog(true);
+              }}
+            />
+            <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+              {showConfirm ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            </button>
+          </div>
           {confirm && newPw !== confirm && <p className="text-xs text-destructive mt-1">Passwords do not match</p>}
           <div className="mt-2 flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
@@ -177,48 +182,72 @@ export default function AlumniChangePassword() {
         </div>
 
         <Dialog open={showSecurityDialog} onOpenChange={setShowSecurityDialog}>
-          <DialogContent className="sm:max-w-md" aria-describedby="change-password-otp-description">
+          <DialogContent
+            className="sm:max-w-lg bg-white text-slate-900 border-slate-200 dark:bg-emerald-950 dark:text-emerald-50 dark:border-emerald-800"
+            aria-describedby="change-password-otp-description"
+          >
             <DialogHeader>
-              <DialogTitle className="font-display">Verify password change</DialogTitle>
-              <DialogDescription id="change-password-otp-description">
+              <DialogTitle className="font-display flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                Verify password change
+              </DialogTitle>
+              <DialogDescription id="change-password-otp-description" className="text-slate-600 dark:text-emerald-200/80">
                 We’ll send a 6-digit OTP to your account email. Enter it below to confirm updating your password.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Button type="button" variant="secondary" onClick={requestOtp} disabled={otpSending}>
-                  {otpSending ? 'Sending OTP...' : 'Send OTP to my email'}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => { setOtp(''); setOtpSent(false); }}>
-                  Reset OTP
-                </Button>
+            <div className="space-y-5">
+              <div className="rounded-xl border bg-muted/30 p-4 space-y-3 dark:bg-emerald-900/40 dark:border-emerald-700/70">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg bg-primary/10 p-2 dark:bg-emerald-500/20">
+                    <Mail className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Step 1: Send OTP</p>
+                    <p className="text-xs text-muted-foreground dark:text-emerald-200/80">
+                      Click send to receive a one-time code in your account email inbox.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button type="button" variant="secondary" onClick={requestOtp} disabled={otpSending}>
+                    {otpSending ? 'Sending OTP...' : 'Send OTP to my email'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => { setOtp(''); setOtpSent(false); }}>
+                    Reset OTP
+                  </Button>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>OTP (6 digits)</Label>
-                <InputOTP
-                  maxLength={6}
-                  value={otp}
-                  onChange={setOtp}
-                  containerClassName="justify-start"
-                >
-                  <InputOTPGroup>
-                    <InputOTPSlot index={0} />
-                    <InputOTPSlot index={1} />
-                    <InputOTPSlot index={2} />
-                    <InputOTPSlot index={3} />
-                    <InputOTPSlot index={4} />
-                    <InputOTPSlot index={5} />
-                  </InputOTPGroup>
-                </InputOTP>
-
-                {!otpSent ? (
-                  <p className="text-xs text-muted-foreground">Click “Send OTP to my email” first.</p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">OTP sent. Check your inbox/spam folder.</p>
-                )}
-              </div>
+              {otpSent ? (
+                <div className="rounded-xl border p-4 space-y-3 dark:bg-emerald-700/70 dark:border-emerald-700/70">
+                  <div>
+                    <p className="text-sm font-medium">Step 2: Enter OTP</p>
+                    <p className="text-xs text-muted-foreground dark:text-emerald-200/80">
+                      Enter the 6-digit code to authorize password update.
+                    </p>
+                  </div>
+                  <Label>OTP (6 digits)</Label>
+                  <InputOTP
+                    maxLength={6}
+                    value={otp}
+                    onChange={setOtp}
+                    containerClassName="justify-start"
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                      <InputOTPSlot index={3} />
+                      <InputOTPSlot index={4} />
+                      <InputOTPSlot index={5} />
+                    </InputOTPGroup>
+                  </InputOTP>
+                  <p className="text-xs text-success">OTP sent. Check your inbox/spam folder.</p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground dark:text-emerald-200/80">Step 2 will appear after you send the OTP.</p>
+              )}
             </div>
 
             <DialogFooter className="gap-2 sm:gap-2">

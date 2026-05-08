@@ -717,6 +717,7 @@ const getLatestRefactorPrediction = async (studentId) => {
       ? {
           id: prediction.submission.id,
           branch_path: prediction.submission.branch_path,
+          additional_data: prediction.submission.additional_data || null,
           survey_answers: surveyAnswers,
           academic_snapshot_skills: (prediction.academic_snapshot?.skill_values || []).map((skill) => ({
             id: skill.id,

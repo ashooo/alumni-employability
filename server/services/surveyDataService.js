@@ -709,6 +709,7 @@ const getSurveyResponses = async (studentId) => {
       return {
         id: submission.id,
         branch_path: submission.branch_path || null,
+        additional_data: submission.additional_data || null,
         academic_snapshot: submission.academic_snapshot || null,
         academic_snapshot_skills: (submission.academic_snapshot?.skill_values || []).map((skill) => ({
           id: skill.id,

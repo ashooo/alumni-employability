@@ -107,11 +107,21 @@ interface Prediction {
   submission_summary?: {
     id: number;
     branch_path?: string | null;
+    additional_data?: {
+      academic_data?: Record<string, unknown>;
+      additional_answers?: Record<string, unknown>;
+    } | null;
     survey_answers: Array<{
       question_id: number;
       question_key?: string | null;
       question_text: string;
       value: string | number | boolean | Record<string, unknown> | null;
+    }>;
+    academic_snapshot_skills?: Array<{
+      id: number;
+      skill_name: string;
+      skill_value?: number | null;
+      source_column?: string | null;
     }>;
     competencies: Array<{
       id: number;
@@ -188,6 +198,20 @@ const COMPETENCY_GROUP_LABELS = {
   INTEREST: 'Interests',
   TECHNOLOGY: 'Technology Skills'
 } as const;
+
+const EXPERIENCE_LABEL_MAP: Array<{ key: string; label: string }> = [
+  { key: 'internship_completed', label: 'Internship Completed' },
+  { key: 'internship_length', label: 'Internship Length' },
+  { key: 'internship_relatedness', label: 'Internship Relatedness' },
+  { key: 'internship_responsibilities', label: 'Internship Responsibilities' },
+  { key: 'internship_improvement', label: 'Internship Improvement' },
+  { key: 'certifications_completed', label: 'Certifications Completed' },
+  { key: 'certifications_type', label: 'Certification Type' },
+  { key: 'certifications_count', label: 'Certification Count' },
+  { key: 'certifications_relatedness', label: 'Certification Relatedness' },
+  { key: 'board_taken', label: 'Board Exam Taken' },
+  { key: 'board_result', label: 'Board Exam Result' }
+];
 
 const formatChoiceValue = (value: unknown) => {
   if (value === null || value === undefined || value === '') {
@@ -447,6 +471,28 @@ export default function AlumniResults() {
   const isEmployable = Boolean(prediction.employable);
   const snapshot = prediction.input_snapshot || {};
   const submissionSummary = prediction.submission_summary;
+  const summaryAcademicData = (submissionSummary?.additional_data?.academic_data || {}) as Record<string, unknown>;
+  const experienceItems = EXPERIENCE_LABEL_MAP
+    .map(({ key, label }) => ({ label, value: summaryAcademicData[key] }))
+    .filter((item) => item.value !== undefined && item.value !== null && item.value !== '');
+  const snapshotCrucialSkills = (submissionSummary?.academic_snapshot_skills || [])
+    .filter((skill) => skill.source_column === 'program_skill_rating' || !skill.source_column)
+    .map((skill) => ({ name: skill.skill_name, value: skill.skill_value }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const payloadCrucialSkills = Array.isArray(summaryAcademicData.program_skill_ratings)
+    ? summaryAcademicData.program_skill_ratings
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null;
+        const name = String((entry as Record<string, unknown>).skill_name || (entry as Record<string, unknown>).skill || '').trim();
+        const valueRaw = (entry as Record<string, unknown>).skill_value ?? (entry as Record<string, unknown>).score;
+        const value = valueRaw === null || valueRaw === undefined || valueRaw === '' ? null : Number(valueRaw);
+        if (!name) return null;
+        return { name, value: Number.isFinite(value) ? value : null };
+      })
+      .filter((item): item is { name: string; value: number | null } => Boolean(item))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+  const crucialSkills = snapshotCrucialSkills.length ? snapshotCrucialSkills : payloadCrucialSkills;
   const hasJobMatches = Boolean(jobMatching?.matches?.length);
   const academicSummary = [
     { label: 'Degree', value: prediction.student_academic?.degree_name || snapshot.Degree || 'Not provided' },
@@ -816,6 +862,59 @@ export default function AlumniResults() {
                       </div>
                     ))}
                   </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Submission Path</h4>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border bg-muted/20 p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Branch</p>
+                      <p className="mt-1 font-medium">{submissionSummary?.branch_path || 'Not provided'}</p>
+                    </div>
+                    <div className="rounded-xl border bg-muted/20 p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Flow</p>
+                      <p className="mt-1 font-medium">
+                        {String(submissionSummary?.branch_path || '').toUpperCase() === 'EMPLOYED'
+                          ? 'Save-only (employed path)'
+                          : 'Save + predict (unemployed path)'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Experience and Achievement</h4>
+                  {experienceItems.length ? (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {experienceItems.map((item) => (
+                        <div key={item.label} className="rounded-xl border bg-muted/20 p-4">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                          <p className="mt-1 font-medium">{formatChoiceValue(item.value)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                      No experience and achievement details were saved for this submission.
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Crucial Skills Ratings</h4>
+                  {crucialSkills.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {crucialSkills.map((skill) => (
+                        <Badge key={skill.name} variant="outline" className="bg-primary/5 text-foreground">
+                          {skill.name} | {skill.value ?? 'N/A'}/10
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                      No crucial skills ratings are attached to this submission.
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3">

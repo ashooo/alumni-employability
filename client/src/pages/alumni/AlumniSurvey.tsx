@@ -335,6 +335,41 @@ const PROGRAM_REQUIRED_SKILLS: Record<string, string[]> = {
   ]
 };
 
+const normalizeProgramKey = (programCode: string) =>
+  String(programCode || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+
+const PROGRAM_CODE_ALIASES: Record<string, string> = {
+  BSBA_ENTREPRENEURSHIP: 'BSBA_ENTREP',
+  BSBA_ENTREP: 'BSBA_ENTREP',
+  BSBA_MARKETING: 'BSBA_MARKETING',
+  BSED_FILIPINO: 'BSED_FILIPINO',
+  BSED_ENGLISH: 'BSED_ENGLISH',
+  BS_ECE: 'BSECE',
+  BSIT: 'BSIT',
+  BSCS: 'BSCS',
+  BSA: 'BSA',
+  BSN: 'BSN',
+  BSECE: 'BSECE'
+};
+
+const getRequiredSkillsForProgram = (programCode?: string | null) => {
+  const normalized = normalizeProgramKey(String(programCode || ''));
+  const key = PROGRAM_CODE_ALIASES[normalized] || normalized;
+  return PROGRAM_REQUIRED_SKILLS[key] || [];
+};
+
+const buildProgramSkillRatingsPayload = (
+  programCode: string | null | undefined,
+  ratings: Record<string, number>
+) =>
+  getRequiredSkillsForProgram(programCode).map((skill) => ({
+    skill_name: skill,
+    skill_value: ratings[skill] || 5
+  }));
+
 const createInitialExperienceAnswers = () => ({
   internshipCompleted: '',
   internshipLength: '',
@@ -532,8 +567,7 @@ export default function AlumniSurvey() {
   }, [locationState?.retake]);
 
   useEffect(() => {
-    const code = String(surveyStatus?.programCode || '').toUpperCase();
-    const required = PROGRAM_REQUIRED_SKILLS[code] || [];
+    const required = getRequiredSkillsForProgram(surveyStatus?.programCode);
     if (required.length === 0) {
       return;
     }
@@ -1259,10 +1293,10 @@ export default function AlumniSurvey() {
                 : 0,
             leader_pos: experienceAnswers.leadershipHeld === 'Yes',
             act_member_pos: experienceAnswers.activeMember === 'Yes',
-            program_skill_ratings: Object.entries(programSkillRatings).map(([skill_name, skill_value]) => ({
-              skill_name,
-              skill_value
-            }))
+            program_skill_ratings: buildProgramSkillRatingsPayload(
+              surveyStatus?.programCode,
+              programSkillRatings
+            )
           },
           skillRatings: skillRatingsFormatted,
           additionalAnswers: {
@@ -1607,21 +1641,6 @@ export default function AlumniSurvey() {
         return false;
       }
 
-      if (wizardStep === 12) {
-        const code = String(surveyStatus?.programCode || '').toUpperCase();
-        const required = PROGRAM_REQUIRED_SKILLS[code] || [];
-        if (required.length > 0) {
-          const missing = required.some((skill) => !programSkillRatings[skill]);
-          if (missing) {
-            toast({
-              title: 'Validation Error',
-              description: 'Please rate all crucial skills for your program.'
-            });
-            return false;
-          }
-        }
-      }
-
       return true;
     };
 
@@ -1881,8 +1900,8 @@ export default function AlumniSurvey() {
                 </p>
               </div>
               <div className="space-y-6 pt-2 max-w-3xl mx-auto">
-                {(PROGRAM_REQUIRED_SKILLS[String(surveyStatus?.programCode || '').toUpperCase()] || []).length > 0 ? (
-                  (PROGRAM_REQUIRED_SKILLS[String(surveyStatus?.programCode || '').toUpperCase()] || []).map((skill) => (
+                {getRequiredSkillsForProgram(surveyStatus?.programCode).length > 0 ? (
+                  getRequiredSkillsForProgram(surveyStatus?.programCode).map((skill) => (
                     <div key={skill} className="space-y-3">
                       <div className="flex justify-between">
                         <Label className="text-base font-medium">{skill}</Label>

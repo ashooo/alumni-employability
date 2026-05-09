@@ -540,18 +540,10 @@ export default function AlumniResults() {
   const academicSummary = [
     { label: 'Program', value: snapshot.Program || prediction.student_academic?.degree_name || 'Not provided' },
     { label: 'Degree', value: prediction.student_academic?.degree_name || snapshot.Degree || 'Not provided' },
-    { label: 'Gender', value: prediction.student_academic?.gender || snapshot.Gender || 'Not provided' },
-    { label: 'Age', value: prediction.student_academic?.age || snapshot.Age || 'Not provided' },
     { label: 'Year Graduated', value: prediction.student_academic?.year_graduated || snapshot['Year Graduated'] || 'Not provided' },
-    { label: 'CGPA', value: prediction.student_academic?.cgpa || snapshot.CGPA || 'Not provided' },
-    { label: 'Average Prof Grade', value: prediction.student_academic?.prof_grade || snapshot['Average Prof Grade'] || 'Not provided' },
-    { label: 'Average Elec Grade', value: prediction.student_academic?.elec_grade || snapshot['Average Elec Grade'] || 'Not provided' },
-    { label: 'OJT Grade', value: prediction.student_academic?.ojt_grade || snapshot['OJT Grade'] || 'Not provided' },
     { label: 'Internship Experience', value: snapshot['Internship Experience'] || summaryAcademicData.internship_score || 'Not provided' },
     { label: 'Certifications', value: snapshot.Certifications || summaryAcademicData.certification_score || 'Not provided' },
     { label: 'Board Exam', value: snapshot['Board Exam'] ?? 'Not provided' },
-    { label: 'Leadership Position', value: formatChoiceValue(prediction.student_academic?.leader_pos ?? snapshot['Leadership POS']) },
-    { label: 'Active Membership', value: formatChoiceValue(prediction.student_academic?.act_member_pos ?? snapshot['Act Member POS']) },
     { label: 'Soft Skills Average', value: snapshot['Soft Skills Ave'] || 'Not provided' },
     { label: 'Hard Skills Average', value: snapshot['Hard Skills Ave'] || 'Not provided' }
   ];

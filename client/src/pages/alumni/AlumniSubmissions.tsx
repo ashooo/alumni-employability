@@ -25,6 +25,18 @@ const EXPERIENCE_LABEL_MAP: Array<{ key: string; label: string }> = [
   { key: 'board_result', label: 'Board Exam Result' }
 ];
 
+const HIDDEN_ACADEMIC_QUESTION_TOKENS = [
+  'cgpa',
+  'average prof grade',
+  'average elective grade',
+  'average elec grade',
+  'ojt grade',
+  'gender',
+  'age',
+  'leadership position',
+  'active member position'
+];
+
 interface Submission {
   id: number;
   survey_version: number;
@@ -232,6 +244,11 @@ export default function AlumniSubmissions() {
     })()
   );
 
+  const isHiddenAcademicQuestion = (questionText?: string) => {
+    const normalized = String(questionText || '').trim().toLowerCase();
+    return HIDDEN_ACADEMIC_QUESTION_TOKENS.some((token) => normalized.includes(token));
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -401,7 +418,9 @@ export default function AlumniSubmissions() {
                   {categories.length > 0 ? (
                     categories.map((category) => {
                       const categoryAnswers = viewSub.answers?.filter(
-                        answer => category.questions.some(q => q.id === answer.question_id)
+                        answer =>
+                          category.questions.some(q => q.id === answer.question_id) &&
+                          !isHiddenAcademicQuestion(answer.question_text)
                       );
                       
                       if (!categoryAnswers || categoryAnswers.length === 0) return null;

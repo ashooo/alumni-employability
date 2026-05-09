@@ -30,6 +30,12 @@ const BLACK_ARGB = 'FF1A1A1A';
 const GRAY_ARGB = 'FF555555';
 const DIVIDER_ARGB = 'FFB8B8B8';
 const ROW_ALT_ARGB = 'FFF7F7F7'; // very subtle alternating row
+const NAVY_HEX = '#1B3A6B';
+const HEADER_HEX = '#DDEBFA';
+const HEADER_BORDER_HEX = '#B7CCE8';
+const TOTAL_HEX = '#D2E4F8';
+const DIVIDER_HEX = '#B8B8B8';
+const ROW_ALT_HEX = '#F7F7F7';
 
 // ── Logo paths ────────────────────────────────────────────────────────────────
 const LOGO_SEAL_PATH = '/seal_logo.png';
@@ -212,20 +218,38 @@ export default function AdminReports() {
     // ── EXCEL ─────────────────────────────────────────────────────────────────
     if (format === 'PDF') {
       try {
+        const esc = (value: unknown) =>
+          String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+
         const headerHtml = header.showHeader
           ? `
             <div class="report-header">
-              <div class="univ">PAMANTASAN NG LUNGSOD NG PASIG</div>
-              <div class="office">${header.office}</div>
-              <div class="meta">${header.address}</div>
-              <div class="meta">${header.contact} | ${header.email}</div>
+              <div class="head-grid">
+                <div class="logos">
+                  <img src="${LOGO_SEAL_PATH}" alt="seal" />
+                  <img src="${LOGO_PASIG_PATH}" alt="pasig" />
+                  <img src="${LOGO_PLP_PATH}" alt="plp" />
+                </div>
+                <div class="head-text">
+                  <div class="univ">${esc(univName)}</div>
+                  <div class="office">${esc(header.office)}</div>
+                  <div class="meta">${esc(header.address)}</div>
+                  <div class="meta">${esc(header.contact)} | ${esc(header.email)}</div>
+                </div>
+              </div>
+              <div class="head-divider"></div>
             </div>
           `
           : '';
 
-        const th = dataCols.map(c => `<th>${c}</th>`).join('');
+        const th = dataCols.map(c => `<th>${esc(c)}</th>`).join('');
         const rows = reportData.map(row => {
-          const tds = dataCols.map(c => `<td>${String(row[c] ?? '')}</td>`).join('');
+          const tds = dataCols.map(c => `<td>${esc(row[c])}</td>`).join('');
           return `<tr>${tds}</tr>`;
         }).join('');
 
@@ -248,23 +272,28 @@ export default function AdminReports() {
             <style>
               @page { size: A4 landscape; margin: 16mm; }
               body { font-family: Calibri, Arial, sans-serif; color: #1a1a1a; }
-              .report-header { text-align: center; margin-bottom: 12px; }
-              .univ { background: #1B3A6B; color: #fff; font-weight: 700; padding: 6px; letter-spacing: .08em; }
-              .office { font-weight: 700; margin-top: 6px; font-size: 14px; }
-              .meta { color: #555; font-size: 11px; margin-top: 2px; }
+              .report-header { margin-bottom: 10px; }
+              .head-grid { display: grid; grid-template-columns: 220px 1fr; align-items: stretch; }
+              .logos { display: flex; align-items: center; justify-content: center; gap: 10px; background: #fff; border: 1px solid ${HEADER_BORDER_HEX}; border-right: 0; min-height: 94px; }
+              .logos img { width: 56px; height: 56px; object-fit: contain; }
+              .head-text { border: 1px solid ${HEADER_BORDER_HEX}; }
+              .univ { background: ${NAVY_HEX}; color: #fff; font-weight: 700; padding: 7px 8px; text-align: center; letter-spacing: .08em; font-size: 12px; }
+              .office { font-weight: 700; text-align: center; padding-top: 8px; font-size: 14px; }
+              .meta { color: #555; text-align: center; font-size: 11px; margin-top: 2px; }
+              .head-divider { height: 4px; background: ${DIVIDER_HEX}; margin-top: 6px; }
               .date { text-align: right; color: #555; font-size: 11px; margin: 8px 0; }
               h2 { margin: 10px 0 8px; font-size: 16px; }
               table { width: 100%; border-collapse: collapse; font-size: 11px; }
-              th, td { border: 1px solid #cfd8e3; padding: 6px; text-align: center; }
-              th { background: #DDEBFA; font-weight: 700; }
-              tbody tr:nth-child(even) td { background: #F7F7F7; }
-              tfoot td { background: #D2E4F8; font-weight: 700; }
+              th, td { border: 1px solid ${HEADER_BORDER_HEX}; padding: 6px; text-align: center; }
+              th { background: ${HEADER_HEX}; font-weight: 700; }
+              tbody tr:nth-child(even) td { background: ${ROW_ALT_HEX}; }
+              tfoot td { background: ${TOTAL_HEX}; font-weight: 700; border-top: 2px solid ${DIVIDER_HEX}; }
             </style>
           </head>
           <body>
             ${headerHtml}
-            <div class="date">${dateLabel}</div>
-            <h2>${reportType}</h2>
+            <div class="date">${esc(dateLabel)}</div>
+            <h2>${esc(reportType)}</h2>
             <table>
               <thead><tr>${th}</tr></thead>
               <tbody>${rows}</tbody>
@@ -274,15 +303,36 @@ export default function AdminReports() {
           </html>
         `;
 
-        const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1280,height=900');
-        if (!printWindow) throw new Error('Popup blocked');
-        printWindow.document.open();
-        printWindow.document.write(html);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => printWindow.print(), 300);
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        iframe.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(iframe);
 
-        toast({ title: 'PDF Ready', description: 'Print dialog opened. Choose Save as PDF to download.' });
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!doc || !iframe.contentWindow) throw new Error('Unable to prepare print frame');
+        doc.open();
+        doc.write(html);
+        doc.close();
+
+        const cleanup = () => {
+          setTimeout(() => {
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+          }, 800);
+        };
+
+        iframe.contentWindow.onafterprint = cleanup;
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          cleanup();
+        }, 300);
+
+        toast({ title: 'PDF Ready', description: 'Print dialog opened. Select Save as PDF to download.' });
       } catch {
         toast({ title: 'Export Error', description: 'Failed to generate PDF.', variant: 'destructive' });
       }

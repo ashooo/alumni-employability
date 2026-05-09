@@ -268,7 +268,7 @@ export default function ArimaTab() {
             <p className="font-semibold text-sm mb-1">
               What does this model do?{' '}
               <span className="text-xs font-normal text-muted-foreground ml-1"
-                title="ARIMA = AutoRegressive Integrated Moving Average — a statistical time-series forecasting method">
+                title="ARIMA = AutoRegressive Integrated Moving Average - a statistical time-series forecasting method">
                 (ARIMA <Info className="inline h-3 w-3 cursor-help" />)
               </span>
             </p>
@@ -289,7 +289,6 @@ export default function ArimaTab() {
           </div>
         </div>
       </motion.div>
-
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-display font-semibold">Employment Trend &amp; Forecast</h3>

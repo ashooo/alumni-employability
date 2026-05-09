@@ -1764,14 +1764,6 @@ export default function AlumniSurvey() {
             <div className="space-y-6 flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground">Gender</Label>
-                  <Input value={academicData.gender || 'N/A'} disabled className="bg-muted/50" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Age</Label>
-                  <Input value={academicData.age || 'N/A'} disabled className="bg-muted/50" />
-                </div>
-                <div className="space-y-2">
                   <Label className="text-muted-foreground">Degree Program</Label>
                   <Input
                     value={
@@ -1782,22 +1774,6 @@ export default function AlumniSurvey() {
                     disabled
                     className="bg-muted/50"
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Overall CGPA</Label>
-                  <Input value={academicData.cgpa || 'N/A'} disabled className="bg-muted/50" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Average Prof Grade</Label>
-                  <Input value={academicData.prof_grade || 'N/A'} disabled className="bg-muted/50" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">Average Elective Grade</Label>
-                  <Input value={academicData.elec_grade || 'N/A'} disabled className="bg-muted/50" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">OJT Grade</Label>
-                  <Input value={academicData.ojt_grade || 'N/A'} disabled className="bg-muted/50" />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-muted-foreground">Year Graduated</Label>

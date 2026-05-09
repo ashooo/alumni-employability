@@ -1,26 +1,14 @@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Menu, Bell, LogOut, ChevronDown, GraduationCap, Moon, Sun } from 'lucide-react';
+import { Menu, LogOut, ChevronDown, GraduationCap, Moon, Sun } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useTheme } from 'next-themes';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-
-interface NotificationItem {
-  id: number;
-  title: string;
-  body?: string | null;
-  type?: string;
-  createdAt?: string;
-  read: boolean;
-}
 
 export default function TopBar() {
   const navigate = useNavigate();
@@ -28,62 +16,6 @@ export default function TopBar() {
   const { toast } = useToast();
   const { toggleSidebar } = useSidebar();
   const { resolvedTheme, setTheme } = useTheme();
-
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const showNotifications = user?.role !== 'superadmin';
-
-  const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
-
-  const fetchNotifications = async () => {
-    try {
-      const token = getToken();
-      if (!token) return;
-
-      const res = await fetch(`${API_URL}/notifications/me`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-
-      if (!res.ok) return;
-      const data = await res.json();
-      setNotifications(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Failed to fetch notifications:', error);
-    }
-  };
-
-  useEffect(() => {
-    if (!showNotifications) {
-      setNotifications([]);
-      return;
-    }
-    fetchNotifications();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, showNotifications]);
-
-  const markAsRead = async (notificationId: number) => {
-    const target = notifications.find(n => n.id === notificationId);
-    if (!target || target.read) return;
-
-    setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, read: true } : n));
-
-    try {
-      const token = getToken();
-      if (!token) return;
-
-      await fetch(`${API_URL}/notifications/${notificationId}/read`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-    } catch (error) {
-      console.error('Failed to mark notification as read:', error);
-    }
-  };
-
-  const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleLogout = () => {
     logout();
@@ -119,9 +51,6 @@ export default function TopBar() {
         ? "bg-primary/10 text-primary"
         : "bg-success/10 text-success"
     );
-
-  const notificationTextClass = (read: boolean) =>
-    clsx("text-sm", !read && "font-medium");
 
   const headerClass = clsx(
     "sticky top-0 z-30 flex h-16 items-center gap-4 border-b",
@@ -165,41 +94,6 @@ export default function TopBar() {
             </Badge>
           )}
 
-          {showNotifications ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative">
-                  <Bell className="h-5 w-5" />
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-[10px] 
-                                     font-medium text-destructive-foreground flex items-center justify-center">
-                      {unreadCount}
-                    </span>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-
-              <DropdownMenuContent align="end" className="w-80">
-                {notifications.length === 0 ? (
-                  <div className="py-4 text-center text-sm text-muted-foreground">
-                    No notifications
-                  </div>
-                ) : (
-                  notifications.map((notification) => (
-                    <DropdownMenuItem
-                      key={notification.id}
-                      className="cursor-pointer"
-                      onClick={() => markAsRead(notification.id)}
-                    >
-                      <p className={notificationTextClass(notification.read)}>
-                        {notification.title}
-                      </p>
-                    </DropdownMenuItem>
-                  ))
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
         </div>
 
         {/* User Menu */}

@@ -34,6 +34,7 @@ from sklearn.metrics import (
     classification_report, confusion_matrix, accuracy_score,
     f1_score, roc_auc_score, precision_recall_curve
 )
+from sklearn.model_selection import cross_val_score
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -51,6 +52,7 @@ RANDOM_STATE = 42
 TEST_SIZE = 0.2
 CV_FOLDS = 5
 ENSEMBLE_THRESHOLD = 0.0  # Always select the absolute best model
+SOFT_VOTE_WEIGHT_GRID = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
 BASE_NUMERIC_FEATURES = [
     'CGPA', 'Average Prof Grade', 'Average Elec Grade', 'OJT Grade',
@@ -245,11 +247,37 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le, feature_cols):
     print("SOFT VOTING ENSEMBLE")
     print("=" * 60)
 
-    # Weight the better-performing model slightly higher
-    if lr_f1 >= rf_f1:
-        weights = [1.2, 1.0]
-    else:
-        weights = [1.0, 1.2]
+    # Tune LR/RF voting weights using CV on train set to improve ensemble quality.
+    candidate_weights = []
+    for lr_w in SOFT_VOTE_WEIGHT_GRID:
+        rf_w = round(1.0 - lr_w, 1)
+        if rf_w <= 0:
+            continue
+        candidate_weights.append((lr_w, rf_w))
+
+    best_weight_pair = (0.5, 0.5)
+    best_weight_f1 = -1.0
+    best_weight_acc = -1.0
+
+    for lr_w, rf_w in candidate_weights:
+        weight_model = VotingClassifier(
+            estimators=[('lr', lr_model), ('rf', rf_model)],
+            voting='soft',
+            weights=[lr_w, rf_w]
+        )
+        cv_f1 = cross_val_score(
+            weight_model, X_train_scaled, y_train, cv=cv, scoring='f1_weighted', n_jobs=1
+        ).mean()
+        cv_acc = cross_val_score(
+            weight_model, X_train_scaled, y_train, cv=cv, scoring='accuracy', n_jobs=1
+        ).mean()
+
+        if cv_f1 > best_weight_f1:
+            best_weight_f1 = cv_f1
+            best_weight_acc = cv_acc
+            best_weight_pair = (lr_w, rf_w)
+
+    weights = [best_weight_pair[0], best_weight_pair[1]]
 
     ensemble = VotingClassifier(
         estimators=[('lr', lr_model), ('rf', rf_model)],
@@ -265,6 +293,7 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le, feature_cols):
     ens_acc = accuracy_score(y_test, ens_pred)
 
     print(f"Ensemble weights: LR={weights[0]}, RF={weights[1]}")
+    print(f"Best CV weights: f1_weighted={best_weight_f1:.4f}, accuracy={best_weight_acc:.4f}")
     print(f"Ensemble F1: {ens_f1:.4f}  |  AUC: {ens_auc:.4f}  |  Accuracy: {ens_acc:.4f}")
     print(classification_report(y_test, ens_pred, target_names=le.classes_))
 
@@ -314,7 +343,7 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le, feature_cols):
     # ---------------------------------------------------------------
     # Build report
     # ---------------------------------------------------------------
-    final_pred = chosen_model.predict(X_test_scaled)
+    final_pred = (final_proba >= best_threshold).astype(int)
     cm = confusion_matrix(y_test, final_pred).tolist()
 
     report = {
@@ -326,6 +355,12 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, le, feature_cols):
         'model_type': model_type,
         'selection_rationale': rationale,
         'ensemble_weights': weights,
+        'ensemble_weight_tuning': {
+            'grid': SOFT_VOTE_WEIGHT_GRID,
+            'best_weights': {'lr': weights[0], 'rf': weights[1]},
+            'best_cv_f1_weighted': round(best_weight_f1, 4),
+            'best_cv_accuracy': round(best_weight_acc, 4),
+        },
         'lr_metrics': {'f1': round(lr_f1, 4), 'auc': round(lr_auc, 4), 'accuracy': round(lr_acc, 4), 'best_params': lr_grid.best_params_},
         'rf_metrics': {'f1': round(rf_f1, 4), 'auc': round(rf_auc, 4), 'accuracy': round(rf_acc, 4), 'best_params': rf_grid.best_params_},
         'ensemble_metrics': {'f1': round(ens_f1, 4), 'auc': round(ens_auc, 4), 'accuracy': round(ens_acc, 4)},

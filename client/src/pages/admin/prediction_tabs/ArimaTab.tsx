@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { Info, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import { predictionData } from '@/data/mockData';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -155,17 +156,47 @@ function ArimaPerformanceInsights({ data }: { data: any }) {
 }
 
 function EvaluationChart({ data }: { data: typeof predictionData.arima }) {
-  const combined = [
-    ...data.historical.map(d => ({
-      ...d,
-      year: String(d.year),
-      actual: d.value,
-      predicted: (d as any).predicted,
-      upper: (d as any).upper ?? null,
-      lower: (d as any).lower ?? null,
-      type: 'historical',
-    }))
-  ];
+  const chartDataMap = new Map<string | number, any>();
+
+  (data.historical || []).forEach((item: any) => {
+    chartDataMap.set(item.year, {
+      year: item.year,
+      historical: Number(item.value ?? 0),
+    });
+  });
+
+  (data.forecast || []).forEach((item: any) => {
+    const existing = chartDataMap.get(item.year) || { year: item.year };
+    chartDataMap.set(item.year, {
+      ...existing,
+      forecast: Number(item.value ?? 0),
+      range: [Number(item.lower ?? item.value ?? 0), Number(item.upper ?? item.value ?? 0)]
+    });
+  });
+
+  if ((data.historical || []).length > 0 && (data.forecast || []).length > 0) {
+    const lastHist = data.historical[(data.historical || []).length - 1] as any;
+    const existing = chartDataMap.get(lastHist.year) || { year: lastHist.year };
+    chartDataMap.set(lastHist.year, {
+      ...existing,
+      forecast: Number(lastHist.value ?? 0),
+      range: [Number(lastHist.value ?? 0), Number(lastHist.value ?? 0)],
+    });
+  }
+
+  const combined = Array.from(chartDataMap.values())
+    .sort((a, b) => Number(a.year) - Number(b.year))
+    .map((row) => {
+      const lower = Array.isArray(row.range) ? Number(row.range[0]) : null;
+      const upper = Array.isArray(row.range) ? Number(row.range[1]) : null;
+      return {
+        year: String(row.year),
+        actual: row.historical ?? null,
+        predicted: row.forecast ?? null,
+        lower,
+        band: lower != null && upper != null ? upper - lower : null
+      };
+    });
 
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -178,9 +209,9 @@ function EvaluationChart({ data }: { data: typeof predictionData.arima }) {
           formatter={(value: number, name: string) => [`${Number(value).toFixed(2)}%`, name]}
         />
         <Legend content={renderCustomLegend} />
-        {/* Confidence band — rendered beneath the lines */}
-        <Area type="monotone" dataKey="upper" stroke="none" fill="hsl(var(--primary) / 0.12)" name="Upper Bound" legendType="none" connectNulls />
-        <Area type="monotone" dataKey="lower" stroke="none" fill="hsl(var(--background))" name="Lower Bound" legendType="none" connectNulls />
+        {/* Confidence band between lower and upper for forecast points */}
+        <Area type="monotone" dataKey="lower" stackId="confidence" stroke="none" fill="transparent" legendType="none" connectNulls />
+        <Area type="monotone" dataKey="band" stackId="confidence" stroke="none" fill="hsl(var(--primary) / 0.14)" name="Confidence Range" legendType="none" connectNulls />
         <Line type="monotone" dataKey="actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 5 }} name="Actual Rate %" />
         <Line type="monotone" dataKey="predicted" stroke="hsl(var(--primary))" strokeDasharray="5 5" strokeWidth={3} dot={{ r: 5 }} name="Predicted Rate %" connectNulls={true} />
       </ComposedChart>
@@ -206,7 +237,7 @@ export default function ArimaTab() {
     const fetchPrediction = async () => {
       try {
         const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-        const res = await fetch('http://localhost:5000/api/admin/predictions/arima', {
+        const res = await fetch(`${API_URL}/admin/predictions/arima`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data = await res.json();
@@ -258,7 +289,7 @@ export default function ArimaTab() {
 
         {loading ? (
           <div className="flex h-[300px] items-center justify-center">
-            <p className="text-muted-foreground animate-pulse">Running ARIMA Model Generator...</p>
+            <p className="text-muted-foreground animate-pulse">Loading ARIMA forecast data...</p>
           </div>
         ) : (
           <>

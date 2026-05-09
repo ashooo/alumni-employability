@@ -22,6 +22,9 @@ const reportTypes = [
 
 // ── Colors ────────────────────────────────────────────────────────────────────
 const NAVY_ARGB = 'FF1B3A6B';
+const HEADER_ARGB = 'FFDDEBFA';
+const HEADER_BORDER_ARGB = 'FFB7CCE8';
+const TOTAL_ARGB = 'FFD2E4F8';
 const WHITE_ARGB = 'FFFFFFFF';
 const BLACK_ARGB = 'FF1A1A1A';
 const GRAY_ARGB = 'FF555555';
@@ -332,15 +335,15 @@ export default function AdminReports() {
         // ── Column header row ─────────────────────────────────────────────────
         const hdrRow = ws.addRow([...Array(LOGO_COLS).fill(''), ...dataCols]);
         hdrRow.height = RH.header;
-        fill(hdrRow, 1, LOGO_COLS, NAVY_ARGB);
+        fill(hdrRow, 1, LOGO_COLS, HEADER_ARGB);
         for (let i = 0; i < numData; i++) {
           const cell = hdrRow.getCell(COL_DATA_START + i);
-          cell.font = { bold: true, size: 11, name: 'Calibri', color: { argb: WHITE_ARGB } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY_ARGB } };
+          cell.font = { bold: true, size: 11, name: 'Calibri', color: { argb: BLACK_ARGB } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_ARGB } };
           cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
           cell.border = {
-            left: { style: 'thin', color: { argb: 'FF2E5090' } },
-            right: { style: 'thin', color: { argb: 'FF2E5090' } },
+            left: { style: 'thin', color: { argb: HEADER_BORDER_ARGB } },
+            right: { style: 'thin', color: { argb: HEADER_BORDER_ARGB } },
           };
         }
 
@@ -373,16 +376,16 @@ export default function AdminReports() {
         });
         const totRow = ws.addRow([...Array(LOGO_COLS).fill(''), ...totVals]);
         totRow.height = 20;
-        fill(totRow, 1, LOGO_COLS, NAVY_ARGB);
+        fill(totRow, 1, LOGO_COLS, TOTAL_ARGB);
         for (let i = 0; i < numData; i++) {
           const cell = totRow.getCell(COL_DATA_START + i);
-          cell.font = { bold: true, size: 11, name: 'Calibri', color: { argb: WHITE_ARGB } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY_ARGB } };
+          cell.font = { bold: true, size: 11, name: 'Calibri', color: { argb: BLACK_ARGB } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_ARGB } };
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
           cell.border = {
             top: { style: 'medium', color: { argb: DIVIDER_ARGB } },
-            left: { style: 'thin', color: { argb: 'FF2E5090' } },
-            right: { style: 'thin', color: { argb: 'FF2E5090' } },
+            left: { style: 'thin', color: { argb: HEADER_BORDER_ARGB } },
+            right: { style: 'thin', color: { argb: HEADER_BORDER_ARGB } },
           };
         }
 

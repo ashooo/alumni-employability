@@ -87,7 +87,7 @@ const getJobMatchRawScore = (match: JobMatch) => {
   return 0;
 };
 
-const extractTopMatches = (matches: JobMatch[] | undefined, limit = 3) => {
+const extractTopMatches = (matches: JobMatch[] | undefined, limit = 5) => {
   const list = Array.isArray(matches) ? matches : [];
   const byTitle = new Map<string, JobMatch>();
   for (const match of list) {
@@ -147,7 +147,7 @@ export default function AlumniJobs() {
       const skipAutoGenerate = sessionStorage.getItem(noCompetenciesKey) === '1' && !forceGenerate;
 
       const generate = async () => {
-        const r = await fetch(`${API_URL}/prediction/job-matching/generate/${user.username}`, { method: 'POST', headers, body: JSON.stringify({ topN: 10 }) });
+        const r = await fetch(`${API_URL}/prediction/job-matching/generate/${user.username}`, { method: 'POST', headers, body: JSON.stringify({ topN: 5 }) });
         if (!r.ok) {
           const payload = await r.json().catch(() => null);
           throw new Error(payload?.error || 'Unable to generate job matches.');
@@ -199,8 +199,8 @@ export default function AlumniJobs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.username]);
 
-  const inFieldMatches = extractTopMatches(jobMatching?.matches_in_field, 3);
-  const allTitleMatches = extractTopMatches(jobMatching?.matches_all_titles || jobMatching?.matches, 3);
+  const inFieldMatches = extractTopMatches(jobMatching?.matches_in_field, 5);
+  const allTitleMatches = extractTopMatches(jobMatching?.matches_all_titles || jobMatching?.matches, 5);
   const overallList = jobMatching?.matches_all_titles || jobMatching?.matches || [];
   const normalizedTitle = (title: string) => String(title || '').trim().toLowerCase();
   const shouldMergeSections = useMemo(() => {
@@ -289,7 +289,7 @@ export default function AlumniJobs() {
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <section className="glass-card p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-display text-lg font-bold">Top 3 In-Field Matches</h2>
+              <h2 className="font-display text-lg font-bold">Top 5 In-Field Matches</h2>
               <Badge variant="outline">{jobMatching?.totalMatchesInField ?? inFieldMatches.length}</Badge>
             </div>
             <div className="space-y-3">
@@ -315,7 +315,7 @@ export default function AlumniJobs() {
 
           <section className="glass-card p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-display text-lg font-bold">Top 3 General Matches</h2>
+              <h2 className="font-display text-lg font-bold">Top 5 General Matches</h2>
               <Badge variant="outline">{jobMatching?.totalMatchesAllTitles ?? allTitleMatches.length}</Badge>
             </div>
             <div className="space-y-3">

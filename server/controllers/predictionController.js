@@ -21,6 +21,7 @@ const arimaTrainingState = {
   lastCompletedAt: null,
   lastError: null
 };
+let arimaStartupInitialized = false;
 
 const requireRefactorPrisma = () => {
   const setupStatus = getDatabaseSetupStatus();
@@ -164,7 +165,20 @@ const runArimaTraining = async ({ timeoutMs = 300000 } = {}) => {
 };
 
 const initializeArimaOnStartup = async () => {
+  if (arimaStartupInitialized) {
+    return;
+  }
+  arimaStartupInitialized = true;
+
   try {
+    const hasModel = fs.existsSync(ARIMA_MODEL_PATH);
+    const hasReport = fs.existsSync(ARIMA_REPORT_PATH);
+
+    if (hasModel && hasReport) {
+      console.log('[ARIMA] Startup training skipped: existing model artifacts found.');
+      return;
+    }
+
     console.log('[ARIMA] Startup training triggered...');
     const result = await runArimaTraining({ timeoutMs: 300000 });
     if (result.alreadyRunning) {

@@ -264,10 +264,7 @@ export default function AdminAnalytics() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-card p-6">
               <Tabs defaultValue="programs" className="w-full">
-                <TabsList className="mb-4">
-                  <TabsTrigger value="programs">Program View</TabsTrigger>
-                  <TabsTrigger value="colleges">College View</TabsTrigger>
-                </TabsList>
+
 
                 <TabsContent value="programs" className="space-y-0">
               <div className="flex items-center justify-between mb-1">

@@ -587,7 +587,7 @@ export default function AlumniResults() {
     { label: 'Board Exam', value: boardPercent > 0 ? 'Passed' : 'Not passed/not taken', score: boardPercent }
   ]
     .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+    .slice(0, 5);
 
   const openJobSite = (site: (typeof JOB_SITES)[number], roleTitle: string) => {
     const location = 'Manila';

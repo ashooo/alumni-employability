@@ -43,15 +43,13 @@ export default function LoginPage() {
           initial={{ opacity: 0, x: -30 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8 }}
-          className="max-w-md text-white"
+          className="max-w-md text-white text-center"
         >
-          <div className="p-3 rounded-2xl bg-white/10 inline-block mb-8">
               <img
                 src="/plp_logo.png"
                 alt="PLP Logo"
-                className="h-12 w-12 object-contain"
+                className="h-24 w-24 object-contain mx-auto mb-4"
               />
-          </div>
           <h1 className="text-4xl font-display font-extrabold mb-4">Alumni Employability Tracer</h1>
           <p className="text-white/80 text-lg leading-relaxed">
             Track employment outcomes, predict career trends, and empower alumni with data-driven insights.

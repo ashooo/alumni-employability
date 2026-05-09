@@ -1,3 +1,4 @@
+
 import { ClipboardCheck, Briefcase, TrendingUp, AlertTriangle, Loader2, CheckCircle2 } from 'lucide-react';
 import { useAuth, type SurveyFlowStatus } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -140,6 +141,69 @@ const getSurveyActionLabel = (surveyState: SurveyFlowStatus | null) => {
   }
 };
 
+const getProgramGradientClass = (program: string) => {
+  const normalized = String(program || '').toUpperCase();
+
+  if (normalized.includes('ACCOUNTANCY') || normalized.includes('BSA')) {
+    return 'bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-100 border-yellow-400/80 dark:from-yellow-500/45 dark:via-amber-400/30 dark:to-slate-950';
+  }
+  if (normalized.includes('ELECTRONICS') || normalized.includes('BSECE')) {
+    return 'bg-gradient-to-r from-orange-300 via-orange-200 to-amber-100 border-orange-400/80 dark:from-orange-500/45 dark:via-orange-400/30 dark:to-slate-950';
+  }
+  if (normalized.includes('FILIPINO') || normalized.includes('ENGLISH') || normalized.includes('BSED')) {
+    return 'bg-gradient-to-r from-blue-300 via-sky-200 to-blue-100 border-blue-400/80 dark:from-blue-500/45 dark:via-sky-400/30 dark:to-slate-950';
+  }
+  if (normalized.includes('NURSING') || normalized.includes('BSN')) {
+    return 'bg-gradient-to-r from-pink-300 via-rose-200 to-pink-100 border-pink-400/80 dark:from-pink-500/45 dark:via-rose-400/30 dark:to-slate-950';
+  }
+  if (
+    normalized.includes('ENTREPRENEURSHIP') ||
+    normalized.includes('MARKETING') ||
+    normalized.includes('BSBA')
+  ) {
+    return 'bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-100 border-yellow-400/80 dark:from-yellow-500/45 dark:via-amber-400/30 dark:to-slate-950';
+  }
+  if (normalized.includes('COMPUTER SCIENCE') || normalized.includes('INFORMATION TECHNOLOGY') || normalized.includes('BSCS') || normalized.includes('BSIT')) {
+    return 'bg-gradient-to-r from-slate-300 via-slate-200 to-slate-100 border-slate-500/70 dark:from-slate-500/45 dark:via-slate-400/30 dark:to-slate-950';
+  }
+
+  return 'bg-gradient-to-r from-muted/60 via-muted/30 to-background dark:from-muted/30 dark:via-muted/15 dark:to-background';
+};
+
+const getProgramLogoPath = (program: string) => {
+  const normalized = String(program || '').toUpperCase();
+
+  if (normalized.includes('ACCOUNTANCY') || normalized.includes('BSA')) {
+    return '/college_logos/accountancy.png';
+  }
+  if (normalized.includes('ELECTRONICS') || normalized.includes('BSECE')) {
+    return '/college_logos/engineering.png';
+  }
+  if (normalized.includes('FILIPINO') || normalized.includes('ENGLISH') || normalized.includes('BSED')) {
+    return '/college_logos/education.png';
+  }
+  if (normalized.includes('NURSING') || normalized.includes('BSN')) {
+    return '/college_logos/nursing.png';
+  }
+  if (
+    normalized.includes('ENTREPRENEURSHIP') ||
+    normalized.includes('MARKETING') ||
+    normalized.includes('BSBA')
+  ) {
+    return '/college_logos/cihm.png';
+  }
+  if (
+    normalized.includes('COMPUTER SCIENCE') ||
+    normalized.includes('INFORMATION TECHNOLOGY') ||
+    normalized.includes('BSCS') ||
+    normalized.includes('BSIT')
+  ) {
+    return '/college_logos/compsci.png';
+  }
+
+  return '/college_logos/artsandscience.png';
+};
+
 export default function AlumniDashboard() {
   const { user, updateUser } = useAuth();
   const navigate = useNavigate();
@@ -274,6 +338,7 @@ export default function AlumniDashboard() {
   };
 
   const bannerIsComplete = alumniData.surveyCompleted && alumniData.resultsReady;
+  const programLogoPath = getProgramLogoPath(alumniData.program);
 
   if (loading) {
     return (
@@ -291,16 +356,27 @@ export default function AlumniDashboard() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-card p-6"
+        className={`rounded-2xl border p-6 shadow-sm ${getProgramGradientClass(alumniData.program)}`}
       >
-        <h1 className="text-2xl font-display font-bold mb-1">
-          Welcome back, {getDisplayName()}!
-        </h1>
-        <p className="text-muted-foreground">
-          {alumniData.program
-            ? `Batch ${alumniData.batchYear} â€¢ ${alumniData.program}`
-            : 'Alumni Tracer Dashboard'}
-        </p>
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-display font-bold mb-1">
+              Welcome back, {getDisplayName()}!
+            </h1>
+            <p className="text-muted-foreground">
+              {alumniData.program
+                ? `Batch ${alumniData.batchYear} • ${alumniData.program}`
+                : 'Alumni Tracer Dashboard'}
+            </p>
+          </div>
+          <div className="hidden sm:flex h-16 w-16 md:h-20 md:w-20 shrink-0 items-center justify-center rounded-xl bg-white/65 dark:bg-black/25 backdrop-blur">
+            <img
+              src={programLogoPath}
+              alt="College logo"
+              className="h-12 w-12 md:h-16 md:w-16 object-contain"
+            />
+          </div>
+        </div>
       </motion.div>
 
       <motion.div
@@ -442,3 +518,5 @@ export default function AlumniDashboard() {
     </div>
   );
 }
+
+

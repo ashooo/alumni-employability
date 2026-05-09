@@ -12,11 +12,11 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 type UserRow = {
   id: number;
-  username: string;
-  email: string;
+  username: string | null;
+  email: string | null;
   role: 'superadmin' | 'admin' | 'alumni';
-  first_name: string;
-  last_name: string;
+  first_name: string | null;
+  last_name: string | null;
   last_login?: string | null;
 };
 
@@ -74,6 +74,8 @@ export default function SuperAdminAdmins() {
       )
     );
 
+  const normalize = (value: string | null | undefined) => String(value || '').toLowerCase();
+
   const superAdmins = sortedByName(users.filter(u => u.role === 'superadmin'));
   const admins = sortedByName(users.filter(u => u.role === 'admin'));
   const alumni = sortedByName(
@@ -82,9 +84,9 @@ export default function SuperAdminAdmins() {
       if (!alumniSearch.trim()) return true;
       const key = alumniSearch.toLowerCase();
       return (
-        u.username.toLowerCase().includes(key) ||
-        `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase().includes(key) ||
-        u.email.toLowerCase().includes(key)
+        normalize(u.username).includes(key) ||
+        `${normalize(u.first_name)} ${normalize(u.last_name)}`.includes(key) ||
+        normalize(u.email).includes(key)
       );
     })
   );

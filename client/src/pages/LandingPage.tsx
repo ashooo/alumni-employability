@@ -5,15 +5,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { DEFAULT_LOGO_URL, fetchSystemLogoUrl } from '@/lib/systemBranding';
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
-  const [logoUrl, setLogoUrl] = useState('/plp_logo.png');
+  const [logoUrl, setLogoUrl] = useState(DEFAULT_LOGO_URL);
   const panelPath =
     user?.role === 'superadmin'
       ? '/app/superadmin/audit-logs/system'
@@ -27,19 +26,8 @@ export default function LandingPage() {
 
   useEffect(() => {
     const run = async () => {
-      try {
-        const res = await fetch(`${API_URL}/superadmin/public-settings/system_branding`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const brandingValue = data?.value;
-        const parsedBranding =
-          typeof brandingValue === 'string' ? JSON.parse(brandingValue) : brandingValue;
-        if (parsedBranding?.logoUrl) {
-          setLogoUrl(String(parsedBranding.logoUrl));
-        }
-      } catch {
-        // Keep default logo when branding is unavailable.
-      }
+      const resolvedLogo = await fetchSystemLogoUrl();
+      setLogoUrl(resolvedLogo);
     };
     run();
   }, []);
@@ -66,8 +54,9 @@ export default function LandingPage() {
       >
         <nav className="container mx-auto px-6 py-4 flex items-center justify-between relative z-10">
           <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-primary/0 dark:bg-primary/0 backdrop-blur-sm">
               <img
-                src="/plp_logo.png"
+                src={logoUrl}
                 alt="PLP Logo"
                 className="h-12 w-12 object-contain"
               />

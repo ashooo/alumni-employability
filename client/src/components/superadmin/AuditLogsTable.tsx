@@ -115,6 +115,40 @@ export function AuditLogsTable({
     return entries.map(([k, v]) => `${k}: ${String(v)}`).join(' | ');
   };
 
+  const getTemplateNameFromMetadata = (parsed: Record<string, any> | null) => {
+    if (!parsed) return null;
+    const directName =
+      parsed.templateName ??
+      parsed.template_name ??
+      parsed.templateTitle ??
+      parsed.template_title ??
+      parsed.name ??
+      parsed.title;
+    if (typeof directName === 'string' && directName.trim()) return directName.trim();
+
+    const nestedTemplate = parsed.template;
+    if (nestedTemplate && typeof nestedTemplate === 'object') {
+      const nestedName =
+        nestedTemplate.name ??
+        nestedTemplate.title ??
+        nestedTemplate.templateName ??
+        nestedTemplate.template_title;
+      if (typeof nestedName === 'string' && nestedName.trim()) return nestedName.trim();
+    }
+    return null;
+  };
+
+  const formatDetails = (log: AuditLogRow) => {
+    const parsed = parseMetadata(log.metadata);
+    if (log.action === 'delete_template') {
+      const templateName = getTemplateNameFromMetadata(parsed);
+      if (templateName) return `Delete template: ${templateName}`;
+      if (log.entity_id != null) return `Delete template #${log.entity_id}`;
+      return 'Delete template';
+    }
+    return formatMetadata(log.metadata);
+  };
+
   const fetchLogs = async () => {
     setLoading(true);
     try {
@@ -290,7 +324,7 @@ export function AuditLogsTable({
                 <TableHead>Role</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>Entity</TableHead>
-                <TableHead>Metadata</TableHead>
+                <TableHead>Details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -320,8 +354,8 @@ export function AuditLogsTable({
                         .filter(Boolean)
                         .join(' ')}
                     </TableCell>
-                    <TableCell className="max-w-[340px] truncate" title={formatMetadata(log.metadata)}>
-                      {formatMetadata(log.metadata)}
+                    <TableCell className="max-w-[340px] truncate" title={formatDetails(log)}>
+                      {formatDetails(log)}
                     </TableCell>
                   </TableRow>
                 ))

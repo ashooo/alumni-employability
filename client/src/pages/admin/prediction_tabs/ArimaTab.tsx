@@ -272,11 +272,20 @@ export default function ArimaTab() {
                 (ARIMA <Info className="inline h-3 w-3 cursor-help" />)
               </span>
             </p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              This model analyzes <strong>past employment trends</strong> to predict future rates. It detects patterns
-              like gradual increases, declines, or periods of stability across graduation years — then uses those
-              patterns to estimate what the employment rate will look like in the coming years.
-            </p>
+            {(() => {
+              const hist = activeData.historical || [];
+              const avg = hist.length > 0 ? (hist.reduce((sum, h) => sum + h.value, 0) / hist.length).toFixed(1) : "0";
+              const startYear = hist.length > 0 ? hist[0].year : "";
+              const endYear = hist.length > 0 ? hist[hist.length - 1].year : "";
+              
+              return (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  This model analyzes <strong>past employment trends</strong> (averaging {avg}% between {startYear} and {endYear}) 
+                  to predict future rates. It detects patterns like gradual increases, declines, or periods of stability 
+                  across graduation years — then uses those patterns to estimate what the employment rate will look like in the coming years.
+                </p>
+              );
+            })()}
           </div>
         </div>
       </motion.div>

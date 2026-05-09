@@ -34,6 +34,9 @@ interface College {
   id: number;
   name: string;
   code: string;
+  description?: string;
+  program_count?: number;
+  alumni_count?: number;
 }
 
 export default function AdminPrograms() {
@@ -53,7 +56,11 @@ export default function AdminPrograms() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showBulkDialog, setShowBulkDialog] = useState(false);
+  const [showAddCollegeDialog, setShowAddCollegeDialog] = useState(false);
+  const [showEditCollegeDialog, setShowEditCollegeDialog] = useState(false);
+  const [showDeleteCollegeDialog, setShowDeleteCollegeDialog] = useState(false);
   const [selectedProgram, setSelectedProgram] = useState<Program | null>(null);
+  const [selectedCollege, setSelectedCollege] = useState<College | null>(null);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -67,6 +74,11 @@ export default function AdminPrograms() {
   const [bulkData, setBulkData] = useState('');
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+  const [collegeFormData, setCollegeFormData] = useState({
+    name: '',
+    code: '',
+    description: ''
+  });
 
   // Stats state
   const [stats, setStats] = useState<any[]>([]);
@@ -84,12 +96,46 @@ export default function AdminPrograms() {
   const fetchColleges = async () => {
     try {
       const token = getToken();
-      const response = await fetch(`${API_URL}/admin/colleges`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setColleges(data);
+      const [baseRes, statsRes] = await Promise.all([
+        fetch(`${API_URL}/admin/colleges`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch(`${API_URL}/admin/colleges/stats`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+
+      if (baseRes.ok) {
+        const baseData = await baseRes.json();
+        const statsData = statsRes.ok ? await statsRes.json() : [];
+        const statsMap = new Map(
+          (Array.isArray(statsData) ? statsData : []).map((s: any) => [
+            Number(s.id),
+            {
+              program_count: Number(s.total_programs || 0),
+              alumni_count: Number(s.total_alumni || 0)
+            }
+          ])
+        );
+
+        const merged = (Array.isArray(baseData) ? baseData : []).map((c: any) => ({
+          ...c,
+          program_count: statsMap.get(Number(c.id))?.program_count ?? Number(c.program_count || 0),
+          alumni_count: statsMap.get(Number(c.id))?.alumni_count ?? Number(c.alumni_count || 0)
+        }));
+
+        setColleges(merged);
+      } else if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        const fallback = (Array.isArray(statsData) ? statsData : []).map((s: any) => ({
+          id: Number(s.id),
+          name: s.name || '',
+          code: s.code || '',
+          description: '',
+          program_count: Number(s.total_programs || 0),
+          alumni_count: Number(s.total_alumni || 0)
+        }));
+        setColleges(fallback);
       }
     } catch (error) {
       console.error('Error fetching colleges:', error);
@@ -165,6 +211,14 @@ export default function AdminPrograms() {
       name: '',
       code: '',
       college_id: '',
+      description: ''
+    });
+  };
+
+  const resetCollegeForm = () => {
+    setCollegeFormData({
+      name: '',
+      code: '',
       description: ''
     });
   };
@@ -343,6 +397,90 @@ export default function AdminPrograms() {
     }
   };
 
+  const handleCreateCollege = async () => {
+    if (!collegeFormData.name.trim()) {
+      toast({ title: 'Missing Field', description: 'College name is required.', variant: 'destructive' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const token = getToken();
+      const response = await fetch(`${API_URL}/admin/colleges`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(collegeFormData)
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Failed to create college');
+      toast({ title: 'Success', description: 'College created successfully.' });
+      setShowAddCollegeDialog(false);
+      resetCollegeForm();
+      fetchColleges();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateCollege = async () => {
+    if (!selectedCollege) return;
+    if (!collegeFormData.name.trim()) {
+      toast({ title: 'Missing Field', description: 'College name is required.', variant: 'destructive' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const token = getToken();
+      const response = await fetch(`${API_URL}/admin/colleges/${selectedCollege.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(collegeFormData)
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Failed to update college');
+      toast({ title: 'Success', description: 'College updated successfully.' });
+      setShowEditCollegeDialog(false);
+      setSelectedCollege(null);
+      resetCollegeForm();
+      fetchColleges();
+      fetchPrograms();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteCollege = async () => {
+    if (!selectedCollege) return;
+    setSaving(true);
+    try {
+      const token = getToken();
+      const response = await fetch(`${API_URL}/admin/colleges/${selectedCollege.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Failed to delete college');
+      toast({ title: 'Success', description: 'College deleted successfully.' });
+      setShowDeleteCollegeDialog(false);
+      setSelectedCollege(null);
+      fetchColleges();
+      if (collegeFilter === String(selectedCollege.id)) setCollegeFilter('all');
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Preview bulk data
   const previewBulkData = () => {
     try {
@@ -374,9 +512,12 @@ export default function AdminPrograms() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold">Program Management</h1>
-          <p className="text-muted-foreground text-sm">Manage academic programs and their colleges</p>
+          <p className="text-muted-foreground text-sm">Manage colleges and their academic programs</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowAddCollegeDialog(true)}>
+            <Building2 className="h-4 w-4 mr-2" /> Add College
+          </Button>
           <Button variant="outline" onClick={() => setShowBulkDialog(true)}>
             <Upload className="h-4 w-4 mr-2" /> Bulk Import
           </Button>
@@ -480,8 +621,78 @@ export default function AdminPrograms() {
         </div>
       </div>
 
+      {/* Colleges Table */}
+      <div className="glass-card overflow-hidden border-2 border-primary/15">
+        <div className="p-4 border-b bg-primary/5">
+          <h3 className="font-display font-semibold">Colleges</h3>
+          <p className="text-xs text-muted-foreground">Define colleges where programs belong.</p>
+        </div>
+        <div className="overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>College Name</TableHead>
+                <TableHead className="text-center">Programs</TableHead>
+                <TableHead className="text-center">Alumni</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {colleges.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No colleges found</TableCell>
+                </TableRow>
+              ) : (
+                colleges.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-mono text-sm font-medium">{c.code || '-'}</TableCell>
+                    <TableCell>{c.name}</TableCell>
+                    <TableCell className="text-center">{c.program_count || 0}</TableCell>
+                    <TableCell className="text-center">{c.alumni_count || 0}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedCollege(c);
+                            setCollegeFormData({
+                              name: c.name || '',
+                              code: c.code || '',
+                              description: c.description || ''
+                            });
+                            setShowEditCollegeDialog(true);
+                          }}
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedCollege(c);
+                            setShowDeleteCollegeDialog(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
       {/* Programs Table */}
-      <div className="glass-card overflow-hidden">
+      <div className="glass-card overflow-hidden border-2 border-border/60">
+        <div className="p-4 border-b bg-muted/30">
+          <h3 className="font-display font-semibold">Programs</h3>
+          <p className="text-xs text-muted-foreground">Programs mapped under each college.</p>
+        </div>
         <div className="overflow-auto">
           <Table>
             <TableHeader>
@@ -559,6 +770,7 @@ export default function AdminPrograms() {
           </Table>
         </div>
       </div>
+
 
       {/* Add Program Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
@@ -785,6 +997,81 @@ export default function AdminPrograms() {
             <Button onClick={handleBulkImport} disabled={!bulkData || saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Import Programs
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddCollegeDialog} onOpenChange={setShowAddCollegeDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Add College</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>College Name *</Label>
+              <Input value={collegeFormData.name} onChange={e => setCollegeFormData({ ...collegeFormData, name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>College Code</Label>
+              <Input value={collegeFormData.code} onChange={e => setCollegeFormData({ ...collegeFormData, code: e.target.value })} placeholder="e.g., CCS" />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Input value={collegeFormData.description} onChange={e => setCollegeFormData({ ...collegeFormData, description: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddCollegeDialog(false)}>Cancel</Button>
+            <Button onClick={handleCreateCollege} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Create College
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditCollegeDialog} onOpenChange={setShowEditCollegeDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Edit College</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>College Name *</Label>
+              <Input value={collegeFormData.name} onChange={e => setCollegeFormData({ ...collegeFormData, name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>College Code</Label>
+              <Input value={collegeFormData.code} onChange={e => setCollegeFormData({ ...collegeFormData, code: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Input value={collegeFormData.description} onChange={e => setCollegeFormData({ ...collegeFormData, description: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditCollegeDialog(false)}>Cancel</Button>
+            <Button onClick={handleUpdateCollege} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteCollegeDialog} onOpenChange={setShowDeleteCollegeDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Delete College</DialogTitle></DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete <span className="font-semibold text-foreground">{selectedCollege?.name}</span>?
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Colleges with programs cannot be deleted until programs are moved or removed.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteCollegeDialog(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteCollege} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Delete College
             </Button>
           </DialogFooter>
         </DialogContent>

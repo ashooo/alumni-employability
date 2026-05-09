@@ -197,7 +197,7 @@ export default function AdminReports() {
   };
 
   // ── Export ──────────────────────────────────────────────────────────────────
-  const handleExport = async (format: 'Excel' | 'CSV') => {
+  const handleExport = async (format: 'Excel' | 'CSV' | 'PDF') => {
     if (!reportData.length) {
       toast({ title: 'Export Failed', description: 'No data to export.', variant: 'destructive' });
       return;
@@ -210,6 +210,85 @@ export default function AdminReports() {
     const univName = 'PAMANTASAN NG LUNGSOD NG PASIG';
 
     // ── EXCEL ─────────────────────────────────────────────────────────────────
+    if (format === 'PDF') {
+      try {
+        const headerHtml = header.showHeader
+          ? `
+            <div class="report-header">
+              <div class="univ">PAMANTASAN NG LUNGSOD NG PASIG</div>
+              <div class="office">${header.office}</div>
+              <div class="meta">${header.address}</div>
+              <div class="meta">${header.contact} | ${header.email}</div>
+            </div>
+          `
+          : '';
+
+        const th = dataCols.map(c => `<th>${c}</th>`).join('');
+        const rows = reportData.map(row => {
+          const tds = dataCols.map(c => `<td>${String(row[c] ?? '')}</td>`).join('');
+          return `<tr>${tds}</tr>`;
+        }).join('');
+
+        const totalCells = dataCols.map((c, i) => {
+          if (i === 0) return '<td><strong>TOTAL</strong></td>';
+          const vals = reportData.map(r => r[c]);
+          if (vals.every(v => typeof v === 'number')) {
+            const sum = (vals as number[]).reduce((a, b) => a + b, 0);
+            return `<td><strong>${sum}</strong></td>`;
+          }
+          return '<td></td>';
+        }).join('');
+
+        const html = `
+          <!doctype html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>${fileName}</title>
+            <style>
+              @page { size: A4 landscape; margin: 16mm; }
+              body { font-family: Calibri, Arial, sans-serif; color: #1a1a1a; }
+              .report-header { text-align: center; margin-bottom: 12px; }
+              .univ { background: #1B3A6B; color: #fff; font-weight: 700; padding: 6px; letter-spacing: .08em; }
+              .office { font-weight: 700; margin-top: 6px; font-size: 14px; }
+              .meta { color: #555; font-size: 11px; margin-top: 2px; }
+              .date { text-align: right; color: #555; font-size: 11px; margin: 8px 0; }
+              h2 { margin: 10px 0 8px; font-size: 16px; }
+              table { width: 100%; border-collapse: collapse; font-size: 11px; }
+              th, td { border: 1px solid #cfd8e3; padding: 6px; text-align: center; }
+              th { background: #DDEBFA; font-weight: 700; }
+              tbody tr:nth-child(even) td { background: #F7F7F7; }
+              tfoot td { background: #D2E4F8; font-weight: 700; }
+            </style>
+          </head>
+          <body>
+            ${headerHtml}
+            <div class="date">${dateLabel}</div>
+            <h2>${reportType}</h2>
+            <table>
+              <thead><tr>${th}</tr></thead>
+              <tbody>${rows}</tbody>
+              <tfoot><tr>${totalCells}</tr></tfoot>
+            </table>
+          </body>
+          </html>
+        `;
+
+        const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1280,height=900');
+        if (!printWindow) throw new Error('Popup blocked');
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => printWindow.print(), 300);
+
+        toast({ title: 'PDF Ready', description: 'Print dialog opened. Choose Save as PDF to download.' });
+      } catch {
+        toast({ title: 'Export Error', description: 'Failed to generate PDF.', variant: 'destructive' });
+      }
+      return;
+    }
+
     if (format === 'Excel') {
       try {
         const wb = new ExcelJS.Workbook();
@@ -475,6 +554,9 @@ export default function AdminReports() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => handleExport('CSV')} disabled={!showPreview || isLoading} className="gap-1">
               <Table2 className="h-4 w-4" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => handleExport('PDF')} disabled={!showPreview || isLoading} className="gap-1">
+              <FileText className="h-4 w-4" /> PDF
             </Button>
             <Button variant="outline" size="sm" onClick={() => setModalOpen(true)} className="gap-1" title="Customize header">
               <Settings2 className="h-4 w-4" /> Header

@@ -365,11 +365,11 @@ export default function AlumniDashboard() {
             </h1>
             <p className="text-muted-foreground">
               {alumniData.program
-                ? `Batch ${alumniData.batchYear} • ${alumniData.program}`
+                ? `Batch ${alumniData.batchYear} ï¿½ ${alumniData.program}`
                 : 'Alumni Tracer Dashboard'}
             </p>
           </div>
-          <div className="hidden sm:flex h-16 w-16 md:h-20 md:w-20 shrink-0 items-center justify-center rounded-xl bg-white/65 dark:bg-black/25 backdrop-blur">
+          <div className="hidden sm:flex h-16 w-16 md:h-20 md:w-20 shrink-0 items-center justify-center rounded-xl backdrop-blur">
             <img
               src={programLogoPath}
               alt="College logo"

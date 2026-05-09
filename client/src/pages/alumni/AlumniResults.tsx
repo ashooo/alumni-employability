@@ -650,15 +650,25 @@ export default function AlumniResults() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+      <section className="space-y-4">
+        <div className="flex items-end justify-between">
+          <div>
+            <h2 className="text-2xl font-display font-bold">Prediction Results</h2>
+            <p className="text-sm text-muted-foreground">
+              Real-time outcomes generated from your latest assessment submission.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card border-t-4 border-t-primary p-6 text-center shadow-lg"
+          className="glass-card border-t-4 border-t-primary p-8 text-center shadow-xl md:col-span-2"
         >
-          <p className="mb-2 text-sm text-muted-foreground">Readiness Probability</p>
-          <div className="relative mb-3 inline-flex h-24 w-24 items-center justify-center">
-            <svg className="h-24 w-24 -rotate-90" viewBox="0 0 100 100">
+          <p className="mb-3 text-base font-semibold text-muted-foreground">Readiness Probability</p>
+          <div className="relative mb-4 inline-flex h-32 w-32 items-center justify-center">
+            <svg className="h-32 w-32 -rotate-90" viewBox="0 0 100 100">
               <circle
                 cx="50"
                 cy="50"
@@ -678,9 +688,9 @@ export default function AlumniResults() {
                 strokeDasharray={`${readinessScore * 2.51} 251`}
               />
             </svg>
-            <span className="absolute text-2xl font-bold font-display">{readinessScore}%</span>
+            <span className="absolute text-4xl font-bold font-display">{readinessScore}%</span>
           </div>
-          <p className={`text-xs font-bold ${isEmployable ? 'text-success' : 'text-amber-600 dark:text-amber-400'}`}>
+          <p className={`text-sm font-bold ${isEmployable ? 'text-success' : 'text-amber-600 dark:text-amber-400'}`}>
             {isEmployable ? 'HIGH POTENTIAL' : 'DEVELOPING PROFILE'}
           </p>
         </motion.div>
@@ -689,7 +699,7 @@ export default function AlumniResults() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="glass-card p-6 text-center shadow-lg"
+          className="glass-card p-6 text-center shadow-lg md:col-span-1"
         >
           <p className="mb-2 text-sm text-muted-foreground">Primary Assessment</p>
           <p
@@ -707,7 +717,7 @@ export default function AlumniResults() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="glass-card p-6 shadow-lg"
+          className="glass-card p-6 shadow-lg md:col-span-1"
         >
           <p className="mb-3 text-sm text-muted-foreground">Strongest Indicators</p>
           <div className="space-y-2">
@@ -722,7 +732,8 @@ export default function AlumniResults() {
             ))}
           </div>
         </motion.div>
-      </div>
+        </div>
+      </section>
 
       <AnimatePresence>
         {showEmployabilityDetails && (
@@ -809,7 +820,18 @@ export default function AlumniResults() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+      <section className="space-y-4">
+        <div className="flex items-end justify-between">
+          <div>
+            <h2 className="text-2xl font-display font-bold">Employability Model Evaluation</h2>
+            <p className="text-sm text-muted-foreground">
+              Graph-based interpretation of how your current profile aligns with model feature groups.
+            </p>
+          </div>
+          <Badge variant="outline" className="text-xs">EVALUATION</Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
         <div className="glass-card p-6 shadow-xl">
           <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
             <TrendingUp className="h-5 w-5 text-primary" /> Relative Feature Strength
@@ -865,7 +887,8 @@ export default function AlumniResults() {
             Normalized percentages for model-v2 feature interpretation.
           </p>
         </div>
-      </div>
+        </div>
+      </section>
 
       <div className="glass-card p-6 shadow-lg">
         <h3 className="mb-4 text-lg font-display font-bold">Detailed Academic Record</h3>

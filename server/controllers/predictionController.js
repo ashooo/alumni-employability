@@ -288,6 +288,8 @@ const getModelEvaluations = async (req, res) => {
         select: {
           id: true,
           alumni_profile_id: true,
+          model_name: true,
+          model_version: true,
           confidence: true,
           created_at: true,
           output_json: true
@@ -300,6 +302,8 @@ const getModelEvaluations = async (req, res) => {
         select: {
           id: true,
           alumni_profile_id: true,
+          model_name: true,
+          model_version: true,
           confidence: true,
           created_at: true,
           output_json: true
@@ -403,6 +407,8 @@ const getModelEvaluations = async (req, res) => {
         positive_rate: employabilityLatest.length > 0 ? (employabilityPositive.length / employabilityLatest.length) * 100 : 0,
         avg_probability: avgEmployabilityProbability,
         avg_confidence: avgEmployabilityConfidence,
+        live_model_name: employabilityPredictions[0]?.model_name || 'employability_model',
+        live_model_version: employabilityPredictions[0]?.model_version || null,
         last_prediction_at: employabilityPredictions[0]?.created_at || null
       },
       employability_training: employabilityTrainingReport
@@ -413,6 +419,9 @@ const getModelEvaluations = async (req, res) => {
             test_size: employabilityTrainingReport.test_size ?? null,
             model_type: employabilityTrainingReport.model_type || null,
             final_metrics: employabilityTrainingReport.final_metrics || null,
+            lr_metrics: employabilityTrainingReport.lr_metrics || null,
+            rf_metrics: employabilityTrainingReport.rf_metrics || null,
+            ensemble_metrics: employabilityTrainingReport.ensemble_metrics || null,
             weighted_f1: employabilityClassificationReport?.['weighted avg']?.['f1-score'] ?? null,
             macro_f1: employabilityClassificationReport?.['macro avg']?.['f1-score'] ?? null,
             employable_precision: employabilityClassificationReport?.Employable?.precision ?? null,
@@ -429,6 +438,8 @@ const getModelEvaluations = async (req, res) => {
         avg_top_match_score: avgTopMatchScore * 100,
         avg_matched_competencies: avgMatchedCompetencies,
         avg_candidate_match_percentage: avgCandidateMatchPct,
+        live_model_name: jobMatchingPredictions[0]?.model_name || null,
+        live_model_version: jobMatchingPredictions[0]?.model_version || null,
         last_prediction_at: jobMatchingPredictions[0]?.created_at || null
       },
       job_matching_training: jobMatchingConfig

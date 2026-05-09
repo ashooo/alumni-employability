@@ -850,6 +850,38 @@ const resetPasswordWithOtp = async (req, res) => {
   }
 };
 
+const verifyCurrentPassword = async (req, res) => {
+  try {
+    const username = req.user?.username;
+    if (!username) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { currentPassword } = req.body || {};
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'Current password is required' });
+    }
+
+    const refactorPrisma = requireRefactorPrisma();
+    const user = await refactorPrisma.user.findUnique({
+      where: { username: String(username) },
+      select: { password_hash: true }
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (await isPlaceholderPasswordHash(username, user.password_hash)) {
+      return res.status(400).json({ error: 'Account not activated yet' });
+    }
+
+    const ok = await bcrypt.compare(String(currentPassword), user.password_hash);
+    if (!ok) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+
+    return res.json({ success: true, message: 'Current password verified' });
+  } catch (error) {
+    console.error('Verify current password error:', error);
+    return res.status(500).json({ error: 'Failed to verify password' });
+  }
+};
+
 const requestChangePasswordOtp = async (req, res) => {
   try {
     const username = req.user?.username;
@@ -1001,6 +1033,7 @@ module.exports = {
   requestForgotPasswordOtp,
   verifyForgotPasswordOtp,
   resetPasswordWithOtp,
+  verifyCurrentPassword,
   requestChangePasswordOtp,
   changePassword
 };

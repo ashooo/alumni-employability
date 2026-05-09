@@ -1,4 +1,5 @@
 import {  Plus, Edit2, Trash2, Save, X, Loader2, Building2, GraduationCap, Users, FileText, CheckCircle2, AlertCircle, Download, Upload, Search } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -500,11 +501,7 @@ export default function AdminPrograms() {
   );
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <LoadingScreen fullScreen={false} message="Loading programs..." />;
   }
 
   return (

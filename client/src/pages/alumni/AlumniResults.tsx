@@ -17,6 +17,7 @@ import {
   AlertTriangle, Star, Briefcase, TrendingUp, Loader2, Target,
   ChevronDown, ChevronUp, Info, Lightbulb, Zap, Award, Linkedin
 } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
@@ -468,11 +469,7 @@ export default function AlumniResults() {
   }, [user?.username]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <LoadingScreen fullScreen={false} message="Loading your results..." />;
   }
 
   if (!prediction) {
@@ -653,77 +650,77 @@ export default function AlumniResults() {
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-card border-t-4 border-t-primary p-8 text-center shadow-xl md:col-span-2"
-        >
-          <p className="mb-3 text-base font-semibold text-muted-foreground">Readiness Probability</p>
-          <div className="relative mb-4 inline-flex h-32 w-32 items-center justify-center">
-            <svg className="h-32 w-32 -rotate-90" viewBox="0 0 100 100">
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="none"
-                stroke="hsl(var(--muted))"
-                strokeWidth="8"
-              />
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="none"
-                stroke={isEmployable ? 'hsl(var(--success))' : '#f59e0b'}
-                strokeWidth="8"
-                strokeLinecap="round"
-                strokeDasharray={`${readinessScore * 2.51} 251`}
-              />
-            </svg>
-            <span className="absolute text-4xl font-bold font-display">{readinessScore}%</span>
-          </div>
-          <p className={`text-sm font-bold ${isEmployable ? 'text-success' : 'text-amber-600 dark:text-amber-400'}`}>
-            {isEmployable ? 'HIGH POTENTIAL' : 'DEVELOPING PROFILE'}
-          </p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="glass-card p-6 text-center shadow-lg md:col-span-1"
-        >
-          <p className="mb-2 text-sm text-muted-foreground">Primary Assessment</p>
-          <p
-            className={`mb-2 text-4xl font-bold font-display ${isEmployable ? 'text-success' : 'text-amber-600 dark:text-amber-400'
-              }`}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-card border-t-4 border-t-primary p-8 text-center shadow-xl md:col-span-2"
           >
-            {isEmployable ? 'Employable' : 'Developing Readiness'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Model confidence: {Math.round(prediction.confidence * 100)}%
-          </p>
-        </motion.div>
+            <p className="mb-3 text-base font-semibold text-muted-foreground">Readiness Probability</p>
+            <div className="relative mb-4 inline-flex h-32 w-32 items-center justify-center">
+              <svg className="h-32 w-32 -rotate-90" viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="40"
+                  fill="none"
+                  stroke="hsl(var(--muted))"
+                  strokeWidth="8"
+                />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="40"
+                  fill="none"
+                  stroke={isEmployable ? 'hsl(var(--success))' : '#f59e0b'}
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                  strokeDasharray={`${readinessScore * 2.51} 251`}
+                />
+              </svg>
+              <span className="absolute text-4xl font-bold font-display">{readinessScore}%</span>
+            </div>
+            <p className={`text-sm font-bold ${isEmployable ? 'text-success' : 'text-amber-600 dark:text-amber-400'}`}>
+              {isEmployable ? 'HIGH POTENTIAL' : 'DEVELOPING PROFILE'}
+            </p>
+          </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="glass-card p-6 shadow-lg md:col-span-1"
-        >
-          <p className="mb-3 text-sm text-muted-foreground">Strongest Indicators</p>
-          <div className="space-y-2">
-            {strongestIndicators.map((item) => (
-              <div key={item.label} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Target className="h-3 w-3 text-primary" />
-                  <span className="text-sm font-medium">{item.label}</span>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="glass-card p-6 text-center shadow-lg md:col-span-1"
+          >
+            <p className="mb-2 text-sm text-muted-foreground">Primary Assessment</p>
+            <p
+              className={`mb-2 text-4xl font-bold font-display ${isEmployable ? 'text-success' : 'text-amber-600 dark:text-amber-400'
+                }`}
+            >
+              {isEmployable ? 'Employable' : 'Developing Readiness'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Model confidence: {Math.round(prediction.confidence * 100)}%
+            </p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="glass-card p-6 shadow-lg md:col-span-1"
+          >
+            <p className="mb-3 text-sm text-muted-foreground">Strongest Indicators</p>
+            <div className="space-y-2">
+              {strongestIndicators.map((item) => (
+                <div key={item.label} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Target className="h-3 w-3 text-primary" />
+                    <span className="text-sm font-medium">{item.label}</span>
+                  </div>
+                  <span className="text-xs font-bold">{item.value}</span>
                 </div>
-                <span className="text-xs font-bold">{item.value}</span>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+              ))}
+            </div>
+          </motion.div>
         </div>
       </section>
 
@@ -824,61 +821,70 @@ export default function AlumniResults() {
         </div>
 
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-        <div className="glass-card p-6 shadow-xl">
-          <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
-            <TrendingUp className="h-5 w-5 text-primary" /> Relative Feature Strength
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <RadarChart data={radarData}>
-              <PolarGrid stroke="hsl(var(--border))" />
-              <PolarAngleAxis dataKey="skill" tick={{ fontSize: 12 }} />
-              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
-              <Radar
-                name="Your Profile"
-                dataKey="value"
-                stroke="hsl(var(--primary))"
-                fill="hsl(var(--primary))"
-                fillOpacity={0.4}
-                strokeWidth={3}
-              />
-              <Tooltip />
-            </RadarChart>
-          </ResponsiveContainer>
-          <p className="mt-4 text-center text-xs italic text-muted-foreground">
-            Radar view using model documentation feature groups.
-          </p>
-        </div>
+          <div className="glass-card p-6 shadow-xl">
+            <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
+              <TrendingUp className="h-5 w-5 text-primary" /> Relative Feature Strength
+            </h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <RadarChart data={radarData}>
+                <PolarGrid stroke="hsl(var(--border))" />
+                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 12 }} />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
+                <Radar
+                  name="Your Profile"
+                  dataKey="value"
+                  stroke="hsl(var(--primary))"
+                  fill="hsl(var(--primary))"
+                  fillOpacity={0.4}
+                  strokeWidth={3}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--background))',
+                    borderColor: 'hsl(var(--border))',
+                    borderRadius: '8px',
+                    color: 'hsl(var(--foreground))'
+                  }}
+                  itemStyle={{ color: 'hsl(var(--foreground))' }}
+                  labelStyle={{ color: 'hsl(var(--foreground))' }}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+            <p className="mt-4 text-center text-xs italic text-muted-foreground">
+              Radar view using model documentation feature groups.
+            </p>
+          </div>
 
-        <div className="glass-card p-6 shadow-xl">
-          <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
-            <Target className="h-5 w-5 text-primary" /> Skill Competency Breakdown
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={barData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-              <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'hsl(var(--foreground))' }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'hsl(var(--foreground))' }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--background))',
-                  borderColor: 'hsl(var(--border))',
-                  borderRadius: '8px',
-                  color: 'hsl(var(--foreground))'
-                }}
-                itemStyle={{ color: 'hsl(var(--foreground))' }}
-                labelStyle={{ color: 'hsl(var(--foreground))' }}
-              />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                {barData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-          <p className="mt-4 text-center text-xs italic text-muted-foreground">
-            Normalized percentages for model-v2 feature interpretation.
-          </p>
-        </div>
+          <div className="glass-card p-6 shadow-xl">
+            <h3 className="mb-6 flex items-center gap-2 font-display font-semibold">
+              <Target className="h-5 w-5 text-primary" /> Skill Competency Breakdown
+            </h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={barData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'hsl(var(--foreground))' }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'hsl(var(--foreground))' }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--background))',
+                    borderColor: 'hsl(var(--border))',
+                    borderRadius: '8px',
+                    color: 'hsl(var(--foreground))'
+                  }}
+                  itemStyle={{ color: 'hsl(var(--foreground))' }}
+                  labelStyle={{ color: 'hsl(var(--foreground))' }}
+                />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  {barData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <p className="mt-4 text-center text-xs italic text-muted-foreground">
+              Normalized percentages for model-v2 feature interpretation.
+            </p>
+          </div>
         </div>
       </section>
 

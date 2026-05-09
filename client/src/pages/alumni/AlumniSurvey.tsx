@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Bell, Briefcase, AlertTriangle, ClipboardList } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { useAuth, type SurveyFlowStatus } from '@/contexts/AuthContext';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,7 @@ interface Question {
   question_key?: string;
   category_id: number;
   text: string;
-  type: 'text' | 'select' | 'dropdown' | 'checkbox' | 'scale' | 'number' | 'radio';
+  type: 'text' | 'textarea' | 'select' | 'dropdown' | 'checkbox' | 'scale' | 'number' | 'radio';
   required: boolean;
   options?: string[];
   scale_min?: number;
@@ -1432,10 +1433,15 @@ export default function AlumniSurvey() {
   };
 
   if (loading) {
+    return <LoadingScreen fullScreen={false} message="Loading survey..." />;
+  }
+
+  if (submitting && surveyStatus?.status === 'pending_employed_survey') {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+      <LoadingScreen
+        fullScreen={true}
+        message="Submitting your survey responses..."
+      />
     );
   }
 
@@ -1622,6 +1628,15 @@ export default function AlumniSurvey() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (submitting && surveyStatus?.status !== 'pending_employed_survey') {
+    return (
+      <LoadingScreen
+        fullScreen={true}
+        message="Generating your employability prediction..."
+      />
     );
   }
 

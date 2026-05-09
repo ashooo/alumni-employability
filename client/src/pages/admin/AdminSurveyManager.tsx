@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Edit2, Trash2, Copy, Save, X, Loader2, ChevronLeft, GripVertical, Search, ToggleLeft, ToggleRight, ListPlus } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -324,7 +325,7 @@ export default function AdminSurveyManager() {
   }
 
   // ─── List view ──────────────────────────────────────────────────────────
-  if (loading) return <div className="flex items-center justify-center min-h-[400px]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (loading) return <LoadingScreen fullScreen={false} message="Loading survey templates..." />;
 
   return (
     <div className="space-y-6">

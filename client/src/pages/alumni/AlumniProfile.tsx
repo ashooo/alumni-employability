@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Save, Loader2, Building2, GraduationCap, ShieldCheck } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -395,11 +396,7 @@ export default function AlumniProfile() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <LoadingScreen fullScreen={false} message="Loading your profile..." />;
   }
 
   if (isAdminAccount) {

@@ -1,5 +1,6 @@
 
-import { ClipboardCheck, Briefcase, TrendingUp, AlertTriangle, Loader2, CheckCircle2 } from 'lucide-react';
+import { ClipboardCheck, Briefcase, TrendingUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { useAuth, type SurveyFlowStatus } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { KpiCard } from '@/components/KpiCard';
@@ -341,14 +342,7 @@ export default function AlumniDashboard() {
   const programLogoPath = getProgramLogoPath(alumniData.program);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-sm text-muted-foreground mt-2">Loading your dashboard...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen fullScreen={false} message="Loading your dashboard..." />;
   }
 
   return (

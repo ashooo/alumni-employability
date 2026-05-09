@@ -20,6 +20,7 @@ export interface SurveyFlowStatus {
   collegeName?: string | null;
   programId?: number | null;
   programName?: string | null;
+  programCode?: string | null;
   routeHints?: {
     surveyStatus?: string;
     initialSurvey?: string | null;

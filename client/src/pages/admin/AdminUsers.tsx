@@ -3,6 +3,7 @@ import {
   Loader2, Clock, Download, FileText, Users, Building2, GraduationCap,
   Trash2, ChevronLeft, ChevronRight, XCircle, SkipForward, ShieldAlert
 } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -991,9 +992,8 @@ export default function AdminUsers() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                    <p className="text-sm text-muted-foreground mt-2">Loading alumni records...</p>
+                  <TableCell colSpan={8} className="p-0">
+                    <LoadingScreen fullScreen={false} message="Loading alumni records..." className="min-h-[300px]" />
                   </TableCell>
                 </TableRow>
               ) : pagedRecords.length === 0 ? (
@@ -1126,10 +1126,7 @@ export default function AdminUsers() {
           <DialogHeader><DialogTitle className="font-display">Import History</DialogTitle></DialogHeader>
           <div id="history-desc" className="sr-only">History of all alumni data imports</div>
           {loadingHistory ? (
-            <div className="text-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-              <p className="text-sm text-muted-foreground mt-2">Loading...</p>
-            </div>
+            <LoadingScreen fullScreen={false} message="Loading import history..." className="min-h-[200px]" />
           ) : (
             <Table>
               <TableHeader>

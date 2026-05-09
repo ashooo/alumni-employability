@@ -2,6 +2,7 @@ import { ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Respon
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { Info, TrendingDown, TrendingUp, Minus } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { predictionData } from '@/data/mockData';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -296,9 +297,7 @@ export default function ArimaTab() {
         </div>
 
         {loading ? (
-          <div className="flex h-[300px] items-center justify-center">
-            <p className="text-muted-foreground animate-pulse">Loading ARIMA forecast data...</p>
-          </div>
+          <LoadingScreen fullScreen={false} message="Loading ARIMA forecast data..." className="min-h-[300px]" />
         ) : (
           <>
             {fetchError && (

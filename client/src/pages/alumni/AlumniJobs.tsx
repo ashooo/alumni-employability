@@ -1,4 +1,5 @@
 import { Briefcase, Loader2, Star, Linkedin, RotateCcw, ExternalLink } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { useAuth } from '@/contexts/AuthContext';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
@@ -227,7 +228,7 @@ export default function AlumniJobs() {
     return allTitleMatches.some((m) => !inFieldTitles.has(m.title));
   }, [inFieldMatches, allTitleMatches]);
 
-  if (loading) return <div className="flex min-h-[400px] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (loading) return <LoadingScreen fullScreen={false} message="Loading job recommendations..." />;
 
   return (
     <div className="space-y-6 pb-12">

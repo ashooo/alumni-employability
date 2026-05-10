@@ -1,4 +1,4 @@
-import { Save, Eye, EyeOff, ShieldCheck, Mail } from 'lucide-react';
+import { Save, Eye, EyeOff, ShieldCheck, Mail, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
@@ -21,6 +21,8 @@ export default function AlumniChangePassword() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSecurityDialog, setShowSecurityDialog] = useState(false);
+  const [verifyingCurrentPw, setVerifyingCurrentPw] = useState(false);
+  const [currentPwVerified, setCurrentPwVerified] = useState(false);
   const { toast } = useToast();
 
   const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
@@ -30,6 +32,68 @@ export default function AlumniChangePassword() {
     if (newPw.length < 8) return { label: 'Fair', pct: 50, color: 'bg-warning' };
     if (/[A-Z]/.test(newPw) && /\d/.test(newPw)) return { label: 'Strong', pct: 100, color: 'bg-success' };
     return { label: 'Good', pct: 75, color: 'bg-info' };
+  };
+
+  // Check whether all fields are filled and passwords match
+  const canOpenVerification = current.trim().length > 0
+    && newPw.trim().length >= 4
+    && confirm.trim().length > 0
+    && newPw === confirm;
+
+  // Verify the current password against the database, then open the dialog
+  const handleOpenVerification = async () => {
+    if (!current.trim()) {
+      toast({ title: 'Missing field', description: 'Please enter your current password.', variant: 'destructive' });
+      return;
+    }
+    if (newPw.length < 4) {
+      toast({ title: 'Password too short', description: 'New password must be at least 4 characters.', variant: 'destructive' });
+      return;
+    }
+    if (newPw !== confirm) {
+      toast({ title: 'Mismatch', description: 'New password and confirmation do not match.', variant: 'destructive' });
+      return;
+    }
+
+    const token = getToken();
+    if (!token) {
+      toast({ title: 'Not logged in', description: 'Please log in again, then change your password.', variant: 'destructive' });
+      return;
+    }
+
+    setVerifyingCurrentPw(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/change-password/verify-current`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ currentPassword: current })
+      });
+
+      const raw = await res.text();
+      const data = (() => {
+        try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+      })();
+
+      if (!res.ok) {
+        const details = (data as any)?.error || (raw ? raw.slice(0, 200) : '');
+        throw new Error(details ? `${details}` : `Verification failed (${res.status})`);
+      }
+
+      // Current password is correct — open the OTP dialog
+      setCurrentPwVerified(true);
+      setShowSecurityDialog(true);
+    } catch (err) {
+      toast({
+        title: 'Password incorrect',
+        description: err instanceof Error ? err.message : 'Current password verification failed.',
+        variant: 'destructive'
+      });
+    } finally {
+      setVerifyingCurrentPw(false);
+    }
   };
 
   const requestOtp = async () => {
@@ -108,7 +172,7 @@ export default function AlumniChangePassword() {
       }
 
       toast({ title: 'Password Changed', description: (data as any)?.message || 'Your password has been updated successfully.' });
-      setCurrent(''); setNewPw(''); setConfirm(''); setOtp(''); setOtpSent(false);
+      setCurrent(''); setNewPw(''); setConfirm(''); setOtp(''); setOtpSent(false); setCurrentPwVerified(false);
     } catch (err) {
       toast({
         title: 'Change failed',
@@ -131,7 +195,15 @@ export default function AlumniChangePassword() {
         <div>
           <Label>Current Password</Label>
           <div className="relative mt-1.5">
-            <Input type={showCurrent ? 'text' : 'password'} value={current} onChange={e => setCurrent(e.target.value)} />
+            <Input
+              type={showCurrent ? 'text' : 'password'}
+              value={current}
+              onChange={e => {
+                setCurrent(e.target.value);
+                // Reset verification when current password changes
+                setCurrentPwVerified(false);
+              }}
+            />
             <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               {showCurrent ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
             </button>
@@ -161,24 +233,37 @@ export default function AlumniChangePassword() {
               onChange={e => {
                 setConfirm(e.target.value);
               }}
-              onBlur={() => {
-                // Let users finish typing first; then offer the OTP popup.
-                if (confirm.trim().length > 0) setShowSecurityDialog(true);
-              }}
             />
             <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               {showConfirm ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
             </button>
           </div>
           {confirm && newPw !== confirm && <p className="text-xs text-destructive mt-1">Passwords do not match</p>}
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">
-              Next step: verify with an OTP sent to your email.
-            </p>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setShowSecurityDialog(true)}>
-              Open verification
-            </Button>
-          </div>
+
+          {/* Only show the verification section once all fields are valid */}
+          {canOpenVerification && (
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Next step: verify your identity with an OTP sent to your email.
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleOpenVerification}
+                disabled={verifyingCurrentPw}
+              >
+                {verifyingCurrentPw ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                    Verifying...
+                  </>
+                ) : (
+                  'Open verification'
+                )}
+              </Button>
+            </div>
+          )}
         </div>
 
         <Dialog open={showSecurityDialog} onOpenChange={setShowSecurityDialog}>
@@ -192,7 +277,7 @@ export default function AlumniChangePassword() {
                 Verify password change
               </DialogTitle>
               <DialogDescription id="change-password-otp-description" className="text-slate-600 dark:text-emerald-200/80">
-                We’ll send a 6-digit OTP to your account email. Enter it below to confirm updating your password.
+                We'll send a 6-digit OTP to your account email. Enter it below to confirm updating your password.
               </DialogDescription>
             </DialogHeader>
 

@@ -1,6 +1,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, Legend, Area, ComposedChart } from 'recharts';
 import { GlobalFilterBar, FilterState, defaultFilters } from '@/components/GlobalFilterBar';
-import { Users, TrendingUp, GraduationCap, Target, Loader2 } from 'lucide-react';
+import { Users, TrendingUp, GraduationCap, Target } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { KpiCard } from '@/components/KpiCard';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
@@ -226,24 +227,21 @@ export default function AdminAnalytics() {
       <GlobalFilterBar filters={filters} onFiltersChange={setFilters} />
 
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-20">
-          <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-          <p className="text-muted-foreground">Compiling analytics data...</p>
-        </div>
+        <LoadingScreen fullScreen={false} message="Compiling analytics data..." />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard 
-              title="Total Alumni" 
-              value={kpis.totalAlumni.toLocaleString()} 
-              icon={Users} 
-              delay={0} 
+            <KpiCard
+              title="Total Alumni"
+              value={kpis.totalAlumni.toLocaleString()}
+              icon={Users}
+              delay={0}
             />
-            <KpiCard 
-              title="Participation Rate" 
-              value={`${kpis.participationRate.toFixed(1)}%`} 
-              icon={Target} 
-              delay={0.1} 
+            <KpiCard
+              title="Participation Rate"
+              value={`${kpis.participationRate.toFixed(1)}%`}
+              icon={Target}
+              delay={0.1}
             />
             <KpiCard
               title="Employment Rate"
@@ -267,78 +265,78 @@ export default function AdminAnalytics() {
 
 
                 <TabsContent value="programs" className="space-y-0">
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="font-display font-semibold">Total Alumni per Program</h3>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="bg-primary/20 text-primary hover:bg-primary/30 border-none">Details</Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>Program Distribution Details</DialogTitle>
-                    </DialogHeader>
-                    <div className="mt-4 space-y-6">
-                      {programData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={360}>
-                          <BarChart data={programData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                            <XAxis dataKey="program" tick={{ fontSize: 12 }} />
-                            <YAxis tick={{ fontSize: 12 }} />
-                            <Tooltip contentStyle={{ borderRadius: '0.75rem', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }} />
-                            <Legend />
-                            <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} name="Total Alumni" />
-                            <Bar dataKey="employed" fill="hsl(var(--chart-3))" radius={[6, 6, 0, 0]} name="Employable Alumni" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="h-[320px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed">
-                          No program data available
-                        </div>
-                      )}
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="font-display font-semibold">Total Alumni per Program</h3>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="bg-primary/20 text-primary hover:bg-primary/30 border-none">Details</Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Program Distribution Details</DialogTitle>
+                        </DialogHeader>
+                        <div className="mt-4 space-y-6">
+                          {programData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height={360}>
+                              <BarChart data={programData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                                <XAxis dataKey="program" tick={{ fontSize: 12 }} />
+                                <YAxis tick={{ fontSize: 12 }} />
+                                <Tooltip contentStyle={{ borderRadius: '0.75rem', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }} />
+                                <Legend />
+                                <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} name="Total Alumni" />
+                                <Bar dataKey="employed" fill="hsl(var(--chart-3))" radius={[6, 6, 0, 0]} name="Employable Alumni" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-[320px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed">
+                              No program data available
+                            </div>
+                          )}
 
-                      <div className="space-y-6">
-                        <div>
-                          <h4 className="font-semibold text-lg mb-3 pb-2 border-b">Legend Explanation</h4>
-                          <ul className="space-y-3 text-sm text-muted-foreground list-none">
-                            <li className="flex gap-2">
-                              <span className="mt-1 flex-shrink-0 w-2 h-2 rounded-full bg-primary"></span>
-                              <span><strong className="text-foreground">Total Alumni:</strong> All alumni records under a program for the selected filters.</span>
-                            </li>
-                            <li className="flex gap-2">
-                              <span className="mt-1 flex-shrink-0 w-2 h-2 rounded-full bg-chart-3"></span>
-                              <span><strong className="text-foreground">Employable Alumni:</strong> Alumni in the same program whose latest employability model result is positive.</span>
-                            </li>
-                          </ul>
-                        </div>
+                          <div className="space-y-6">
+                            <div>
+                              <h4 className="font-semibold text-lg mb-3 pb-2 border-b">Legend Explanation</h4>
+                              <ul className="space-y-3 text-sm text-muted-foreground list-none">
+                                <li className="flex gap-2">
+                                  <span className="mt-1 flex-shrink-0 w-2 h-2 rounded-full bg-primary"></span>
+                                  <span><strong className="text-foreground">Total Alumni:</strong> All alumni records under a program for the selected filters.</span>
+                                </li>
+                                <li className="flex gap-2">
+                                  <span className="mt-1 flex-shrink-0 w-2 h-2 rounded-full bg-chart-3"></span>
+                                  <span><strong className="text-foreground">Employable Alumni:</strong> Alumni in the same program whose latest employability model result is positive.</span>
+                                </li>
+                              </ul>
+                            </div>
 
-                        <div>
-                          <h4 className="font-semibold text-lg mb-3 pb-2 border-b">How To Read This</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Larger gaps between total and employable bars indicate programs where more graduates still need readiness improvement before reaching positive employability outcomes.
-                          </p>
+                            <div>
+                              <h4 className="font-semibold text-lg mb-3 pb-2 border-b">How To Read This</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Larger gaps between total and employable bars indicate programs where more graduates still need readiness improvement before reaching positive employability outcomes.
+                              </p>
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">Compares the total number of registered alumni (green) against the number predicted as employable (teal) for each academic program.</p>
+                  {programData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={programData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="program" tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} />
+                        <Tooltip contentStyle={{ borderRadius: '0.75rem', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }} />
+                        <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} name="Total" />
+                        <Bar dataKey="employed" fill="hsl(var(--chart-3))" radius={[6, 6, 0, 0]} name="Employable" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed">
+                      No program data available
                     </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-              <p className="text-xs text-muted-foreground mb-4">Compares the total number of registered alumni (green) against the number predicted as employable (teal) for each academic program.</p>
-              {programData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={programData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="program" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip contentStyle={{ borderRadius: '0.75rem', border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))' }} />
-                    <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} name="Total" />
-                    <Bar dataKey="employed" fill="hsl(var(--chart-3))" radius={[6, 6, 0, 0]} name="Employable" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-[300px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed">
-                  No program data available
-                </div>
-              )}
+                  )}
                 </TabsContent>
 
                 <TabsContent value="colleges" className="space-y-3">
@@ -443,7 +441,7 @@ export default function AdminAnalytics() {
 
                             <div>
                               <h4 className="font-semibold text-lg mb-4 pb-2 border-b">Key Takeaways</h4>
-                              
+
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="bg-muted/30 p-5 rounded-xl border">
                                   <h5 className="font-semibold mb-3 text-primary flex items-center gap-2">
@@ -454,7 +452,7 @@ export default function AdminAnalytics() {
                                     <li><strong className="text-foreground block mb-1">Growth/Decline:</strong> {growthExplanation}</li>
                                   </ul>
                                 </div>
-                                
+
                                 <div className="bg-muted/30 p-5 rounded-xl border">
                                   <h5 className="font-semibold mb-3 text-primary flex items-center gap-2">
                                     What Changed

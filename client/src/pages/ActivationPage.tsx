@@ -1,4 +1,5 @@
 import { GraduationCap, Loader2, CheckCircle2, ArrowLeft, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,7 @@ const API_URL = 'http://localhost:5000/api';
 export default function ActivationPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [studentId, setStudentId] = useState('');
@@ -27,6 +28,7 @@ export default function ActivationPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [verificationCode, setVerificationCode] = useState('');
@@ -43,62 +45,62 @@ export default function ActivationPage() {
   };
 
   // Step 1: Verify if student exists in alumni_records
-const handleVerify = async () => {
-  setLoading(true);
-  try {
-    const response = await fetch(`${API_URL}/auth/check-student`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        studentId, 
-        firstName,
-        lastName
-      }),
-    });
+  const handleVerify = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/check-student`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          studentId,
+          firstName,
+          lastName
+        }),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (data.status === 'found') {
-      setVerifyStatus('found');
-      // Auto-fill the name from the record if needed
-      if (data.record) {
-        setFirstName(data.record.firstName);
-        setLastName(data.record.lastName);
-        setPreferredEmailDomain(data.record.preferredEmailDomain === 'plpasig.edu.ph' ? 'plpasig.edu.ph' : 'gmail.com');
+      if (data.status === 'found') {
+        setVerifyStatus('found');
+        // Auto-fill the name from the record if needed
+        if (data.record) {
+          setFirstName(data.record.firstName);
+          setLastName(data.record.lastName);
+          setPreferredEmailDomain(data.record.preferredEmailDomain === 'plpasig.edu.ph' ? 'plpasig.edu.ph' : 'gmail.com');
+        }
+        toast({
+          title: 'Record Found',
+          description: 'Alumni record verified successfully!'
+        });
+      } else if (data.status === 'already') {
+        setVerifyStatus('already');
+        toast({
+          title: 'Account Already Exists',
+          description: data.message || 'This student ID already has an account.',
+          variant: 'destructive'
+        });
+      } else {
+        setVerifyStatus('not_found');
+        toast({
+          title: 'Verification Failed',
+          description: data.message || 'No matching record found.',
+          variant: 'destructive'
+        });
       }
-      toast({
-        title: 'Record Found',
-        description: 'Alumni record verified successfully!'
-      });
-    } else if (data.status === 'already') {
-      setVerifyStatus('already');
-      toast({
-        title: 'Account Already Exists',
-        description: data.message || 'This student ID already has an account.',
-        variant: 'destructive'
-      });
-    } else {
-      setVerifyStatus('not_found');
+    } catch (error) {
+      console.error('Verification error:', error);
       toast({
         title: 'Verification Failed',
-        description: data.message || 'No matching record found.',
+        description: 'Unable to verify student record. Please try again.',
         variant: 'destructive'
       });
+      setVerifyStatus('not_found');
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error('Verification error:', error);
-    toast({
-      title: 'Verification Failed',
-      description: 'Unable to verify student record. Please try again.',
-      variant: 'destructive'
-    });
-    setVerifyStatus('not_found');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   // Step 2: Send OTP to email
   const handleSendOtp = async () => {
@@ -115,10 +117,10 @@ const handleVerify = async () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          email, 
+        body: JSON.stringify({
+          email,
           otp: generatedOtp,
-          studentId 
+          studentId
         }),
       });
 
@@ -156,15 +158,15 @@ const handleVerify = async () => {
     try {
       // Verify OTP
       const enteredOtp = otp.join('');
-      
+
       const response = await fetch(`${API_URL}/auth/verify-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           otp: enteredOtp,
-          email 
+          email
         }),
       });
 
@@ -195,7 +197,7 @@ const handleVerify = async () => {
             title: 'Account Activated!',
             description: 'Your account has been successfully created. You can now log in.',
           });
-          
+
           // Clear sensitive data
           setPassword('');
           setConfirmPassword('');
@@ -229,25 +231,25 @@ const handleVerify = async () => {
   const startCooldown = () => {
     setResendCooldown(60);
     const timer = setInterval(() => {
-      setResendCooldown(p => { 
-        if (p <= 1) { 
-          clearInterval(timer); 
-          return 0; 
-        } 
-        return p - 1; 
+      setResendCooldown(p => {
+        if (p <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return p - 1;
       });
     }, 1000);
   };
 
   const handleResendOtp = async () => {
     if (resendCooldown > 0) return;
-    
+
     setLoading(true);
     try {
       // Generate new OTP
       const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
       setVerificationCode(generatedOtp);
-      
+
       await fetch(`${API_URL}/auth/send-otp`, {
         method: 'POST',
         headers: {
@@ -280,6 +282,17 @@ const handleVerify = async () => {
     if (val && idx < 5) {
       const next = document.getElementById(`otp-${idx + 1}`);
       next?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otp[idx] && idx > 0) {
+      e.preventDefault();
+      const newOtp = [...otp];
+      newOtp[idx - 1] = '';
+      setOtp(newOtp);
+      const prev = document.getElementById(`otp-${idx - 1}`);
+      prev?.focus();
     }
   };
 
@@ -324,42 +337,42 @@ const handleVerify = async () => {
           <div className="space-y-4">
             <div>
               <Label htmlFor="studentId">Student ID Number</Label>
-              <Input 
+              <Input
                 id="studentId"
-                placeholder="e.g. 24-00100" 
-                value={studentId} 
-                onChange={e => setStudentId(e.target.value)} 
-                className="mt-1.5" 
+                placeholder="e.g. 24-00100"
+                value={studentId}
+                onChange={e => setStudentId(e.target.value)}
+                className="mt-1.5"
               />
             </div>
             <div>
               <Label htmlFor="firstName">First Name</Label>
-              <Input 
+              <Input
                 id="firstName"
-                placeholder="Juan" 
-                value={firstName} 
-                onChange={e => setFirstName(e.target.value)} 
-                className="mt-1.5" 
+                placeholder="Juan"
+                value={firstName}
+                onChange={e => setFirstName(e.target.value)}
+                className="mt-1.5"
               />
             </div>
             <div>
               <Label htmlFor="firstName">Last Name</Label>
-              <Input 
+              <Input
                 id="lastName"
-                placeholder="Dela Cruz" 
-                value={lastName} 
-                onChange={e => setLastName(e.target.value)} 
-                className="mt-1.5" 
+                placeholder="Dela Cruz"
+                value={lastName}
+                onChange={e => setLastName(e.target.value)}
+                className="mt-1.5"
               />
             </div>
             <div className="flex gap-3 pt-2">
               <Button variant="outline" onClick={() => navigate('/login')}>Cancel</Button>
-              <Button 
-                className="flex-1" 
-                disabled={!studentId || !firstName || !lastName} 
-                onClick={() => { 
-                  setStep(1); 
-                  handleVerify(); 
+              <Button
+                className="flex-1"
+                disabled={!studentId || !firstName || !lastName}
+                onClick={() => {
+                  setStep(1);
+                  handleVerify();
                 }}
               >
                 Next <ArrowRight className="h-4 w-4 ml-1" />
@@ -373,11 +386,10 @@ const handleVerify = async () => {
           <div className="space-y-4">
             {loading && (
               <div className="text-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                 <p className="text-sm text-muted-foreground mt-3">Checking alumni record…</p>
               </div>
             )}
-            
+
             {!loading && verifyStatus === 'found' && (
               <div className="text-center py-6">
                 <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-3" />
@@ -426,11 +438,11 @@ const handleVerify = async () => {
           <div className="space-y-4">
             <div>
               <Label htmlFor="email">Personal Email</Label>
-              <Input 
+              <Input
                 id="email"
-                type="email" 
+                type="email"
                 placeholder={emailPlaceholder}
-                value={email} 
+                value={email}
                 onChange={e => {
                   setEmail(e.target.value);
                   if (emailSuggestion) setEmailSuggestion('');
@@ -441,7 +453,7 @@ const handleVerify = async () => {
                     applyEmailSuggestion();
                   }
                 }}
-                className="mt-1.5" 
+                className="mt-1.5"
               />
               <div className="mt-2 rounded-md border bg-muted/40 px-3 py-2">
                 <p className="text-xs font-medium text-foreground">
@@ -449,20 +461,20 @@ const handleVerify = async () => {
                     ? 'School record found!:    '
                     : 'No school email record'}
                   <button
-                  type="button"
-                  onClick={applyPreferredDomain}
-                  className="mt-2 inline-flex text-xs font-semibold text-primary underline underline-offset-2 hover:opacity-80"
-                >
-                   Use @{preferredEmailDomain}
-                </button>
+                    type="button"
+                    onClick={applyPreferredDomain}
+                    className="mt-2 inline-flex text-xs font-semibold text-primary underline underline-offset-2 hover:opacity-80"
+                  >
+                    Use @{preferredEmailDomain}
+                  </button>
                 </p>
-                
+
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {preferredEmailDomain === 'plpasig.edu.ph'
                     ? 'Click the use button to use the school domain for faster verification.'
                     : 'Click the use button to use the personal Gmail address for activation.'}
                 </p>
-                
+
               </div>
               {emailSuggestion && (
                 <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-sm">
@@ -478,32 +490,32 @@ const handleVerify = async () => {
                 </div>
               )}
             </div>
-            
+
             <div>
               <Label htmlFor="password">Password</Label>
               <div className="relative mt-1.5">
-                <Input 
+                <Input
                   id="password"
-                  type={showPw ? 'text' : 'password'} 
-                  value={password} 
-                  onChange={e => setPassword(e.target.value)} 
-                  placeholder="Create password" 
+                  type={showPw ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Create password"
                 />
-                <button 
-                  type="button" 
-                  onClick={() => setShowPw(!showPw)} 
+                <button
+                  type="button"
+                  onClick={() => setShowPw(!showPw)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   {showPw ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                 </button>
               </div>
-              
+
               {password && (
                 <div className="mt-2">
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full transition-all ${passwordStrength().color}`} 
-                      style={{ width: `${passwordStrength().pct}%` }} 
+                    <div
+                      className={`h-full rounded-full transition-all ${passwordStrength().color}`}
+                      style={{ width: `${passwordStrength().pct}%` }}
                     />
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -515,16 +527,25 @@ const handleVerify = async () => {
 
             <div>
               <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input 
-                id="confirmPassword"
-                type="password" 
-                value={confirmPassword} 
-                onChange={e => setConfirmPassword(e.target.value)} 
-                placeholder="Re-enter password" 
-                className="mt-1.5" 
-              />
+              <div className="relative mt-1.5">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPw ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter password"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPw(!showConfirmPw)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showConfirmPw ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
-            
+
             {confirmPassword && password !== confirmPassword && (
               <p className="text-xs text-destructive">Passwords do not match</p>
             )}
@@ -533,17 +554,13 @@ const handleVerify = async () => {
               <Button variant="outline" onClick={() => setStep(1)}>
                 <ArrowLeft className="h-4 w-4 mr-1" /> Back
               </Button>
-              <Button 
-                className="flex-1" 
-                disabled={!isValidEmail || !password || password !== confirmPassword || password.length < 4} 
+              <Button
+                className="flex-1"
+                disabled={!isValidEmail || !password || password !== confirmPassword || password.length < 4}
 
                 onClick={handleSendOtp}
               >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <>Send OTP <ArrowRight className="h-4 w-4 ml-1" /></>
-                )}
+                Send OTP <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
           </div>
@@ -555,7 +572,7 @@ const handleVerify = async () => {
             <div className="p-4 rounded-xl bg-muted/50 inline-block">
               <span className="text-3xl">📧</span>
             </div>
-            
+
             <p className="font-semibold text-lg">OTP Sent!</p>
             <p className="text-muted-foreground text-sm">
               We've sent a verification code to <strong>{maskedEmail}</strong>
@@ -569,6 +586,7 @@ const handleVerify = async () => {
                   maxLength={1}
                   value={d}
                   onChange={e => handleOtpChange(i, e.target.value)}
+                  onKeyDown={e => handleOtpKeyDown(i, e)}
                   onPaste={handleOtpPaste}
                   className="w-12 h-12 text-center text-lg font-bold"
                   disabled={loading}
@@ -576,24 +594,24 @@ const handleVerify = async () => {
               ))}
             </div>
 
-            <Button 
-              className="w-full" 
-              disabled={otp.some(d => !d) || loading} 
+            <Button
+              className="w-full"
+              disabled={otp.some(d => !d) || loading}
               onClick={handleVerifyOtp}
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify & Activate'}
+              {loading ? 'Activating...' : 'Verify & Activate'}
             </Button>
 
             <div className="flex justify-center gap-4 text-sm">
-              <button 
-                disabled={resendCooldown > 0 || loading} 
-                onClick={handleResendOtp} 
+              <button
+                disabled={resendCooldown > 0 || loading}
+                onClick={handleResendOtp}
                 className="text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
               >
                 {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend OTP'}
               </button>
-              <button 
-                onClick={() => setStep(2)} 
+              <button
+                onClick={() => setStep(2)}
                 className="text-muted-foreground hover:text-foreground"
               >
                 Change email
@@ -605,19 +623,19 @@ const handleVerify = async () => {
       case 4:
         return (
           <div className="text-center py-6">
-            <motion.div 
-              initial={{ scale: 0 }} 
-              animate={{ scale: 1 }} 
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
               transition={{ type: 'spring', stiffness: 200 }}
             >
               <CheckCircle2 className="h-16 w-16 text-success mx-auto mb-4" />
             </motion.div>
-            
+
             <h3 className="text-2xl font-display font-bold mb-2">Account Activated!</h3>
             <p className="text-muted-foreground mb-8">
               Your account has been successfully activated. You can now log in.
             </p>
-            
+
             <Button size="lg" className="w-full font-semibold" onClick={() => navigate('/login')}>
               Proceed to Login <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
@@ -631,9 +649,10 @@ const handleVerify = async () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }} 
-        animate={{ opacity: 1, y: 0 }} 
+      {loading && <LoadingScreen message={step === 1 ? 'Checking alumni record...' : step === 2 ? 'Sending verification code...' : step === 3 ? 'Activating your account...' : 'Processing...'} />}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-lg"
       >
         <div className="glass-card p-8">
@@ -658,11 +677,11 @@ const handleVerify = async () => {
           )}
 
           <AnimatePresence mode="wait">
-            <motion.div 
-              key={step} 
-              initial={{ opacity: 0, x: 20 }} 
-              animate={{ opacity: 1, x: 0 }} 
-              exit={{ opacity: 0, x: -20 }} 
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
               {stepContent()}
@@ -671,8 +690,8 @@ const handleVerify = async () => {
         </div>
 
         <div className="text-center mt-4">
-          <button 
-            onClick={() => navigate('/')} 
+          <button
+            onClick={() => navigate('/')}
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             ← Back to Home

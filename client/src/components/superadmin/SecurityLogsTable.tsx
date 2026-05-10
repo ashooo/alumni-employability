@@ -65,7 +65,7 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
 
   const [filters, setFilters] = useState({
     datePreset: '7d' as 'today' | '7d' | '30d' | 'all',
-    email: '',
+    userId: '',
     action: 'all',
     status: 'all',
     ipAddress: ''
@@ -116,7 +116,7 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
         query.set('to', now.toISOString());
       }
 
-      if (filters.email.trim()) query.set('email', filters.email.trim());
+      if (filters.userId.trim()) query.set('username', filters.userId.trim());
       if (filters.status !== 'all') query.set('status', filters.status);
       if (filters.ipAddress.trim()) query.set('ipAddress', filters.ipAddress.trim());
 
@@ -198,11 +198,11 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
             </Select>
           </div>
           <div>
-            <Label>User Email</Label>
+            <Label>User ID</Label>
             <Input
-              placeholder="e.g. admin@plpasig.edu.ph"
-              value={filters.email}
-              onChange={(e) => setFilters((p) => ({ ...p, email: e.target.value }))}
+              placeholder="e.g. 01-00123"
+              value={filters.userId}
+              onChange={(e) => setFilters((p) => ({ ...p, userId: e.target.value }))}
             />
           </div>
           <div>
@@ -248,7 +248,7 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
             <Button
               variant="outline"
               onClick={() => {
-                setFilters({ datePreset: '7d', email: '', action: 'all', status: 'all', ipAddress: '' });
+                setFilters({ datePreset: '7d', userId: '', action: 'all', status: 'all', ipAddress: '' });
                 setPage(1);
               }}
               disabled={loading}
@@ -268,7 +268,8 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>
-                <TableHead>User</TableHead>
+                <TableHead>User ID</TableHead>
+                <TableHead>Email</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>IP Address</TableHead>
@@ -278,13 +279,13 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
                     Loading logs...
                   </TableCell>
                 </TableRow>
               ) : visible.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
                     No security logs found for current filters.
                   </TableCell>
                 </TableRow>
@@ -292,7 +293,8 @@ export function SecurityLogsTable({ title, subtitle, roleFilter }: Props) {
                 visible.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell className="whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</TableCell>
-                    <TableCell>{row.email || row.username || `User #${row.user_id ?? '-'}`}</TableCell>
+                    <TableCell>{row.username || `#${row.user_id ?? '-'}`}</TableCell>
+                    <TableCell>{row.email || '-'}</TableCell>
                     <TableCell className="font-medium">{String(row.action || '').toUpperCase()}</TableCell>
                     <TableCell>{formatStatus(row.status)}</TableCell>
                     <TableCell>{row.ip_address || '-'}</TableCell>

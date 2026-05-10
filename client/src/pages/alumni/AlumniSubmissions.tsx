@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
 import { Eye, Loader2 } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 
 // API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -250,11 +251,7 @@ export default function AlumniSubmissions() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <LoadingScreen fullScreen={false} message="Loading your submissions..." />;
   }
 
   return (
@@ -408,9 +405,7 @@ export default function AlumniSubmissions() {
               ) : null}
 
               {loadingDetails ? (
-                <div className="flex justify-center py-4">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                </div>
+                <LoadingScreen fullScreen={false} message="Loading submission details..." className="min-h-[200px]" />
               ) : (
                 <div className="space-y-4">
                   <p className="text-sm font-semibold">Your Answers:</p>

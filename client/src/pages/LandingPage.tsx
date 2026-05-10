@@ -54,18 +54,22 @@ export default function LandingPage() {
       >
         <nav className="container mx-auto px-6 py-4 flex items-center justify-between relative z-10">
           <div className="flex items-center gap-3">
+
             <div className="p-2 rounded-xl bg-primary/0 dark:bg-primary/0 backdrop-blur-sm">
               <img
                 src={logoUrl}
                 alt="PLP Logo"
                 className="h-12 w-12 object-contain"
               />
+            </div>
 
             <div className="flex flex-col leading-tight">
               <span className="font-display font-bold text-lg">Alumni Tracer</span>
               <span className="text-[10px] uppercase tracking-widest opacity-70">Pamantasan ng Lungsod ng Pasig</span>
             </div>
+
           </div>
+
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"

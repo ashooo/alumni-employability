@@ -580,6 +580,10 @@ const listAuditLogs = async (req, res) => {
     if (email) {
       userWhere.email = email;
     }
+    const usernameFilter = normalizeString(req.query?.username);
+    if (usernameFilter) {
+      userWhere.username = { contains: usernameFilter };
+    }
     if (roleFilter) {
       if (roleFilter === 'admin_like') {
         userWhere.role = { in: ['ADMIN', 'SUPERADMIN'] };

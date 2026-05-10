@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import ArimaTab from './prediction_tabs/ArimaTab';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Info } from 'lucide-react';
+import LoadingScreen from '@/components/ui/loading-screen';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -179,7 +180,7 @@ export default function AdminPredictions() {
           <div className="space-y-4">
             <h3 className="font-display font-semibold">Employability Performance &amp; Evaluation</h3>
             {loading ? (
-              <p className="text-sm text-muted-foreground">Loading evaluation metrics...</p>
+              <LoadingScreen fullScreen={false} message="Loading evaluation metrics..." className="min-h-[300px]" />
             ) : error ? (
               <p className="text-sm text-destructive">{error}</p>
             ) : evaluation ? (
@@ -342,7 +343,7 @@ export default function AdminPredictions() {
           <div className="space-y-4">
             <h3 className="font-display font-semibold">Job-Matching Performance &amp; Evaluation</h3>
             {loading ? (
-              <p className="text-sm text-muted-foreground">Loading evaluation metrics...</p>
+              <LoadingScreen fullScreen={false} message="Loading evaluation metrics..." className="min-h-[300px]" />
             ) : error ? (
               <p className="text-sm text-destructive">{error}</p>
             ) : evaluation ? (

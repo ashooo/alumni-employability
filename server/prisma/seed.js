@@ -245,24 +245,33 @@ async function seedCollegesAndPrograms() {
   const colleges = [
     { name: 'College of Computer Studies', code: 'CCS' },
     { name: 'College of Business and Accountancy', code: 'CBA' },
-    { name: 'College of Education, Arts, and Sciences', code: 'CEAS' },
-    { name: 'College of Nursing', code: 'CON' }
+    { name: 'College of Arts and Sciences', code: 'CAS' },
+    { name: 'College of International Hospitality Management', code: 'CIHM' },
+    { name: 'College of Engineering', code: 'COE' },
+    { name: 'College of Nursing', code: 'CON' },
+    { name: 'College of Education', code: 'COED' }
   ];
   for (const c of colleges) await prisma.college.upsert({ where: { code: c.code }, update: {}, create: { name: c.name, code: c.code } });
   const ccs = await prisma.college.findUnique({ where: { code: 'CCS' } });
   const cba = await prisma.college.findUnique({ where: { code: 'CBA' } });
-  const ceas = await prisma.college.findUnique({ where: { code: 'CEAS' } });
+  const cas = await prisma.college.findUnique({ where: { code: 'CAS' } });
+  const cihm = await prisma.college.findUnique({ where: { code: 'CIHM' } });
+  const coe = await prisma.college.findUnique({ where: { code: 'COE' } });
   const con = await prisma.college.findUnique({ where: { code: 'CON' } });
+  const coed = await prisma.college.findUnique({ where: { code: 'COED' } });
   const programs = [
-    { name: 'Accountancy - Bachelor of Science in Accountancy', code: 'BSA', college_id: cba.id },
-    { name: 'Entrepreneurship - Bachelor of Science in Business Administration major in Entrepreneurship', code: 'BSBA_ENTREP', college_id: cba.id },
-    { name: 'Marketing - Bachelor of Science in Business Administration major in Marketing Management', code: 'BSBA_MARKETING', college_id: cba.id },
-    { name: 'Electronics Engineering - Bachelor of Science in Electronics Engineering', code: 'BSECE', college_id: ccs.id },
-    { name: 'Computer Science - Bachelor of Science in Computer Science', code: 'BSCS', college_id: ccs.id },
-    { name: 'English Education - Bachelor of Secondary Education major in English', code: 'BSED_ENGLISH', college_id: ceas.id },
-    { name: 'Filipino Education - Bachelor of Secondary Education major in Filipino', code: 'BSED_FILIPINO', college_id: ceas.id },
-    { name: 'Information Technology - Bachelor of Science in Information Technology', code: 'BSIT', college_id: ccs.id },
-    { name: 'Nursing - Bachelor of Science in Nursing', code: 'BSN', college_id: con.id }
+    { name: 'Bachelor of Science in Business Administration major in Entrepreneurship', code: 'BSBA_ENTREP', college_id: cba.id },
+    { name: 'Bachelor of Science in Business Administration major in Marketing Management', code: 'BSBA_MARKETING', college_id: cba.id },
+    { name: 'Bachelor of Science in Business Administration major in Financial Management', code: 'BSBA_FINANCE', college_id: cba.id },
+    { name: 'Bachelor of Science in Accountancy', code: 'BSA', college_id: cba.id },
+    { name: 'Bachelor of Arts in Psychology', code: 'BAP', college_id: cas.id },
+    { name: 'Bachelor of Science in Hospitality Management', code: 'BSHM', college_id: cihm.id },
+    { name: 'Bachelor of Science in Computer Science', code: 'BSCS', college_id: ccs.id },
+    { name: 'Bachelor of Science in Information Technology', code: 'BSIT', college_id: ccs.id },
+    { name: 'Bachelor of Science in Electronics Engineering', code: 'BSECE', college_id: coe.id },
+    { name: 'Bachelor of Science in Nursing', code: 'BSN', college_id: con.id },
+    { name: 'Bachelor of Secondary Education major in Filipino', code: 'BSED_FILIPINO', college_id: coed.id },
+    { name: 'Bachelor of Secondary Education major in English', code: 'BSED_ENGLISH', college_id: coed.id }
   ];
   for (const p of programs) await prisma.program.upsert({ where: { code: p.code }, update: {}, create: { name: p.name, code: p.code, college_id: p.college_id } });
 }
@@ -285,6 +294,10 @@ async function seedHistoricalAlumni() {
     'BSA': 'BSA',
     'BSBA ENTREPRENEURSHIP': 'BSBA_ENTREP',
     'BSBA MARKETING': 'BSBA_MARKETING',
+    'BSBA FINANCE': 'BSBA_FINANCE',
+    'BAP': 'BAP',
+    'BSHM': 'BSHM',
+    'BSEE': 'BSECE',
     'BSECE': 'BSECE',
     'BSCS': 'BSCS',
     'BSED ENGLISH': 'BSED_ENGLISH',
@@ -295,8 +308,13 @@ async function seedHistoricalAlumni() {
     'BSBA-ENTREPRENEURSHIP': 'BSBA_ENTREP',
     'BSBA ENTREPRENEURSHIP ': 'BSBA_ENTREP',
     'BSBA-MARKETING': 'BSBA_MARKETING',
+    'BSBA-FINANCE': 'BSBA_FINANCE',
+    'BSBA FINANCIAL MANAGEMENT': 'BSBA_FINANCE',
     'BSED-ENGLISH': 'BSED_ENGLISH',
-    'BSED-FILIPINO': 'BSED_FILIPINO'
+    'BSED-FILIPINO': 'BSED_FILIPINO',
+    'BS IN ENTREPRENEURSHIP': 'BSBA_ENTREP',
+    'BS IN MARKETING MANAGEMENT': 'BSBA_MARKETING',
+    'BS IN FINANCIAL MANAGEMENT': 'BSBA_FINANCE'
   };
 
 

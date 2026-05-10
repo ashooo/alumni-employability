@@ -99,9 +99,12 @@ export default function AdminPrograms() {
   const getDefaultCollegeLogo = (collegeCode: string) => {
     const code = String(collegeCode || '').trim().toUpperCase();
     if (code === 'CBA') return '/college_logos/accountancy.png';
+    if (code === 'CAS') return '/college_logos/artsandscience.png';
+    if (code === 'CIHM') return '/college_logos/cihm.png';
     if (code === 'CCS') return '/college_logos/compsci.png';
-    if (code === 'CEAS') return '/college_logos/education.png';
+    if (code === 'COE') return '/college_logos/engineering.png';
     if (code === 'CON') return '/college_logos/nursing.png';
+    if (code === 'COED' || code === 'CEAS') return '/college_logos/education.png';
     return '/college_logos/artsandscience.png';
   };
 

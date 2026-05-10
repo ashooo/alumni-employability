@@ -1887,7 +1887,7 @@ export default function AlumniSurvey() {
           key={wizardStep}
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="glass-card p-8 min-h-[500px] flex flex-col"
+          className="glass-card p-8"
         >
           {wizardStep === 1 && (
             <div className="space-y-6 flex-1">
@@ -2259,7 +2259,7 @@ export default function AlumniSurvey() {
             </div>
           )}
 
-          <div className="mt-auto border-t pt-8 flex justify-between">
+          <div className="mt-6 border-t pt-8 flex justify-between">
             <Button
               variant="outline"
               size="lg"

@@ -54,6 +54,53 @@ interface CollegeBranding {
   accentColor?: string;
 }
 
+type CollegeCode = 'CBA' | 'CAS' | 'CIHM' | 'CCS' | 'COE' | 'CON' | 'COED' | 'CEAS';
+
+const COLLEGE_LOGO_BY_CODE: Record<CollegeCode, string> = {
+  CBA: '/college_logos/accountancy.png',
+  CAS: '/college_logos/artsandscience.png',
+  CIHM: '/college_logos/cihm.png',
+  CCS: '/college_logos/compsci.png',
+  COE: '/college_logos/engineering.png',
+  CON: '/college_logos/nursing.png',
+  COED: '/college_logos/education.png',
+  CEAS: '/college_logos/education.png'
+};
+
+const parseHexToRgb = (value?: string | null): { r: number; g: number; b: number } | null => {
+  const input = String(value || '').trim();
+  const hex = input.startsWith('#') ? input.slice(1) : input;
+
+  if (!/^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(hex)) {
+    return null;
+  }
+
+  const normalized = hex.length === 3
+    ? hex.split('').map((ch) => `${ch}${ch}`).join('')
+    : hex;
+
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16)
+  };
+};
+
+const getContrastingBannerText = (backgroundColor?: string | null) => {
+  const rgb = parseHexToRgb(backgroundColor);
+
+  if (!rgb) {
+    return { heading: '#111827', body: 'rgba(17, 24, 39, 0.82)' };
+  }
+
+  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+  if (luminance > 0.62) {
+    return { heading: '#111827', body: 'rgba(17, 24, 39, 0.82)' };
+  }
+
+  return { heading: '#f9fafb', body: 'rgba(249, 250, 251, 0.9)' };
+};
+
 const formatEmploymentStatus = (status?: string | null) => {
   if (!status) {
     return '-';
@@ -149,58 +196,54 @@ const getSurveyActionLabel = (surveyState: SurveyFlowStatus | null) => {
   }
 };
 
-const getProgramLogoPath = (program: string) => {
-  const normalized = String(program || '').toUpperCase();
+const normalizeProgram = (program: string) =>
+  String(program || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
 
-  if (normalized.includes('ACCOUNTANCY') || normalized.includes('BSA')) {
-    return '/college_logos/accountancy.png';
-  }
-  if (normalized.includes('ELECTRONICS') || normalized.includes('BSECE')) {
-    return '/college_logos/engineering.png';
-  }
-  if (normalized.includes('FILIPINO') || normalized.includes('ENGLISH') || normalized.includes('BSED')) {
-    return '/college_logos/education.png';
-  }
-  if (normalized.includes('NURSING') || normalized.includes('BSN')) {
-    return '/college_logos/nursing.png';
-  }
-  if (
-    normalized.includes('ENTREPRENEURSHIP') ||
-    normalized.includes('MARKETING') ||
-    normalized.includes('BSBA')
-  ) {
-    return '/college_logos/cihm.png';
-  }
-  if (
-    normalized.includes('COMPUTER SCIENCE') ||
-    normalized.includes('INFORMATION TECHNOLOGY') ||
-    normalized.includes('BSCS') ||
-    normalized.includes('BSIT')
-  ) {
-    return '/college_logos/compsci.png';
-  }
+const getCollegeCodeFromProgram = (program: string): CollegeCode | null => {
+  const normalized = normalizeProgram(program);
 
-  return '/college_logos/artsandscience.png';
+  if (/^BSA\b/.test(normalized) || /^BSBA\b/.test(normalized) || normalized.includes('ACCOUNTANCY') || normalized.includes('BUSINESS ADMINISTRATION')) return 'CBA';
+  if (/^BAP\b/.test(normalized) || normalized.includes('PSYCHOLOGY')) return 'CAS';
+  if (/^BSHM\b/.test(normalized) || normalized.includes('HOSPITALITY')) return 'CIHM';
+  if (/^BSCS\b/.test(normalized) || /^BSIT\b/.test(normalized) || normalized.includes('COMPUTER SCIENCE') || normalized.includes('INFORMATION TECHNOLOGY')) return 'CCS';
+  if (/^BSEE\b/.test(normalized) || /^BSECE\b/.test(normalized) || normalized.includes('ELECTRONICS ENGINEERING') || normalized.includes('ENGINEERING')) return 'COE';
+  if (/^BSN\b/.test(normalized) || normalized.includes('NURSING')) return 'CON';
+  if (/^BSED\b/.test(normalized) || normalized.includes('SECONDARY EDUCATION') || normalized.includes('EDUCATION')) return 'COED';
+
+  return null;
 };
 
-const getProgramBrandingFallback = (program: string): Required<CollegeBranding> => {
-  const normalized = String(program || '').toUpperCase();
-  if (normalized.includes('ACCOUNTANCY') || normalized.includes('BSA') || normalized.includes('BSBA')) {
-    return { logoUrl: '/college_logos/accountancy.png', primaryColor: '#fef3c7', accentColor: '#f59e0b' };
+const resolveCollegeCode = (program: string, collegeCode?: string): CollegeCode | null => {
+  const inferred = getCollegeCodeFromProgram(program);
+  if (inferred) return inferred;
+  const normalizedCode = String(collegeCode || '').trim().toUpperCase() as CollegeCode;
+  return COLLEGE_LOGO_BY_CODE[normalizedCode] ? normalizedCode : null;
+};
+
+const getProgramBrandingFallback = (program: string, collegeCode?: string): Required<CollegeBranding> => {
+  const resolvedCode = resolveCollegeCode(program, collegeCode);
+  switch (resolvedCode) {
+    case 'CBA':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CBA, primaryColor: '#fef3c7', accentColor: '#f59e0b' };
+    case 'CAS':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CAS, primaryColor: '#e5e7eb', accentColor: '#6b7280' };
+    case 'CIHM':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CIHM, primaryColor: '#fde68a', accentColor: '#d97706' };
+    case 'CCS':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CCS, primaryColor: '#e2e8f0', accentColor: '#475569' };
+    case 'COE':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.COE, primaryColor: '#ffedd5', accentColor: '#f97316' };
+    case 'CON':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CON, primaryColor: '#fce7f3', accentColor: '#ec4899' };
+    case 'COED':
+    case 'CEAS':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.COED, primaryColor: '#dbeafe', accentColor: '#3b82f6' };
+    default:
+      return { logoUrl: '/college_logos/artsandscience.png', primaryColor: '#e5e7eb', accentColor: '#6b7280' };
   }
-  if (normalized.includes('ELECTRONICS') || normalized.includes('BSECE')) {
-    return { logoUrl: '/college_logos/engineering.png', primaryColor: '#ffedd5', accentColor: '#f97316' };
-  }
-  if (normalized.includes('FILIPINO') || normalized.includes('ENGLISH') || normalized.includes('BSED')) {
-    return { logoUrl: '/college_logos/education.png', primaryColor: '#dbeafe', accentColor: '#3b82f6' };
-  }
-  if (normalized.includes('NURSING') || normalized.includes('BSN')) {
-    return { logoUrl: '/college_logos/nursing.png', primaryColor: '#fce7f3', accentColor: '#ec4899' };
-  }
-  if (normalized.includes('COMPUTER SCIENCE') || normalized.includes('INFORMATION TECHNOLOGY') || normalized.includes('BSCS') || normalized.includes('BSIT')) {
-    return { logoUrl: '/college_logos/compsci.png', primaryColor: '#e2e8f0', accentColor: '#475569' };
-  }
-  return { logoUrl: '/college_logos/artsandscience.png', primaryColor: '#e5e7eb', accentColor: '#6b7280' };
 };
 
 export default function AlumniDashboard() {
@@ -353,10 +396,16 @@ export default function AlumniDashboard() {
   };
 
   const bannerIsComplete = alumniData.surveyCompleted && alumniData.resultsReady;
-  const fallbackBranding = getProgramBrandingFallback(alumniData.program);
-  const programLogoPath = (collegeBranding?.logoUrl && String(collegeBranding.logoUrl).trim()) || fallbackBranding.logoUrl || getProgramLogoPath(alumniData.program);
+  const resolvedCollegeCode = resolveCollegeCode(alumniData.program, alumniData.collegeCode);
+  const fallbackBranding = getProgramBrandingFallback(alumniData.program, alumniData.collegeCode);
+  const programLogoPath =
+    (collegeBranding?.logoUrl && String(collegeBranding.logoUrl).trim()) ||
+    (resolvedCollegeCode ? COLLEGE_LOGO_BY_CODE[resolvedCollegeCode] : '') ||
+    fallbackBranding.logoUrl;
+  const bannerPrimaryColor = (collegeBranding?.primaryColor && String(collegeBranding.primaryColor).trim()) || fallbackBranding.primaryColor;
+  const bannerTextColors = getContrastingBannerText(bannerPrimaryColor);
   const bannerStyle = {
-    backgroundImage: `linear-gradient(to right, ${(collegeBranding?.primaryColor && String(collegeBranding.primaryColor).trim()) || fallbackBranding.primaryColor}, #ffffff)`,
+    backgroundImage: `linear-gradient(to right, ${bannerPrimaryColor}, #ffffff)`,
     borderColor: (collegeBranding?.accentColor && String(collegeBranding.accentColor).trim()) || fallbackBranding.accentColor
   };
 
@@ -374,12 +423,12 @@ export default function AlumniDashboard() {
       >
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-2xl font-display font-bold mb-1">
+            <h1 className="text-2xl font-display font-bold mb-1" style={{ color: bannerTextColors.heading }}>
               Welcome back, {getDisplayName()}!
             </h1>
-            <p className="text-muted-foreground">
+            <p style={{ color: bannerTextColors.body }}>
               {alumniData.program
-                ? `Batch ${alumniData.batchYear} � ${alumniData.program}`
+                ? `Batch ${alumniData.batchYear} | ${alumniData.program}`
                 : 'Alumni Tracer Dashboard'}
             </p>
           </div>
@@ -387,7 +436,7 @@ export default function AlumniDashboard() {
             <img
               src={programLogoPath}
               alt="College logo"
-              className="h-12 w-12 md:h-16 md:w-16 object-contain"
+              className="h-20 w-20 md:h-24 md:w-24 object-contain shrink-0"
             />
           </div>
         </div>
@@ -532,5 +581,6 @@ export default function AlumniDashboard() {
     </div>
   );
 }
+
 
 

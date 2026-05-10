@@ -1744,8 +1744,20 @@ export default function AlumniSurvey() {
 
   if (surveyStage === 'wizard') {
     const isBoardProgram = BOARD_PROGRAMS.has(String(surveyStatus?.programCode || '').toUpperCase());
-    const currentStep = WIZARD_STEPS.find((step) => step.step === wizardStep) || WIZARD_STEPS[0];
-    const totalWizardSteps = WIZARD_STEPS.length;
+    const hasPathAdditionalQuestions = categories.some((category) =>
+      category.questions.some((question) => question.question_key !== decisionQuestionKey)
+    );
+    const visibleWizardSteps = WIZARD_STEPS.filter((step) => {
+      if (step.step === 4 && !isBoardProgram) return false;
+      if (step.step === 14 && !hasPathAdditionalQuestions) return false;
+      return true;
+    });
+    const currentStep = visibleWizardSteps.find((step) => step.step === wizardStep) || visibleWizardSteps[0];
+    const currentStepIndex = Math.max(
+      0,
+      visibleWizardSteps.findIndex((step) => step.step === currentStep.step)
+    );
+    const totalWizardSteps = visibleWizardSteps.length;
     const competencyStepConfig = COMPETENCY_STEP_CONFIGS[wizardStep];
     const selectedHardSkills = selectedCompetencies.HARD_SKILL;
     const selectedSoftSkills = selectedCompetencies.SOFT_SKILL;
@@ -1848,11 +1860,11 @@ export default function AlumniSurvey() {
           <div>
             <h1 className="text-3xl font-display font-bold text-primary">Employability Assessment</h1>
             <p className="text-muted-foreground">
-              Step {wizardStep} of {totalWizardSteps}: {currentStep.label}
+              Step {currentStepIndex + 1} of {totalWizardSteps}: {currentStep.label}
             </p>
           </div>
           <div className="flex gap-2">
-            {WIZARD_STEPS.map((step) => (
+            {visibleWizardSteps.map((step) => (
               <div
                 key={step.step}
                 className={`h-2 w-12 rounded-full transition-colors ${
@@ -2252,26 +2264,30 @@ export default function AlumniSurvey() {
               variant="outline"
               size="lg"
               onClick={() => {
-                if (wizardStep === 1) {
+                if (currentStepIndex === 0) {
                   navigate('/app/alumni/dashboard');
                   return;
                 }
-
-                setWizardStep((prev) => prev - 1);
+                const previousStep = visibleWizardSteps[currentStepIndex - 1];
+                if (previousStep) {
+                  setWizardStep(previousStep.step);
+                }
               }}
             >
-              <ArrowLeft className="mr-2 h-4 w-4" /> {wizardStep === 1 ? 'Dashboard' : 'Back'}
+              <ArrowLeft className="mr-2 h-4 w-4" /> {currentStepIndex === 0 ? 'Dashboard' : 'Back'}
             </Button>
 
-            {wizardStep < totalWizardSteps ? (
+            {currentStepIndex < totalWizardSteps - 1 ? (
               <Button
                 size="lg"
                 onClick={() => {
                   if (!validateWizardStep()) {
                     return;
                   }
-
-                  setWizardStep((prev) => prev + 1);
+                  const nextStep = visibleWizardSteps[currentStepIndex + 1];
+                  if (nextStep) {
+                    setWizardStep(nextStep.step);
+                  }
                 }}
               >
                 Next Step <ArrowRight className="ml-2 h-4 w-4" />

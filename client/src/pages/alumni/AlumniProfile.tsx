@@ -656,46 +656,6 @@ export default function AlumniProfile() {
               <Label>Year Graduated</Label>
               <Input className="mt-1.5 bg-muted" value={academicSnapshot?.year_graduated ?? 'N/A'} disabled />
             </div>
-            <div>
-              <Label>CGPA</Label>
-              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.cgpa ?? 'N/A'} disabled />
-            </div>
-            <div>
-              <Label>Average Prof Grade</Label>
-              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.prof_grade ?? 'N/A'} disabled />
-            </div>
-            <div>
-              <Label>Average Elec Grade</Label>
-              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.elec_grade ?? 'N/A'} disabled />
-            </div>
-            <div>
-              <Label>OJT Grade</Label>
-              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.ojt_grade ?? 'N/A'} disabled />
-            </div>
-            <div>
-              <Label>Gender</Label>
-              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.gender || 'N/A'} disabled />
-            </div>
-            <div>
-              <Label>Age</Label>
-              <Input className="mt-1.5 bg-muted" value={academicSnapshot?.age ?? 'N/A'} disabled />
-            </div>
-            <div>
-              <Label>Leadership Position</Label>
-              <Input
-                className="mt-1.5 bg-muted"
-                value={academicSnapshot?.leader_pos === true ? 'Yes' : academicSnapshot?.leader_pos === false ? 'No' : 'N/A'}
-                disabled
-              />
-            </div>
-            <div>
-              <Label>Active Member Position</Label>
-              <Input
-                className="mt-1.5 bg-muted"
-                value={academicSnapshot?.act_member_pos === true ? 'Yes' : academicSnapshot?.act_member_pos === false ? 'No' : 'N/A'}
-                disabled
-              />
-            </div>
           </div>
         </div>
 

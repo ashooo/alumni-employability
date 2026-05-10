@@ -44,7 +44,7 @@ export default function LandingPage() {
         className="gradient-hero text-white relative overflow-hidden"
         style={{
           backgroundImage: isDark
-            ? `linear-gradient(rgba(10, 15, 12, 0.92), rgba(8, 12, 10, 0.95)), url('/plp_bg.jpg')`
+            ? `linear-gradient(rgba(10, 15, 12, 0.78), rgba(8, 12, 9, 0.82)), url('/plp_bg.jpg')`
             : `linear-gradient(rgba(16, 60, 35, 0.85), rgba(10, 45, 25, 0.9)), url('/plp_bg.jpg')`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
@@ -60,7 +60,7 @@ export default function LandingPage() {
                 alt="PLP Logo"
                 className="h-12 w-12 object-contain"
               />
-            </div>
+
             <div className="flex flex-col leading-tight">
               <span className="font-display font-bold text-lg">Alumni Tracer</span>
               <span className="text-[10px] uppercase tracking-widest opacity-70">Pamantasan ng Lungsod ng Pasig</span>
@@ -176,6 +176,23 @@ export default function LandingPage() {
             <span className="font-display font-semibold text-foreground">Alumni Tracer</span>
           </div>
           <p>© 2026 University Alumni Employability Tracer System • v1.0</p>
+        </div>
+        <div className="container mx-auto px-6 flex items-center justify-center gap-6 py-4">
+          <img
+            src="/LOGO_Pasig_Seal.png"
+            alt="Pasig Seal Logo"
+            className="h-12 w-12 object-contain"
+          />
+          <img
+            src="/LOGO_Pasig.png"
+            alt="Pasig Logo"
+            className="h-40 w-40 object-contain"
+          />
+          <img
+            src="/plp_logo.png"
+            alt="PLP Logo"
+            className="h-12 w-12 object-contain"
+          />
         </div>
       </footer>
     </div>

@@ -22,11 +22,20 @@ const reportTypes = [
 
 // ── Colors ────────────────────────────────────────────────────────────────────
 const NAVY_ARGB = 'FF1B3A6B';
+const HEADER_ARGB = 'FFDDEBFA';
+const HEADER_BORDER_ARGB = 'FFB7CCE8';
+const TOTAL_ARGB = 'FFD2E4F8';
 const WHITE_ARGB = 'FFFFFFFF';
 const BLACK_ARGB = 'FF1A1A1A';
 const GRAY_ARGB = 'FF555555';
 const DIVIDER_ARGB = 'FFB8B8B8';
 const ROW_ALT_ARGB = 'FFF7F7F7'; // very subtle alternating row
+const NAVY_HEX = '#1B3A6B';
+const HEADER_HEX = '#DDEBFA';
+const HEADER_BORDER_HEX = '#B7CCE8';
+const TOTAL_HEX = '#D2E4F8';
+const DIVIDER_HEX = '#B8B8B8';
+const ROW_ALT_HEX = '#F7F7F7';
 
 // ── Logo paths ────────────────────────────────────────────────────────────────
 const LOGO_SEAL_PATH = '/seal_logo.png';
@@ -194,7 +203,7 @@ export default function AdminReports() {
   };
 
   // ── Export ──────────────────────────────────────────────────────────────────
-  const handleExport = async (format: 'Excel' | 'CSV') => {
+  const handleExport = async (format: 'Excel' | 'CSV' | 'PDF') => {
     if (!reportData.length) {
       toast({ title: 'Export Failed', description: 'No data to export.', variant: 'destructive' });
       return;
@@ -207,6 +216,129 @@ export default function AdminReports() {
     const univName = 'PAMANTASAN NG LUNGSOD NG PASIG';
 
     // ── EXCEL ─────────────────────────────────────────────────────────────────
+    if (format === 'PDF') {
+      try {
+        const esc = (value: unknown) =>
+          String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+
+        const headerHtml = header.showHeader
+          ? `
+            <div class="report-header">
+              <div class="head-grid">
+                <div class="logos">
+                  <img src="${LOGO_SEAL_PATH}" alt="seal" />
+                  <img src="${LOGO_PASIG_PATH}" alt="pasig" />
+                  <img src="${LOGO_PLP_PATH}" alt="plp" />
+                </div>
+                <div class="head-text">
+                  <div class="univ">${esc(univName)}</div>
+                  <div class="office">${esc(header.office)}</div>
+                  <div class="meta">${esc(header.address)}</div>
+                  <div class="meta">${esc(header.contact)} | ${esc(header.email)}</div>
+                </div>
+              </div>
+              <div class="head-divider"></div>
+            </div>
+          `
+          : '';
+
+        const th = dataCols.map(c => `<th>${esc(c)}</th>`).join('');
+        const rows = reportData.map(row => {
+          const tds = dataCols.map(c => `<td>${esc(row[c])}</td>`).join('');
+          return `<tr>${tds}</tr>`;
+        }).join('');
+
+        const totalCells = dataCols.map((c, i) => {
+          if (i === 0) return '<td><strong>TOTAL</strong></td>';
+          const vals = reportData.map(r => r[c]);
+          if (vals.every(v => typeof v === 'number')) {
+            const sum = (vals as number[]).reduce((a, b) => a + b, 0);
+            return `<td><strong>${sum}</strong></td>`;
+          }
+          return '<td></td>';
+        }).join('');
+
+        const html = `
+          <!doctype html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>${fileName}</title>
+            <style>
+              @page { size: A4 landscape; margin: 16mm; }
+              body { font-family: Calibri, Arial, sans-serif; color: #1a1a1a; }
+              .report-header { margin-bottom: 10px; }
+              .head-grid { display: grid; grid-template-columns: 220px 1fr; align-items: stretch; }
+              .logos { display: flex; align-items: center; justify-content: center; gap: 10px; background: #fff; border: 1px solid ${HEADER_BORDER_HEX}; border-right: 0; min-height: 94px; }
+              .logos img { width: 56px; height: 56px; object-fit: contain; }
+              .head-text { border: 1px solid ${HEADER_BORDER_HEX}; }
+              .univ { background: ${NAVY_HEX}; color: #fff; font-weight: 700; padding: 7px 8px; text-align: center; letter-spacing: .08em; font-size: 12px; }
+              .office { font-weight: 700; text-align: center; padding-top: 8px; font-size: 14px; }
+              .meta { color: #555; text-align: center; font-size: 11px; margin-top: 2px; }
+              .head-divider { height: 4px; background: ${DIVIDER_HEX}; margin-top: 6px; }
+              .date { text-align: right; color: #555; font-size: 11px; margin: 8px 0; }
+              h2 { margin: 10px 0 8px; font-size: 16px; }
+              table { width: 100%; border-collapse: collapse; font-size: 11px; }
+              th, td { border: 1px solid ${HEADER_BORDER_HEX}; padding: 6px; text-align: center; }
+              th { background: ${HEADER_HEX}; font-weight: 700; }
+              tbody tr:nth-child(even) td { background: ${ROW_ALT_HEX}; }
+              tfoot td { background: ${TOTAL_HEX}; font-weight: 700; border-top: 2px solid ${DIVIDER_HEX}; }
+            </style>
+          </head>
+          <body>
+            ${headerHtml}
+            <div class="date">${esc(dateLabel)}</div>
+            <h2>${esc(reportType)}</h2>
+            <table>
+              <thead><tr>${th}</tr></thead>
+              <tbody>${rows}</tbody>
+              <tfoot><tr>${totalCells}</tr></tfoot>
+            </table>
+          </body>
+          </html>
+        `;
+
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        iframe.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(iframe);
+
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!doc || !iframe.contentWindow) throw new Error('Unable to prepare print frame');
+        doc.open();
+        doc.write(html);
+        doc.close();
+
+        const cleanup = () => {
+          setTimeout(() => {
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+          }, 800);
+        };
+
+        iframe.contentWindow.onafterprint = cleanup;
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          cleanup();
+        }, 300);
+
+        toast({ title: 'PDF Ready', description: 'Print dialog opened. Select Save as PDF to download.' });
+      } catch {
+        toast({ title: 'Export Error', description: 'Failed to generate PDF.', variant: 'destructive' });
+      }
+      return;
+    }
+
     if (format === 'Excel') {
       try {
         const wb = new ExcelJS.Workbook();
@@ -332,15 +464,15 @@ export default function AdminReports() {
         // ── Column header row ─────────────────────────────────────────────────
         const hdrRow = ws.addRow([...Array(LOGO_COLS).fill(''), ...dataCols]);
         hdrRow.height = RH.header;
-        fill(hdrRow, 1, LOGO_COLS, NAVY_ARGB);
+        fill(hdrRow, 1, LOGO_COLS, HEADER_ARGB);
         for (let i = 0; i < numData; i++) {
           const cell = hdrRow.getCell(COL_DATA_START + i);
-          cell.font = { bold: true, size: 11, name: 'Calibri', color: { argb: WHITE_ARGB } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY_ARGB } };
+          cell.font = { bold: true, size: 11, name: 'Calibri', color: { argb: BLACK_ARGB } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_ARGB } };
           cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
           cell.border = {
-            left: { style: 'thin', color: { argb: 'FF2E5090' } },
-            right: { style: 'thin', color: { argb: 'FF2E5090' } },
+            left: { style: 'thin', color: { argb: HEADER_BORDER_ARGB } },
+            right: { style: 'thin', color: { argb: HEADER_BORDER_ARGB } },
           };
         }
 
@@ -373,16 +505,16 @@ export default function AdminReports() {
         });
         const totRow = ws.addRow([...Array(LOGO_COLS).fill(''), ...totVals]);
         totRow.height = 20;
-        fill(totRow, 1, LOGO_COLS, NAVY_ARGB);
+        fill(totRow, 1, LOGO_COLS, TOTAL_ARGB);
         for (let i = 0; i < numData; i++) {
           const cell = totRow.getCell(COL_DATA_START + i);
-          cell.font = { bold: true, size: 11, name: 'Calibri', color: { argb: WHITE_ARGB } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY_ARGB } };
+          cell.font = { bold: true, size: 11, name: 'Calibri', color: { argb: BLACK_ARGB } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_ARGB } };
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
           cell.border = {
             top: { style: 'medium', color: { argb: DIVIDER_ARGB } },
-            left: { style: 'thin', color: { argb: 'FF2E5090' } },
-            right: { style: 'thin', color: { argb: 'FF2E5090' } },
+            left: { style: 'thin', color: { argb: HEADER_BORDER_ARGB } },
+            right: { style: 'thin', color: { argb: HEADER_BORDER_ARGB } },
           };
         }
 
@@ -472,6 +604,9 @@ export default function AdminReports() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => handleExport('CSV')} disabled={!showPreview || isLoading} className="gap-1">
               <Table2 className="h-4 w-4" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => handleExport('PDF')} disabled={!showPreview || isLoading} className="gap-1">
+              <FileText className="h-4 w-4" /> PDF
             </Button>
             <Button variant="outline" size="sm" onClick={() => setModalOpen(true)} className="gap-1" title="Customize header">
               <Settings2 className="h-4 w-4" /> Header

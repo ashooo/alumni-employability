@@ -34,13 +34,6 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
   last_name:   ['last_name', 'lastname', 'last name'],
   program:     ['program', 'course', 'program name'],
   batch_year:  ['batch_year', 'batchyear', 'batch year', 'batch', 'year'],
-};
-
-// Optional columns
-const OPTIONAL_COLUMNS: Record<string, string[]> = {
-  middle_name: ['middle_name', 'middlename', 'middle name'],
-  suffix:      ['suffix'],
-  status:      ['status'],
   gender:      ['gender', 'sex'],
   age:         ['age'],
   year_graduated: ['year_graduated', 'year graduated', 'graduated year', 'grad_year'],
@@ -48,11 +41,13 @@ const OPTIONAL_COLUMNS: Record<string, string[]> = {
   prof_grade:  ['prof_grade', 'professional grade', 'average prof grade'],
   elec_grade:  ['elec_grade', 'elective grade', 'average elec grade'],
   ojt_grade:   ['ojt_grade', 'ojt grade', 'internship grade'],
-  leader_pos:  ['leader_pos', 'leadership', 'leadership position', 'leadership pos'],
-  act_member_pos: ['act_member_pos', 'active member', 'member position', 'act member pos'],
-  soft_skills_ave: ['soft_skills_ave', 'soft skills', 'soft skills average', 'soft skills ave'],
-  hard_skills_ave: ['hard_skills_ave', 'hard skills', 'hard skills average', 'hard skills ave'],
-  is_employable: ['is_employable', 'employability', 'employable'],
+};
+
+// Optional columns
+const OPTIONAL_COLUMNS: Record<string, string[]> = {
+  middle_name: ['middle_name', 'middlename', 'middle name'],
+  suffix:      ['suffix'],
+  status:      ['status'],
 };
 
 const STATUS_LABEL_MAP: Record<string, string> = {
@@ -129,11 +124,6 @@ interface ParsedRow {
   prof_grade?: number;
   elec_grade?: number;
   ojt_grade?: number;
-  leader_pos?: boolean | string;
-  act_member_pos?: boolean | string;
-  soft_skills_ave?: number;
-  hard_skills_ave?: number;
-  is_employable?: boolean | string;
   [key: string]: unknown;
 }
 
@@ -173,6 +163,10 @@ function isValidEmail(email: string): boolean {
 function isValidBatchYear(year: unknown): boolean {
   const n = Number(year);
   return Number.isInteger(n) && n >= 1900 && n <= 2100;
+}
+
+function isValidStudentIdFormat(studentId: string): boolean {
+  return /^\d{2}-\d{5}$/.test((studentId || '').trim());
 }
 
 function parseFileToRows(file: File): Promise<Record<string, unknown>[]> {
@@ -489,11 +483,6 @@ export default function AdminUsers() {
         prof_grade: Number(getOpt('prof_grade')) || undefined,
         elec_grade: Number(getOpt('elec_grade')) || undefined,
         ojt_grade: Number(getOpt('ojt_grade')) || undefined,
-        leader_pos: getOpt('leader_pos'),
-        act_member_pos: getOpt('act_member_pos'),
-        soft_skills_ave: Number(getOpt('soft_skills_ave')) || undefined,
-        hard_skills_ave: Number(getOpt('hard_skills_ave')) || undefined,
-        is_employable: getOpt('is_employable'),
       };
     });
 
@@ -514,9 +503,19 @@ export default function AdminUsers() {
       const errors: ValidationError[] = [];
 
       if (!row.student_id) errors.push({ rowIndex: row.rowIndex, field: 'student_id', message: 'Student ID is required' });
+      if (row.student_id && !isValidStudentIdFormat(row.student_id)) {
+        errors.push({ rowIndex: row.rowIndex, field: 'student_id', message: 'Student ID must be in YY-00000 format (example: 25-00000)' });
+      }
       if (!row.first_name) errors.push({ rowIndex: row.rowIndex, field: 'first_name', message: 'First name is required' });
       if (!row.last_name) errors.push({ rowIndex: row.rowIndex, field: 'last_name', message: 'Last name is required' });
       if (!row.program) errors.push({ rowIndex: row.rowIndex, field: 'program', message: 'Program is required' });
+      if (!row.gender) errors.push({ rowIndex: row.rowIndex, field: 'gender', message: 'Gender is required' });
+      if (row.age === undefined || Number.isNaN(row.age)) errors.push({ rowIndex: row.rowIndex, field: 'age', message: 'Age is required' });
+      if (!row.year_graduated) errors.push({ rowIndex: row.rowIndex, field: 'year_graduated', message: 'Year graduated is required' });
+      if (row.cgpa === undefined || Number.isNaN(row.cgpa)) errors.push({ rowIndex: row.rowIndex, field: 'cgpa', message: 'CGPA is required' });
+      if (row.prof_grade === undefined || Number.isNaN(row.prof_grade)) errors.push({ rowIndex: row.rowIndex, field: 'prof_grade', message: 'Average professional grade is required' });
+      if (row.elec_grade === undefined || Number.isNaN(row.elec_grade)) errors.push({ rowIndex: row.rowIndex, field: 'elec_grade', message: 'Average elective grade is required' });
+      if (row.ojt_grade === undefined || Number.isNaN(row.ojt_grade)) errors.push({ rowIndex: row.rowIndex, field: 'ojt_grade', message: 'OJT grade is required' });
       if (!isValidBatchYear(row.batch_year)) {
         errors.push({ rowIndex: row.rowIndex, field: 'batch_year', message: `Batch year "${row.batch_year}" is not a valid year (1900–2100)` });
       }
@@ -807,6 +806,47 @@ export default function AdminUsers() {
     const a = document.createElement('a');
     a.href = url; a.download = `alumni-records-${new Date().toISOString().split('T')[0]}.csv`; a.click();
     window.URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadImportTemplate = () => {
+    const templateHeaders = [
+      'student_id',
+      'first_name',
+      'last_name',
+      'middle_name',
+      'suffix',
+      'program',
+      'batch_year',
+      'gender',
+      'age',
+      'year_graduated',
+      'cgpa',
+      'prof_grade',
+      'elec_grade',
+      'ojt_grade',
+    ];
+
+    const sampleRow = {
+      student_id: '25-00000',
+      first_name: 'Juan',
+      last_name: 'Dela Cruz',
+      middle_name: 'Santos',
+      suffix: '',
+      program: 'BSIT',
+      batch_year: 2026,
+      gender: 'Male',
+      age: 22,
+      year_graduated: 2026,
+      cgpa: 1.75,
+      prof_grade: 1.9,
+      elec_grade: 2.1,
+      ojt_grade: 1.5,
+    };
+
+    const worksheet = XLSX.utils.json_to_sheet([sampleRow], { header: templateHeaders });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Import Template');
+    XLSX.writeFile(workbook, `alumni-import-template-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const getCollegeName = (collegeId: string) =>
@@ -1265,7 +1305,13 @@ export default function AdminUsers() {
                 <FileSpreadsheet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="font-medium mb-2">Drag & drop your file here, or click to browse</p>
                 <p className="text-sm text-muted-foreground mb-1">Accepted formats: <code className="bg-muted px-1 rounded">.xlsx</code> and <code className="bg-muted px-1 rounded">.csv</code> only</p>
-                <p className="text-xs text-muted-foreground">Required columns: student_id, first_name, last_name, program, batch_year (+ optional: email, middle_name, suffix, status)</p>
+                <p className="text-xs text-muted-foreground">Required: student_id, first_name, last_name, program, batch_year, gender, age, year_graduated, cgpa, prof_grade, elec_grade, ojt_grade</p>
+                <p className="text-xs text-muted-foreground">Optional: middle_name, suffix, status</p>
+              </div>
+              <div className="flex justify-end">
+                <Button type="button" variant="outline" onClick={handleDownloadImportTemplate} className="gap-2">
+                  <Download className="h-4 w-4" /> Download Template
+                </Button>
               </div>
               <input type="file" id="file-upload-input" className="hidden" accept=".xlsx,.csv" onChange={handleFileSelect} />
             </div>

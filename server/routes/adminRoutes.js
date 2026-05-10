@@ -94,5 +94,7 @@ router.get(
 // Content settings (Content Manager)
 router.get('/content-settings', authenticateToken, adminController.getContentSettings);
 router.put('/content-settings', authenticateToken, adminController.saveContentSettings);
+router.get('/college-branding', authenticateToken, adminController.getCollegeBrandingSettings);
+router.put('/college-branding', authenticateToken, adminController.saveCollegeBrandingSettings);
 
 module.exports = router;

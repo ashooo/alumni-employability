@@ -721,7 +721,7 @@ const getPublicSetting = async (req, res) => {
       return res.status(400).json({ error: 'Invalid key' });
     }
 
-    const allowedPublicKeys = new Set(['system_branding']);
+    const allowedPublicKeys = new Set(['system_branding', 'program_crucial_skills_v1', 'program_additional_questions_v1']);
     if (!allowedPublicKeys.has(key)) {
       return res.status(403).json({ error: 'Setting is not publicly accessible' });
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Edit2, Trash2, Copy, Save, X, Loader2, ChevronLeft, GripVertical, Search, ToggleLeft, ToggleRight, ListPlus } from 'lucide-react';
+import { Plus, Edit2, Trash2, Copy, X, Loader2, ChevronLeft, GripVertical, Search, ToggleLeft, ToggleRight, ListPlus } from 'lucide-react';
 import LoadingScreen from '@/components/ui/loading-screen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
@@ -23,6 +24,8 @@ interface Template {
   id: number; template_key: string; name: string; description: string | null;
   kind: string; path_key: string; is_followup: boolean; is_active: boolean;
   question_count: number; submission_count: number;
+  program_id?: number | null;
+  program?: { id: number; code: string; name: string } | null;
   created_at: string; updated_at: string;
 }
 interface Option { id: number; option_value: string; option_label: string; display_order: number; }
@@ -33,6 +36,17 @@ interface TQuestion {
 }
 interface TemplateDetail extends Omit<Template,'question_count'> {
   submission_count: number; questions: TQuestion[];
+}
+interface ProgramLite {
+  id: number;
+  code: string;
+  name: string;
+}
+interface ProgramAdditionalQuestionConfig {
+  question: string;
+  type: 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'SINGLE_SELECT' | 'MULTI_SELECT';
+  required: boolean;
+  options?: string[];
 }
 
 const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
@@ -51,6 +65,112 @@ const kindColor: Record<string,string> = {
   GENERAL: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
 };
 
+const DEFAULT_PROGRAM_CRUCIAL_SKILLS: Record<string, string[]> = {
+  BSA: [
+    'Auditing Skills',
+    'Budgeting & Analysis Skills',
+    'Financial Accounting Skills',
+    'Taxation Skills',
+    'Risk Management Skills'
+  ],
+  BSECE: [
+    'Leadership & Decision-Making Skills',
+    'Networking Skills',
+    'Programming Logic Skills',
+    'Python Programming Skills',
+    'English Communication & Writing Skills',
+    'Filipino Communication & Writing Skills',
+    'Artificial Intelligence Skills',
+    'Cybersecurity Skills',
+    'Circuit Design Skills',
+    'Communication Systems Skills',
+    'Problem-Solving Skills'
+  ],
+  BSED_FILIPINO: [
+    'Filipino Communication & Writing Skills',
+    'Cloud Computing Skills',
+    'Curriculum Development Skills',
+    'Classroom Management Skills',
+    'Educational Technology Skills',
+    'Teaching Skills'
+  ],
+  BSED_ENGLISH: [
+    'English Communication & Writing Skills',
+    'Curriculum Development Skills',
+    'Classroom Management Skills',
+    'Educational Technology Skills',
+    'Teaching Skills'
+  ],
+  BSN: [
+    'Leadership & Decision-Making Skills',
+    'English Communication & Writing Skills',
+    'Filipino Communication & Writing Skills',
+    'Problem-Solving Skills',
+    'Clinical Skills',
+    'Patient Care Skills',
+    'Health Assessment Skills',
+    'Emergency Response Skills'
+  ],
+  BSBA_ENTREP: [
+    'Financial Management Skills',
+    'Java Programming Skills',
+    'Leadership & Decision-Making Skills',
+    'Machine Learning Skills',
+    'Marketing Skills',
+    'Strategic Planning Skills',
+    'Innovation & Business Planning Skills'
+  ],
+  BSBA_MARKETING: [
+    'Financial Management Skills',
+    'Leadership & Decision-Making Skills',
+    'Marketing Skills',
+    'Strategic Planning Skills',
+    'Consumer Behavior Analysis',
+    'Sales Management Skills'
+  ],
+  BSCS: [
+    'Machine Learning Skills',
+    'Programming Logic Skills',
+    'Python Programming Skills',
+    'Artificial Intelligence Skills',
+    'Cloud Computing Skills',
+    'Curriculum Development Skills',
+    'Data Structures & Algorithms',
+    'Software Engineering Skills'
+  ],
+  BSIT: [
+    'Java Programming Skills',
+    'Networking Skills',
+    'Programming Logic Skills',
+    'Python Programming Skills',
+    'Cybersecurity Skills',
+    'Database Management Skills',
+    'System Design Skills',
+    'Web Development Skills'
+  ]
+};
+
+const normalizeAdditionalQuestionConfig = (raw: any): ProgramAdditionalQuestionConfig | null => {
+  if (typeof raw === 'string') {
+    const question = raw.trim();
+    if (!question) return null;
+    return { question, type: 'TEXT', required: false, options: [] };
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const question = String(raw.question || raw.text || '').trim();
+  if (!question) return null;
+  const supportedTypes = new Set(['TEXT', 'TEXTAREA', 'NUMBER', 'SINGLE_SELECT', 'MULTI_SELECT']);
+  const type = String(raw.type || 'TEXT').toUpperCase();
+  const normalizedType = (supportedTypes.has(type) ? type : 'TEXT') as ProgramAdditionalQuestionConfig['type'];
+  const options = Array.isArray(raw.options) ? raw.options.map((o: any) => String(o || '').trim()).filter(Boolean) : [];
+  return {
+    question,
+    type: normalizedType,
+    required: Boolean(raw.required),
+    options
+  };
+};
+
 export default function AdminSurveyManager() {
   const { toast } = useToast();
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -62,9 +182,19 @@ export default function AdminSurveyManager() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState('all');
+  const [programFilter, setProgramFilter] = useState('all');
+  const [programs, setPrograms] = useState<ProgramLite[]>([]);
+  const [programCrucialSkillsMap, setProgramCrucialSkillsMap] = useState<Record<string, string[]>>({});
+  const [programAdditionalQuestionsMap, setProgramAdditionalQuestionsMap] = useState<Record<string, ProgramAdditionalQuestionConfig[]>>({});
+  const [editingProgram, setEditingProgram] = useState<ProgramLite | null>(null);
+  const [newSkill, setNewSkill] = useState('');
+  const [newAdditionalQuestion, setNewAdditionalQuestion] = useState('');
+  const [newAdditionalQuestionType, setNewAdditionalQuestionType] = useState<ProgramAdditionalQuestionConfig['type']>('TEXT');
+  const [newAdditionalQuestionRequired, setNewAdditionalQuestionRequired] = useState(true);
+  const [newAdditionalQuestionOptionsText, setNewAdditionalQuestionOptionsText] = useState('');
 
   // create form
-  const [cf, setCf] = useState({ name: '', description: '', kind: 'GENERAL', path_key: 'INITIAL', template_key: '' });
+  const [cf, setCf] = useState({ name: '', description: '', kind: 'GENERAL', path_key: 'INITIAL', template_key: '', program_id: 'all' });
   // new question form
   const [nq, setNq] = useState({ question_text: '', question_type: 'TEXT', help_text: '', section_key: '', is_required: true, options: [''] as string[] });
   // edit question form
@@ -78,6 +208,36 @@ export default function AdminSurveyManager() {
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const loadProgramsAndSkills = async () => {
+      try {
+        const [programRes, skillsRes, additionalRes] = await Promise.all([
+          fetch(`${API}/admin/programs/list`, { headers: authHeaders() }),
+          fetch(`${API}/admin/program-crucial-skills`, { headers: authHeaders() }),
+          fetch(`${API}/admin/program-additional-questions`, { headers: authHeaders() })
+        ]);
+        if (!programRes.ok) throw new Error('Failed to load programs');
+        if (!skillsRes.ok) throw new Error('Failed to load crucial skills config');
+        if (!additionalRes.ok) throw new Error('Failed to load additional questions config');
+        const programList = await programRes.json();
+        const skillConfig = await skillsRes.json();
+        const additionalConfig = await additionalRes.json();
+        setPrograms((programList || []) as ProgramLite[]);
+        setProgramCrucialSkillsMap((skillConfig?.value || {}) as Record<string, string[]>);
+        const rawAdditional = (additionalConfig?.value || {}) as Record<string, any[]>;
+        const normalizedAdditional: Record<string, ProgramAdditionalQuestionConfig[]> = {};
+        Object.entries(rawAdditional || {}).forEach(([programKey, questions]) => {
+          normalizedAdditional[programKey] = Array.isArray(questions)
+            ? questions.map((q) => normalizeAdditionalQuestionConfig(q)).filter((q): q is ProgramAdditionalQuestionConfig => Boolean(q))
+            : [];
+        });
+        setProgramAdditionalQuestionsMap(normalizedAdditional);
+      } catch (e: any) {
+        toast({ title: 'Error', description: e.message, variant: 'destructive' });
+      }
+    };
+    loadProgramsAndSkills();
+  }, [toast]);
 
   const openTemplate = async (id: number) => {
     try {
@@ -90,10 +250,11 @@ export default function AdminSurveyManager() {
     if (!cf.name.trim()) return;
     setSaving(true);
     try {
-      await api('/templates', { method: 'POST', body: JSON.stringify(cf) });
+      const payload = { ...cf, program_id: cf.program_id === 'all' ? null : Number(cf.program_id) };
+      await api('/templates', { method: 'POST', body: JSON.stringify(payload) });
       toast({ title: 'Template Created' });
       setShowCreate(false);
-      setCf({ name: '', description: '', kind: 'GENERAL', path_key: 'INITIAL', template_key: '' });
+      setCf({ name: '', description: '', kind: 'GENERAL', path_key: 'INITIAL', template_key: '', program_id: 'all' });
       load();
     } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
     finally { setSaving(false); }
@@ -176,9 +337,76 @@ export default function AdminSurveyManager() {
 
   const filtered = templates.filter(t => {
     if (kindFilter !== 'all' && t.kind !== kindFilter) return false;
+    if (programFilter === 'global' && t.program_id) return false;
+    if (programFilter !== 'all' && programFilter !== 'global' && String(t.program_id || '') !== programFilter) return false;
     if (search && !t.name.toLowerCase().includes(search.toLowerCase()) && !t.template_key.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
+  const normalizeProgramCodeKey = (value: string) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  const currentProgramKey = normalizeProgramCodeKey(editingProgram?.code || '');
+  const selectedSkills = programCrucialSkillsMap[currentProgramKey] || DEFAULT_PROGRAM_CRUCIAL_SKILLS[currentProgramKey] || [];
+  const selectedAdditionalQuestions = programAdditionalQuestionsMap[currentProgramKey] || [];
+  const saveProgramSkills = async (nextSkills: string[]) => {
+    const codeKey = currentProgramKey;
+    if (!codeKey) return;
+    const nextMap = { ...programCrucialSkillsMap, [codeKey]: nextSkills };
+    const saveResponse = await fetch(`${API}/admin/program-crucial-skills`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ value: nextMap })
+    });
+    if (!saveResponse.ok) {
+      const payload = await saveResponse.json().catch(() => ({}));
+      throw new Error((payload as any).error || 'Failed to save program crucial skills');
+    }
+    setProgramCrucialSkillsMap(nextMap);
+  };
+  const addSkill = async () => {
+    const skill = newSkill.trim();
+    if (!skill || !editingProgram || selectedSkills.includes(skill)) return;
+    const proceed = confirm('Adding a new crucial skill may affect model quality and consistency because this feature may not exist in prior training data. Continue?');
+    if (!proceed) return;
+    await saveProgramSkills([...selectedSkills, skill]);
+    setNewSkill('');
+  };
+  const removeSkill = async (skill: string) => {
+    const proceed = confirm('Removing a crucial skill may affect model quality and consistency because the model was trained with the previous feature set. Continue?');
+    if (!proceed) return;
+    await saveProgramSkills(selectedSkills.filter((s) => s !== skill));
+  };
+  const saveProgramAdditionalQuestions = async (nextQuestions: ProgramAdditionalQuestionConfig[]) => {
+    const codeKey = currentProgramKey;
+    if (!codeKey) return;
+    const nextMap = { ...programAdditionalQuestionsMap, [codeKey]: nextQuestions };
+    const saveResponse = await fetch(`${API}/admin/program-additional-questions`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ value: nextMap })
+    });
+    if (!saveResponse.ok) {
+      const payload = await saveResponse.json().catch(() => ({}));
+      throw new Error((payload as any).error || 'Failed to save program additional questions');
+    }
+    setProgramAdditionalQuestionsMap(nextMap);
+  };
+  const addAdditionalQuestion = async () => {
+    const question = newAdditionalQuestion.trim();
+    if (!question || !editingProgram || selectedAdditionalQuestions.some((q) => q.question === question)) return;
+    const options = newAdditionalQuestionType === 'SINGLE_SELECT' || newAdditionalQuestionType === 'MULTI_SELECT'
+      ? newAdditionalQuestionOptionsText.split(/\r?\n|,/g).map((item) => item.trim()).filter(Boolean)
+      : [];
+    await saveProgramAdditionalQuestions([
+      ...selectedAdditionalQuestions,
+      { question, type: newAdditionalQuestionType, required: newAdditionalQuestionRequired, options }
+    ]);
+    setNewAdditionalQuestion('');
+    setNewAdditionalQuestionType('TEXT');
+    setNewAdditionalQuestionRequired(true);
+    setNewAdditionalQuestionOptionsText('');
+  };
+  const removeAdditionalQuestion = async (question: string) => {
+    await saveProgramAdditionalQuestions(selectedAdditionalQuestions.filter((q) => q.question !== question));
+  };
 
   // Group questions by section_key
   const groupBySection = (questions: TQuestion[]) => {
@@ -192,6 +420,118 @@ export default function AdminSurveyManager() {
   };
 
   const sectionLabel = (key: string) => key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  if (editingProgram) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setEditingProgram(null)}><ChevronLeft className="h-5 w-5" /></Button>
+          <div className="flex-1">
+            <h1 className="text-2xl font-display font-bold">Program Config - {editingProgram.code}</h1>
+            <p className="text-sm text-muted-foreground">{editingProgram.name}</p>
+          </div>
+        </div>
+
+        <Tabs defaultValue="skills" className="w-full">
+          <TabsList>
+            <TabsTrigger value="skills">Crucial Skills</TabsTrigger>
+            <TabsTrigger value="questions">Additional Questions</TabsTrigger>
+          </TabsList>
+          <TabsContent value="skills" className="mt-4">
+            <Card className="glass-card">
+              <CardContent className="pt-6 space-y-4">
+                <div className="space-y-1">
+                  <h3 className="font-display font-semibold">Crucial Skills</h3>
+                  <p className="text-xs text-amber-600">
+                    Adding or removing a crucial skill may affect model quality if training data does not include the updated feature set.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Input value={newSkill} onChange={(e) => setNewSkill(e.target.value)} placeholder="Add skill (e.g., Data Structures & Algorithms)" />
+                  <Button onClick={addSkill}><Plus className="h-4 w-4 mr-2" />Add Skill</Button>
+                </div>
+                <div className="space-y-2">
+                  {selectedSkills.length === 0 ? (
+                    <div className="rounded-md border px-3 py-2 text-sm text-muted-foreground">No skills configured for this program.</div>
+                  ) : (
+                    selectedSkills.map((skill, index) => (
+                      <div key={skill} className="flex items-center justify-between rounded-md border px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium">#{index + 1}</p>
+                          <p className="text-sm">{skill}</p>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => removeSkill(skill)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="questions" className="mt-4">
+            <Card className="glass-card">
+              <CardContent className="pt-6 space-y-4">
+                <h3 className="font-display font-semibold">Additional Questions</h3>
+                <div className="space-y-3">
+                  <Input value={newAdditionalQuestion} onChange={(e) => setNewAdditionalQuestion(e.target.value)} placeholder="Question text" />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <Select value={newAdditionalQuestionType} onValueChange={(v) => setNewAdditionalQuestionType(v as ProgramAdditionalQuestionConfig['type'])}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="TEXT">Text</SelectItem>
+                        <SelectItem value="TEXTAREA">Textarea</SelectItem>
+                        <SelectItem value="NUMBER">Number</SelectItem>
+                        <SelectItem value="SINGLE_SELECT">Radio / Single Select</SelectItem>
+                        <SelectItem value="MULTI_SELECT">Checkbox / Multi Select</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={newAdditionalQuestionRequired ? 'required' : 'optional'} onValueChange={(v) => setNewAdditionalQuestionRequired(v === 'required')}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="required">Required</SelectItem>
+                        <SelectItem value="optional">Optional</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={addAdditionalQuestion}><Plus className="h-4 w-4 mr-2" />Add Question</Button>
+                  </div>
+                  {(newAdditionalQuestionType === 'SINGLE_SELECT' || newAdditionalQuestionType === 'MULTI_SELECT') && (
+                    <Input
+                      value={newAdditionalQuestionOptionsText}
+                      onChange={(e) => setNewAdditionalQuestionOptionsText(e.target.value)}
+                      placeholder="Options (comma-separated), e.g., Yes,No,Maybe"
+                    />
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {selectedAdditionalQuestions.length === 0 ? (
+                    <div className="rounded-md border px-3 py-2 text-sm text-muted-foreground">No additional questions configured for this program.</div>
+                  ) : (
+                    selectedAdditionalQuestions.map((q, index) => (
+                      <div key={`${q.question}-${index}`} className="flex items-center justify-between rounded-md border px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium">#{index + 1}</p>
+                          <p className="text-sm">{q.question}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {q.type} | {q.required ? 'Required' : 'Optional'}
+                            {q.options && q.options.length > 0 ? ` | Options: ${q.options.join(', ')}` : ''}
+                          </p>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => removeAdditionalQuestion(q.question)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  }
 
   // ─── Detail view ────────────────────────────────────────────────────────
   if (selected) {
@@ -207,7 +547,8 @@ export default function AdminSurveyManager() {
               <Badge variant="outline">{selected.path_key}</Badge>
               <Badge variant={selected.is_active ? 'default' : 'secondary'}>{selected.is_active ? 'Active' : 'Inactive'}</Badge>
             </div>
-            <p className="text-sm text-muted-foreground mt-1">{selected.description || 'No description'} · Key: <code className="text-xs">{selected.template_key}</code></p>
+            <p className="text-sm text-muted-foreground mt-1">{selected.description || 'No description'} | Key: <code className="text-xs">{selected.template_key}</code></p>
+            {selected.program && <p className="text-xs text-muted-foreground mt-1">Program-specific: {selected.program.code} - {selected.program.name}</p>}
           </div>
           <Button variant="outline" onClick={() => setShowAddQ(true)} className="gap-1"><Plus className="h-4 w-4" /> Add Question</Button>
         </div>
@@ -350,6 +691,14 @@ export default function AdminSurveyManager() {
               {KINDS.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={programFilter} onValueChange={setProgramFilter}>
+            <SelectTrigger className="w-[220px]"><SelectValue placeholder="All Programs" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Programs</SelectItem>
+              <SelectItem value="global">Global Templates Only</SelectItem>
+              {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.code} ({p.name})</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -373,6 +722,7 @@ export default function AdminSurveyManager() {
               <div className="flex gap-2 flex-wrap">
                 <Badge variant="outline" className={kindColor[t.kind] || ''}>{t.kind}</Badge>
                 <Badge variant="outline">{t.path_key}</Badge>
+                <Badge variant="outline">{t.program ? `Program: ${t.program.code}` : 'Global'}</Badge>
                 <Badge variant={t.is_active ? 'default' : 'secondary'} className="text-[10px]">{t.is_active ? 'Active' : 'Inactive'}</Badge>
               </div>
               <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
@@ -387,6 +737,40 @@ export default function AdminSurveyManager() {
         )}
       </div>
 
+      <Card className="glass-card">
+        <CardContent className="pt-6 space-y-4">
+          <div>
+            <h3 className="font-display font-semibold">Programs</h3>
+            <p className="text-xs text-muted-foreground">Configure crucial skills and additional questions per program.</p>
+          </div>
+          <div className="space-y-2">
+            {programs.map((program) => (
+              <div key={program.id} className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">{program.code}</p>
+                  <p className="text-xs text-muted-foreground">{program.name}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {(programCrucialSkillsMap[normalizeProgramCodeKey(program.code)] || DEFAULT_PROGRAM_CRUCIAL_SKILLS[normalizeProgramCodeKey(program.code)] || []).length} skills | {(programAdditionalQuestionsMap[normalizeProgramCodeKey(program.code)] || []).length} additional questions
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingProgram(program);
+                    setNewSkill('');
+                    setNewAdditionalQuestion('');
+                  }}
+                >
+                  <Edit2 className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Create template dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-md">
@@ -398,6 +782,14 @@ export default function AdminSurveyManager() {
               <Input value={cf.template_key} onChange={e => setCf({...cf, template_key: e.target.value})} placeholder="Auto-generated if empty" /></div>
             <div className="space-y-2"><Label>Description</Label>
               <Input value={cf.description} onChange={e => setCf({...cf, description: e.target.value})} placeholder="Brief description" /></div>
+            <div className="space-y-2"><Label>Program Scope</Label>
+              <Select value={cf.program_id} onValueChange={v => setCf({...cf, program_id: v})}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Global (All Programs)</SelectItem>
+                  {programs.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.code} ({p.name})</SelectItem>)}
+                </SelectContent>
+              </Select></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label>Kind</Label>
                 <Select value={cf.kind} onValueChange={v => setCf({...cf, kind: v})}>

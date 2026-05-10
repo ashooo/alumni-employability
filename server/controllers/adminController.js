@@ -55,6 +55,8 @@ const requireRefactorPrisma = () => {
 
 const CONTENT_SETTINGS_KEY = 'site_content_settings_v1';
 const COLLEGE_BRANDING_SETTINGS_KEY = 'college_branding_v1';
+const PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY = 'program_crucial_skills_v1';
+const PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY = 'program_additional_questions_v1';
 
 const getContentSettings = async (req, res) => {
   try {
@@ -233,6 +235,128 @@ const saveCollegeBrandingSettings = async (req, res) => {
     return res
       .status(error.statusCode || 500)
       .json({ error: error.message || 'Failed to save college branding settings' });
+  }
+};
+
+const getProgramCrucialSkillsSettings = async (req, res) => {
+  try {
+    const refactorPrisma = requireRefactorPrisma();
+    const row = await refactorPrisma.systemSetting.findUnique({
+      where: { key: PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY }
+    });
+
+    if (!row) {
+      return res.json({ value: {} });
+    }
+
+    let parsedValue = {};
+    try {
+      parsedValue =
+        typeof row.value === 'string' ? JSON.parse(row.value || '{}') : row.value || {};
+    } catch {
+      parsedValue = {};
+    }
+
+    return res.json({ value: parsedValue });
+  } catch (error) {
+    console.error('Get program crucial skills settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to load program crucial skills settings' });
+  }
+};
+
+const saveProgramCrucialSkillsSettings = async (req, res) => {
+  try {
+    const value = req.body?.value;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return res.status(400).json({ error: 'value must be an object' });
+    }
+
+    const serializedValue = JSON.stringify(value);
+    const refactorPrisma = requireRefactorPrisma();
+
+    await refactorPrisma.systemSetting.upsert({
+      where: { key: PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY },
+      update: { value: serializedValue, updated_by: req.user?.id || null },
+      create: { key: PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY, value: serializedValue, updated_by: req.user?.id || null }
+    });
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'upsert_setting',
+      entityType: 'system_setting',
+      entityId: null,
+      metadata: { key: PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY }
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Save program crucial skills settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to save program crucial skills settings' });
+  }
+};
+
+const getProgramAdditionalQuestionsSettings = async (req, res) => {
+  try {
+    const refactorPrisma = requireRefactorPrisma();
+    const row = await refactorPrisma.systemSetting.findUnique({
+      where: { key: PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY }
+    });
+
+    if (!row) {
+      return res.json({ value: {} });
+    }
+
+    let parsedValue = {};
+    try {
+      parsedValue =
+        typeof row.value === 'string' ? JSON.parse(row.value || '{}') : row.value || {};
+    } catch {
+      parsedValue = {};
+    }
+
+    return res.json({ value: parsedValue });
+  } catch (error) {
+    console.error('Get program additional questions settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to load program additional questions settings' });
+  }
+};
+
+const saveProgramAdditionalQuestionsSettings = async (req, res) => {
+  try {
+    const value = req.body?.value;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return res.status(400).json({ error: 'value must be an object' });
+    }
+
+    const serializedValue = JSON.stringify(value);
+    const refactorPrisma = requireRefactorPrisma();
+
+    await refactorPrisma.systemSetting.upsert({
+      where: { key: PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY },
+      update: { value: serializedValue, updated_by: req.user?.id || null },
+      create: { key: PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY, value: serializedValue, updated_by: req.user?.id || null }
+    });
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'upsert_setting',
+      entityType: 'system_setting',
+      entityId: null,
+      metadata: { key: PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY }
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Save program additional questions settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to save program additional questions settings' });
   }
 };
 
@@ -2099,7 +2223,11 @@ module.exports = {
   getContentSettings,
   saveContentSettings,
   getCollegeBrandingSettings,
-  saveCollegeBrandingSettings
+  saveCollegeBrandingSettings,
+  getProgramCrucialSkillsSettings,
+  saveProgramCrucialSkillsSettings,
+  getProgramAdditionalQuestionsSettings,
+  saveProgramAdditionalQuestionsSettings
 };
       const toInverseFiveScaleScore = (value) => {
         if (!Number.isFinite(value) || value <= 0) return 0;

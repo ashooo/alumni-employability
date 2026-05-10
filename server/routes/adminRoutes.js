@@ -96,5 +96,9 @@ router.get('/content-settings', authenticateToken, adminController.getContentSet
 router.put('/content-settings', authenticateToken, adminController.saveContentSettings);
 router.get('/college-branding', authenticateToken, adminController.getCollegeBrandingSettings);
 router.put('/college-branding', authenticateToken, adminController.saveCollegeBrandingSettings);
+router.get('/program-crucial-skills', authenticateToken, adminController.getProgramCrucialSkillsSettings);
+router.put('/program-crucial-skills', authenticateToken, adminController.saveProgramCrucialSkillsSettings);
+router.get('/program-additional-questions', authenticateToken, adminController.getProgramAdditionalQuestionsSettings);
+router.put('/program-additional-questions', authenticateToken, adminController.saveProgramAdditionalQuestionsSettings);
 
 module.exports = router;

@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
 import { isAdminLike } from '@/lib/roles';
@@ -71,7 +72,8 @@ export default function AdminPrograms() {
     name: '',
     code: '',
     college_id: '',
-    description: ''
+    description: '',
+    crucial_skills_text: ''
   });
 
   // Bulk import state
@@ -106,8 +108,15 @@ export default function AdminPrograms() {
   // Stats state
   const [stats, setStats] = useState<any[]>([]);
   const [loadingStats, setLoadingStats] = useState(false);
+  const [programCrucialSkillsMap, setProgramCrucialSkillsMap] = useState<Record<string, string[]>>({});
 
   const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
+  const normalizeProgramCodeKey = (value: string) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  const parseCrucialSkillsText = (value: string) =>
+    String(value || '')
+      .split(/\r?\n|,/g)
+      .map((item) => item.trim())
+      .filter(Boolean);
 
   useEffect(() => {
     if (!isAuthenticated || !isAdminLike(user?.role)) {
@@ -241,6 +250,7 @@ export default function AdminPrograms() {
       fetchColleges();
       fetchPrograms();
       fetchStats();
+      fetchProgramCrucialSkills();
     }
   }, [isAuthenticated, user]);
 
@@ -256,7 +266,8 @@ export default function AdminPrograms() {
       name: '',
       code: '',
       college_id: '',
-      description: ''
+      description: '',
+      crucial_skills_text: ''
     });
   };
 
@@ -269,6 +280,46 @@ export default function AdminPrograms() {
       primary_color: '',
       accent_color: ''
     });
+  };
+
+  const fetchProgramCrucialSkills = async () => {
+    try {
+      const token = getToken();
+      const response = await fetch(`${API_URL}/admin/program-crucial-skills`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) return;
+      const payload = await response.json();
+      const value = payload?.value && typeof payload.value === 'object' ? payload.value : {};
+      setProgramCrucialSkillsMap(value);
+    } catch (error) {
+      console.error('Error fetching program crucial skills:', error);
+    }
+  };
+
+  const saveProgramCrucialSkills = async (programCode: string, skillsText: string) => {
+    const codeKey = normalizeProgramCodeKey(programCode);
+    if (!codeKey) return;
+
+    const token = getToken();
+    const nextMap = { ...programCrucialSkillsMap };
+    nextMap[codeKey] = parseCrucialSkillsText(skillsText);
+
+    const response = await fetch(`${API_URL}/admin/program-crucial-skills`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ value: nextMap })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json();
+      throw new Error(payload.error || 'Failed to save program crucial skills');
+    }
+
+    setProgramCrucialSkillsMap(nextMap);
   };
 
   const saveCollegeBranding = async (collegeCode: string, payload: { logo_url?: string; primary_color?: string; accent_color?: string }) => {
@@ -329,6 +380,7 @@ export default function AdminPrograms() {
       });
 
       if (response.ok) {
+        await saveProgramCrucialSkills(formData.code, formData.crucial_skills_text);
         toast({
           title: 'Success',
           description: 'Program created successfully'
@@ -369,6 +421,7 @@ export default function AdminPrograms() {
       });
 
       if (response.ok) {
+        await saveProgramCrucialSkills(formData.code || selectedProgram.code, formData.crucial_skills_text);
         toast({
           title: 'Success',
           description: 'Program updated successfully'
@@ -607,9 +660,6 @@ export default function AdminPrograms() {
           <Button variant="outline" onClick={() => setShowBulkDialog(true)}>
             <Upload className="h-4 w-4 mr-2" /> Bulk Import
           </Button>
-          <Button onClick={() => setShowAddDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" /> Add Program
-          </Button>
         </div>
       </div>
 
@@ -778,9 +828,14 @@ export default function AdminPrograms() {
 
       {/* Programs Table */}
       <div className="glass-card overflow-hidden border-2 border-border/60">
-        <div className="p-4 border-b bg-muted/30">
-          <h3 className="font-display font-semibold">Programs</h3>
-          <p className="text-xs text-muted-foreground">Programs mapped under each college.</p>
+        <div className="p-4 border-b bg-muted/30 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-display font-semibold">Programs</h3>
+            <p className="text-xs text-muted-foreground">Programs mapped under each college.</p>
+          </div>
+          <Button onClick={() => setShowAddDialog(true)} size="sm">
+            <Plus className="h-4 w-4 mr-2" /> Add Program
+          </Button>
         </div>
         <div className="overflow-auto">
           <Table>
@@ -833,7 +888,8 @@ export default function AdminPrograms() {
                               name: p.name,
                               code: p.code,
                               college_id: String(p.college_id),
-                              description: p.description || ''
+                              description: p.description || '',
+                              crucial_skills_text: (programCrucialSkillsMap[normalizeProgramCodeKey(p.code)] || []).join('\n')
                             });
                             setShowEditDialog(true);
                           }}
@@ -910,6 +966,15 @@ export default function AdminPrograms() {
                 placeholder="Brief description of the program"
               />
             </div>
+            <div className="space-y-2">
+              <Label>Crucial Skills (one per line)</Label>
+              <Textarea
+                className="min-h-[110px]"
+                value={formData.crucial_skills_text}
+                onChange={e => setFormData({ ...formData, crucial_skills_text: e.target.value })}
+                placeholder={"Programming Logic Skills\nProblem-Solving Skills\nCommunication Skills"}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancel</Button>
@@ -965,6 +1030,15 @@ export default function AdminPrograms() {
               <Input 
                 value={formData.description}
                 onChange={e => setFormData({...formData, description: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Crucial Skills (one per line)</Label>
+              <Textarea
+                className="min-h-[110px]"
+                value={formData.crucial_skills_text}
+                onChange={e => setFormData({ ...formData, crucial_skills_text: e.target.value })}
+                placeholder={"Programming Logic Skills\nProblem-Solving Skills\nCommunication Skills"}
               />
             </div>
           </div>

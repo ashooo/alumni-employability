@@ -405,8 +405,8 @@ export default function AdminAnalytics() {
                           </ComposedChart>
                         </ResponsiveContainer>
                       ) : (
-                        <div className="h-[400px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed">
-                          No prediction data available
+                        <div className="h-[400px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed text-center p-4">
+                          No prediction data available. Please click 'Predict' on the ARIMA tab in Prediction Models.
                         </div>
                       )}
 
@@ -489,8 +489,8 @@ export default function AdminAnalytics() {
                   </ComposedChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-[300px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed">
-                  No prediction data available
+                <div className="h-[300px] flex items-center justify-center text-muted-foreground border rounded-lg border-dashed text-center p-4">
+                  No prediction data available. Please click 'Predict' on the ARIMA tab in Prediction Models.
                 </div>
               )}
             </motion.div>

@@ -38,6 +38,9 @@ interface College {
   description?: string;
   program_count?: number;
   alumni_count?: number;
+  logo_url?: string;
+  primary_color?: string;
+  accent_color?: string;
 }
 
 export default function AdminPrograms() {
@@ -78,8 +81,27 @@ export default function AdminPrograms() {
   const [collegeFormData, setCollegeFormData] = useState({
     name: '',
     code: '',
-    description: ''
+    description: '',
+    logo_url: '',
+    primary_color: '',
+    accent_color: ''
   });
+
+  const normalizeHexColor = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const prefixed = raw.startsWith('#') ? raw : `#${raw}`;
+    return /^#[0-9A-Fa-f]{6}$/.test(prefixed) ? prefixed : '';
+  };
+
+  const getDefaultCollegeLogo = (collegeCode: string) => {
+    const code = String(collegeCode || '').trim().toUpperCase();
+    if (code === 'CBA') return '/college_logos/accountancy.png';
+    if (code === 'CCS') return '/college_logos/compsci.png';
+    if (code === 'CEAS') return '/college_logos/education.png';
+    if (code === 'CON') return '/college_logos/nursing.png';
+    return '/college_logos/artsandscience.png';
+  };
 
   // Stats state
   const [stats, setStats] = useState<any[]>([]);
@@ -97,14 +119,22 @@ export default function AdminPrograms() {
   const fetchColleges = async () => {
     try {
       const token = getToken();
-      const [baseRes, statsRes] = await Promise.all([
+      const [baseRes, statsRes, brandingRes] = await Promise.all([
         fetch(`${API_URL}/admin/colleges`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
         fetch(`${API_URL}/admin/colleges/stats`, {
           headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch(`${API_URL}/admin/college-branding`, {
+          headers: { Authorization: `Bearer ${token}` }
         })
       ]);
+
+      const brandingPayload = brandingRes.ok ? await brandingRes.json() : { value: {} };
+      const brandingByCode = brandingPayload?.value && typeof brandingPayload.value === 'object'
+        ? brandingPayload.value
+        : {};
 
       if (baseRes.ok) {
         const baseData = await baseRes.json();
@@ -119,23 +149,37 @@ export default function AdminPrograms() {
           ])
         );
 
-        const merged = (Array.isArray(baseData) ? baseData : []).map((c: any) => ({
-          ...c,
-          program_count: statsMap.get(Number(c.id))?.program_count ?? Number(c.program_count || 0),
-          alumni_count: statsMap.get(Number(c.id))?.alumni_count ?? Number(c.alumni_count || 0)
-        }));
+        const merged = (Array.isArray(baseData) ? baseData : []).map((c: any) => {
+          const collegeCode = String(c.code || '').toUpperCase();
+          const branding = collegeCode ? brandingByCode[collegeCode] || {} : {};
+          return {
+            ...c,
+            program_count: statsMap.get(Number(c.id))?.program_count ?? Number(c.program_count || 0),
+            alumni_count: statsMap.get(Number(c.id))?.alumni_count ?? Number(c.alumni_count || 0),
+            logo_url: branding.logoUrl || '',
+            primary_color: branding.primaryColor || '',
+            accent_color: branding.accentColor || ''
+          };
+        });
 
         setColleges(merged);
       } else if (statsRes.ok) {
         const statsData = await statsRes.json();
-        const fallback = (Array.isArray(statsData) ? statsData : []).map((s: any) => ({
-          id: Number(s.id),
-          name: s.name || '',
-          code: s.code || '',
-          description: '',
-          program_count: Number(s.total_programs || 0),
-          alumni_count: Number(s.total_alumni || 0)
-        }));
+        const fallback = (Array.isArray(statsData) ? statsData : []).map((s: any) => {
+          const collegeCode = String(s.code || '').toUpperCase();
+          const branding = collegeCode ? brandingByCode[collegeCode] || {} : {};
+          return {
+            id: Number(s.id),
+            name: s.name || '',
+            code: s.code || '',
+            description: '',
+            program_count: Number(s.total_programs || 0),
+            alumni_count: Number(s.total_alumni || 0),
+            logo_url: branding.logoUrl || '',
+            primary_color: branding.primaryColor || '',
+            accent_color: branding.accentColor || ''
+          };
+        });
         setColleges(fallback);
       }
     } catch (error) {
@@ -220,8 +264,45 @@ export default function AdminPrograms() {
     setCollegeFormData({
       name: '',
       code: '',
-      description: ''
+      description: '',
+      logo_url: '',
+      primary_color: '',
+      accent_color: ''
     });
+  };
+
+  const saveCollegeBranding = async (collegeCode: string, payload: { logo_url?: string; primary_color?: string; accent_color?: string }) => {
+    const code = String(collegeCode || '').trim().toUpperCase();
+    if (!code) return;
+
+    const token = getToken();
+    const currentResponse = await fetch(`${API_URL}/admin/college-branding`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const currentPayload = currentResponse.ok ? await currentResponse.json() : { value: {} };
+    const nextValue = currentPayload?.value && typeof currentPayload.value === 'object'
+      ? { ...currentPayload.value }
+      : {};
+
+    nextValue[code] = {
+      logoUrl: String(payload.logo_url || '').trim(),
+      primaryColor: String(payload.primary_color || '').trim(),
+      accentColor: String(payload.accent_color || '').trim()
+    };
+
+    const saveResponse = await fetch(`${API_URL}/admin/college-branding`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ value: nextValue })
+    });
+
+    if (!saveResponse.ok) {
+      const saveError = await saveResponse.json();
+      throw new Error(saveError.error || 'Failed to save college branding');
+    }
   };
 
   // Handle create program
@@ -416,6 +497,10 @@ export default function AdminPrograms() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Failed to create college');
+      const newCollegeCode = String(payload?.code || collegeFormData.code || '').toUpperCase();
+      if (newCollegeCode) {
+        await saveCollegeBranding(newCollegeCode, collegeFormData);
+      }
       toast({ title: 'Success', description: 'College created successfully.' });
       setShowAddCollegeDialog(false);
       resetCollegeForm();
@@ -446,6 +531,10 @@ export default function AdminPrograms() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Failed to update college');
+      const updatedCollegeCode = String(collegeFormData.code || selectedCollege.code || '').toUpperCase();
+      if (updatedCollegeCode) {
+        await saveCollegeBranding(updatedCollegeCode, collegeFormData);
+      }
       toast({ title: 'Success', description: 'College updated successfully.' });
       setShowEditCollegeDialog(false);
       setSelectedCollege(null);
@@ -657,7 +746,10 @@ export default function AdminPrograms() {
                             setCollegeFormData({
                               name: c.name || '',
                               code: c.code || '',
-                              description: c.description || ''
+                              description: c.description || '',
+                              logo_url: c.logo_url || '',
+                              primary_color: c.primary_color || '',
+                              accent_color: c.accent_color || ''
                             });
                             setShowEditCollegeDialog(true);
                           }}
@@ -1015,6 +1107,67 @@ export default function AdminPrograms() {
               <Label>Description</Label>
               <Input value={collegeFormData.description} onChange={e => setCollegeFormData({ ...collegeFormData, description: e.target.value })} />
             </div>
+            <div className="space-y-2">
+              <Label>Logo URL</Label>
+              <Input value={collegeFormData.logo_url} onChange={e => setCollegeFormData({ ...collegeFormData, logo_url: e.target.value })} placeholder="/college_logos/accountancy.png" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Primary Color</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    className="h-10 w-12 rounded border border-input bg-background p-1"
+                    value={normalizeHexColor(collegeFormData.primary_color) || '#fcd34d'}
+                    onChange={e => setCollegeFormData({ ...collegeFormData, primary_color: e.target.value })}
+                  />
+                  <Input value={collegeFormData.primary_color} onChange={e => setCollegeFormData({ ...collegeFormData, primary_color: e.target.value })} placeholder="#fcd34d" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Accent Color</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    className="h-10 w-12 rounded border border-input bg-background p-1"
+                    value={normalizeHexColor(collegeFormData.accent_color) || '#f59e0b'}
+                    onChange={e => setCollegeFormData({ ...collegeFormData, accent_color: e.target.value })}
+                  />
+                  <Input value={collegeFormData.accent_color} onChange={e => setCollegeFormData({ ...collegeFormData, accent_color: e.target.value })} placeholder="#f59e0b" />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Logo Preview</Label>
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border bg-background">
+                  {(String(collegeFormData.logo_url || '').trim() || String(collegeFormData.code || '').trim()) ? (
+                    <img
+                      src={String(collegeFormData.logo_url || '').trim() || getDefaultCollegeLogo(collegeFormData.code)}
+                      alt="College logo preview"
+                      className="h-9 w-9 object-contain"
+                      onError={(e) => {
+                        e.currentTarget.src = '/college_logos/artsandscience.png';
+                      }}
+                    />
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">No logo</span>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Color Preview</Label>
+                <div
+                  className="rounded-md border p-2"
+                  style={{
+                    backgroundImage: `linear-gradient(to right, ${normalizeHexColor(collegeFormData.primary_color) || '#fcd34d'}, #ffffff)`,
+                    borderColor: normalizeHexColor(collegeFormData.accent_color) || '#f59e0b'
+                  }}
+                >
+                  <p className="text-[11px] font-medium leading-none">Banner sample</p>
+                </div>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddCollegeDialog(false)}>Cancel</Button>
@@ -1041,6 +1194,67 @@ export default function AdminPrograms() {
             <div className="space-y-2">
               <Label>Description</Label>
               <Input value={collegeFormData.description} onChange={e => setCollegeFormData({ ...collegeFormData, description: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Logo URL</Label>
+              <Input value={collegeFormData.logo_url} onChange={e => setCollegeFormData({ ...collegeFormData, logo_url: e.target.value })} placeholder="/college_logos/accountancy.png" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Primary Color</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    className="h-10 w-12 rounded border border-input bg-background p-1"
+                    value={normalizeHexColor(collegeFormData.primary_color) || '#fcd34d'}
+                    onChange={e => setCollegeFormData({ ...collegeFormData, primary_color: e.target.value })}
+                  />
+                  <Input value={collegeFormData.primary_color} onChange={e => setCollegeFormData({ ...collegeFormData, primary_color: e.target.value })} placeholder="#fcd34d" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Accent Color</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    className="h-10 w-12 rounded border border-input bg-background p-1"
+                    value={normalizeHexColor(collegeFormData.accent_color) || '#f59e0b'}
+                    onChange={e => setCollegeFormData({ ...collegeFormData, accent_color: e.target.value })}
+                  />
+                  <Input value={collegeFormData.accent_color} onChange={e => setCollegeFormData({ ...collegeFormData, accent_color: e.target.value })} placeholder="#f59e0b" />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Logo Preview</Label>
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border bg-background">
+                  {(String(collegeFormData.logo_url || '').trim() || String(collegeFormData.code || '').trim()) ? (
+                    <img
+                      src={String(collegeFormData.logo_url || '').trim() || getDefaultCollegeLogo(collegeFormData.code)}
+                      alt="College logo preview"
+                      className="h-9 w-9 object-contain"
+                      onError={(e) => {
+                        e.currentTarget.src = '/college_logos/artsandscience.png';
+                      }}
+                    />
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">No logo</span>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Color Preview</Label>
+                <div
+                  className="rounded-md border p-2"
+                  style={{
+                    backgroundImage: `linear-gradient(to right, ${normalizeHexColor(collegeFormData.primary_color) || '#fcd34d'}, #ffffff)`,
+                    borderColor: normalizeHexColor(collegeFormData.accent_color) || '#f59e0b'
+                  }}
+                >
+                  <p className="text-[11px] font-medium leading-none">Banner sample</p>
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>

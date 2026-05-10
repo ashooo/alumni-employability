@@ -1,7 +1,6 @@
 import { ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { Info, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import LoadingScreen from '@/components/ui/loading-screen';
 import { Info, TrendingDown, TrendingUp, Minus, Loader2, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -289,9 +288,6 @@ export default function ArimaTab() {
 
         {loading ? (
           <LoadingScreen fullScreen={false} message="Loading ARIMA forecast data..." className="min-h-[300px]" />
-          <div className="flex h-[300px] items-center justify-center">
-            <p className="text-muted-foreground animate-pulse">Loading prediction data...</p>
-          </div>
         ) : fetchError || !arimaData ? (
           <div className="flex flex-col h-[300px] items-center justify-center border rounded-lg border-dashed text-center p-6 bg-muted/10">
             <Brain className="h-10 w-10 text-muted-foreground mb-4 opacity-50" />

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FileText, FileSpreadsheet, Table2, Loader2, Settings2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -41,10 +41,20 @@ const ROW_ALT_HEX = '#F7F7F7';
 const LOGO_SEAL_PATH = '/seal_logo.png';
 const LOGO_PASIG_PATH = '/pasig_logo.png';
 const LOGO_PLP_PATH = '/plp_logo.png';
+const DEFAULT_REPORT_LOGOS = [LOGO_SEAL_PATH, LOGO_PASIG_PATH, LOGO_PLP_PATH] as const;
 
 async function fetchImage(path: string): Promise<ArrayBuffer> {
   const res = await fetch(path);
+  if (!res.ok) throw new Error(`Failed to load image: ${path}`);
   return res.arrayBuffer();
+}
+
+async function fetchImageWithFallback(primary: string, fallback: string): Promise<ArrayBuffer> {
+  try {
+    return await fetchImage(primary);
+  } catch {
+    return fetchImage(fallback);
+  }
 }
 
 /** Normalize snake_case / UPPER_CASE API values to human-readable strings. */
@@ -160,7 +170,28 @@ export default function AdminReports() {
   const [isLoading, setIsLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [header, setHeader] = useState(defaultHeader);
+  const [reportLogos, setReportLogos] = useState<string[]>([...DEFAULT_REPORT_LOGOS]);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const loadLogos = async () => {
+      try {
+        const res = await fetch(`${API_URL}/superadmin/public-settings/system_branding`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const value = typeof data?.value === 'string' ? JSON.parse(data.value) : data?.value;
+        const logos = [
+          String(value?.reportLogo1 || DEFAULT_REPORT_LOGOS[0]),
+          String(value?.reportLogo2 || DEFAULT_REPORT_LOGOS[1]),
+          String(value?.reportLogo3 || DEFAULT_REPORT_LOGOS[2]),
+        ];
+        setReportLogos(logos);
+      } catch {
+        setReportLogos([...DEFAULT_REPORT_LOGOS]);
+      }
+    };
+    loadLogos();
+  }, []);
 
   // ── Fetch report data ───────────────────────────────────────────────────────
   const handleGenerate = async () => {
@@ -231,9 +262,9 @@ export default function AdminReports() {
             <div class="report-header">
               <div class="head-grid">
                 <div class="logos">
-                  <img src="${LOGO_SEAL_PATH}" alt="seal" />
-                  <img src="${LOGO_PASIG_PATH}" alt="pasig" />
-                  <img src="${LOGO_PLP_PATH}" alt="plp" />
+                  <img src="${reportLogos[0] || DEFAULT_REPORT_LOGOS[0]}" onerror="this.onerror=null;this.src='${DEFAULT_REPORT_LOGOS[0]}'" alt="seal" />
+                  <img src="${reportLogos[1] || DEFAULT_REPORT_LOGOS[1]}" onerror="this.onerror=null;this.src='${DEFAULT_REPORT_LOGOS[1]}'" alt="pasig" />
+                  <img src="${reportLogos[2] || DEFAULT_REPORT_LOGOS[2]}" onerror="this.onerror=null;this.src='${DEFAULT_REPORT_LOGOS[2]}'" alt="plp" />
                 </div>
                 <div class="head-text">
                   <div class="univ">${esc(univName)}</div>
@@ -430,9 +461,9 @@ export default function AdminReports() {
           // ── Logos ────────────────────────────────────────────────────────────
           try {
             const [sealBuf, pasigBuf, plpBuf] = await Promise.all([
-              fetchImage(LOGO_SEAL_PATH),
-              fetchImage(LOGO_PASIG_PATH),
-              fetchImage(LOGO_PLP_PATH),
+              fetchImageWithFallback(reportLogos[0] || DEFAULT_REPORT_LOGOS[0], DEFAULT_REPORT_LOGOS[0]),
+              fetchImageWithFallback(reportLogos[1] || DEFAULT_REPORT_LOGOS[1], DEFAULT_REPORT_LOGOS[1]),
+              fetchImageWithFallback(reportLogos[2] || DEFAULT_REPORT_LOGOS[2], DEFAULT_REPORT_LOGOS[2]),
             ]);
             const toEmu = (px: number) => Math.round(px * 9525);
 

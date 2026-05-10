@@ -1,4 +1,3 @@
-import { Loader2 } from "lucide-react";
 import React from "react";
 import { cn } from "@/lib/utils";
 
@@ -81,16 +80,8 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
 
         {/* Message + progress */}
         {message && (
-          <div className="flex flex-col items-center space-y-3">
-            <div className="flex items-center space-x-2.5 text-foreground font-semibold">
-              <Loader2 className="w-[18px] h-[18px] animate-spin text-primary" />
-              <span className="text-base tracking-wide">{message}</span>
-            </div>
-
-            {/* Animated progress bar */}
-            <div className="w-48 h-1 rounded-full bg-muted/60 overflow-hidden">
-              <div className="h-full rounded-full bg-gradient-to-r from-primary via-primary/60 to-primary ls-progress-slide" />
-            </div>
+          <div className="text-foreground font-semibold">
+            <span className="text-base tracking-wide">{message}</span>
           </div>
         )}
       </div>
@@ -145,10 +136,6 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
         }
 
         /* ── Progress bar slide ────────────────────────────────── */
-        .ls-progress-slide {
-          width: 40%;
-          animation: ls-slide 1.6s ease-in-out infinite;
-        }
 
         /* ── Floating blob drift ───────────────────────────────── */
         @keyframes ls-float {
@@ -180,10 +167,6 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
         }
 
         /* ── Progress slide ────────────────────────────────────── */
-        @keyframes ls-slide {
-          0%   { transform: translateX(-100%); }
-          100% { transform: translateX(350%); }
-        }
       `}</style>
     </div>
   );

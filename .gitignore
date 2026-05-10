@@ -15,10 +15,14 @@ dist-ssr/
 
 # Environment files
 .env
-server/.env
-server/.env.refactor
-client/.env.local
+.env.*
+**/.env
+**/.env.*
 *.local
+!*.env.example
+!*.env.sample
+!**/*.env.example
+!**/*.env.sample
 
 # Editor
 .DS_Store

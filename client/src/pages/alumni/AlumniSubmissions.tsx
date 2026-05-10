@@ -277,7 +277,6 @@ export default function AlumniSubmissions() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Version</TableHead>
                 <TableHead>Questions</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead></TableHead>
@@ -289,7 +288,6 @@ export default function AlumniSubmissions() {
                   <TableCell className="font-medium">
                     {formatDate(sub.completed_at)}
                   </TableCell>
-                  <TableCell>Version {sub.survey_version}</TableCell>
                   <TableCell>{sub.answers?.length || 0}</TableCell>
                   <TableCell>
                     <StatusBadge status={sub.status === 'completed' ? 'Completed' : sub.status} />

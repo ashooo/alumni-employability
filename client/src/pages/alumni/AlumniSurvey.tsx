@@ -103,6 +103,12 @@ interface Prediction {
     }>;
   } | null;
 }
+interface ProgramAdditionalQuestionConfig {
+  question: string;
+  type: 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'SINGLE_SELECT' | 'MULTI_SELECT';
+  required: boolean;
+  options?: string[];
+}
 
 type SurveyStage =
   | 'initial'
@@ -356,17 +362,31 @@ const PROGRAM_CODE_ALIASES: Record<string, string> = {
   BSECE: 'BSECE'
 };
 
-const getRequiredSkillsForProgram = (programCode?: string | null) => {
+const getRequiredSkillsForProgram = (
+  programCode?: string | null,
+  configuredMap?: Record<string, string[]>
+) => {
   const normalized = normalizeProgramKey(String(programCode || ''));
   const key = PROGRAM_CODE_ALIASES[normalized] || normalized;
-  return PROGRAM_REQUIRED_SKILLS[key] || [];
+  const configured = configuredMap && Array.isArray(configuredMap[key]) ? configuredMap[key] : null;
+  return configured || PROGRAM_REQUIRED_SKILLS[key] || [];
+};
+
+const getAdditionalQuestionsForProgram = (
+  programCode?: string | null,
+  configuredMap?: Record<string, ProgramAdditionalQuestionConfig[]>
+) => {
+  const normalized = normalizeProgramKey(String(programCode || ''));
+  const key = PROGRAM_CODE_ALIASES[normalized] || normalized;
+  return configuredMap?.[key] || [];
 };
 
 const buildProgramSkillRatingsPayload = (
   programCode: string | null | undefined,
-  ratings: Record<string, number>
+  ratings: Record<string, number>,
+  configuredMap?: Record<string, string[]>
 ) =>
-  getRequiredSkillsForProgram(programCode).map((skill) => ({
+  getRequiredSkillsForProgram(programCode, configuredMap).map((skill) => ({
     skill_name: skill,
     skill_value: ratings[skill] || 5
   }));
@@ -557,6 +577,10 @@ export default function AlumniSurvey() {
   );
   const [skillRatings, setSkillRatings] = useState<Record<number, number>>({});
   const [programSkillRatings, setProgramSkillRatings] = useState<Record<string, number>>({});
+  const [programRequiredSkillsMap, setProgramRequiredSkillsMap] =
+    useState<Record<string, string[]>>(PROGRAM_REQUIRED_SKILLS);
+  const [programAdditionalQuestionsMap, setProgramAdditionalQuestionsMap] = useState<Record<string, ProgramAdditionalQuestionConfig[]>>({});
+  const [programAdditionalAnswers, setProgramAdditionalAnswers] = useState<Record<string, string | string[]>>({});
   const [predictionResult, setPredictionResult] = useState<Prediction | null>(null);
   const [academicProfileLoaded, setAcademicProfileLoaded] = useState(false);
   const [experienceAnswers, setExperienceAnswers] = useState(createInitialExperienceAnswers);
@@ -582,7 +606,69 @@ export default function AlumniSurvey() {
   }, []);
 
   useEffect(() => {
-    const required = getRequiredSkillsForProgram(surveyStatus?.programCode);
+    const fetchProgramConfigs = async () => {
+      try {
+        const [skillsRes, additionalRes] = await Promise.all([
+          fetch(`${API_URL}/superadmin/public-settings/program_crucial_skills_v1`),
+          fetch(`${API_URL}/superadmin/public-settings/program_additional_questions_v1`)
+        ]);
+        if (skillsRes.ok) {
+          const payload = await skillsRes.json();
+          const value = payload?.value;
+          const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            setProgramRequiredSkillsMap((prev) => ({ ...prev, ...parsed }));
+          }
+        }
+        if (additionalRes.ok) {
+          const payload = await additionalRes.json();
+          const value = payload?.value;
+          const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const normalized: Record<string, ProgramAdditionalQuestionConfig[]> = {};
+            Object.entries(parsed as Record<string, any[]>).forEach(([programKey, entries]) => {
+              normalized[programKey] = Array.isArray(entries)
+                ? entries
+                    .map((entry) => {
+                      if (typeof entry === 'string') {
+                        return {
+                          question: entry,
+                          type: 'TEXT',
+                          required: false,
+                          options: []
+                        } as ProgramAdditionalQuestionConfig;
+                      }
+                      if (!entry || typeof entry !== 'object') return null;
+                      const question = String((entry as any).question || '').trim();
+                      if (!question) return null;
+                      const typeRaw = String((entry as any).type || 'TEXT').toUpperCase();
+                      const supported = new Set(['TEXT', 'TEXTAREA', 'NUMBER', 'SINGLE_SELECT', 'MULTI_SELECT']);
+                      const type = (supported.has(typeRaw) ? typeRaw : 'TEXT') as ProgramAdditionalQuestionConfig['type'];
+                      const options = Array.isArray((entry as any).options)
+                        ? (entry as any).options.map((o: any) => String(o || '').trim()).filter(Boolean)
+                        : [];
+                      return {
+                        question,
+                        type,
+                        required: Boolean((entry as any).required),
+                        options
+                      } as ProgramAdditionalQuestionConfig;
+                    })
+                    .filter((entry): entry is ProgramAdditionalQuestionConfig => Boolean(entry))
+                : [];
+            });
+            setProgramAdditionalQuestionsMap(normalized);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load program config:', error);
+      }
+    };
+    fetchProgramConfigs();
+  }, []);
+
+  useEffect(() => {
+    const required = getRequiredSkillsForProgram(surveyStatus?.programCode, programRequiredSkillsMap);
     if (required.length === 0) {
       return;
     }
@@ -593,7 +679,21 @@ export default function AlumniSurvey() {
       }
       return next;
     });
-  }, [surveyStatus?.programCode]);
+  }, [surveyStatus?.programCode, programRequiredSkillsMap]);
+
+  useEffect(() => {
+    const questions = getAdditionalQuestionsForProgram(surveyStatus?.programCode, programAdditionalQuestionsMap);
+    if (questions.length === 0) return;
+    setProgramAdditionalAnswers((prev) => {
+      const next = { ...prev };
+      for (const q of questions) {
+        if (next[q.question] === undefined) {
+          next[q.question] = q.type === 'MULTI_SELECT' ? [] : '';
+        }
+      }
+      return next;
+    });
+  }, [surveyStatus?.programCode, programAdditionalQuestionsMap]);
 
   const syncSurveyStatus = (nextSurveyStatus: SurveyFlowStatus) => {
     setSurveyStatus(nextSurveyStatus);
@@ -1368,12 +1468,14 @@ export default function AlumniSurvey() {
             act_member_pos: experienceAnswers.activeMember === 'Yes',
             program_skill_ratings: buildProgramSkillRatingsPayload(
               surveyStatus?.programCode,
-              programSkillRatings
+              programSkillRatings,
+              programRequiredSkillsMap
             )
           },
           skillRatings: skillRatingsFormatted,
           additionalAnswers: {
             ...answers,
+            ...programAdditionalAnswers,
             internship_completed: experienceAnswers.internshipCompleted,
             internship_length: experienceAnswers.internshipLength,
             internship_relatedness: experienceAnswers.internshipRelatedness,
@@ -1642,8 +1744,20 @@ export default function AlumniSurvey() {
 
   if (surveyStage === 'wizard') {
     const isBoardProgram = BOARD_PROGRAMS.has(String(surveyStatus?.programCode || '').toUpperCase());
-    const currentStep = WIZARD_STEPS.find((step) => step.step === wizardStep) || WIZARD_STEPS[0];
-    const totalWizardSteps = WIZARD_STEPS.length;
+    const hasPathAdditionalQuestions = categories.some((category) =>
+      category.questions.some((question) => question.question_key !== decisionQuestionKey)
+    );
+    const visibleWizardSteps = WIZARD_STEPS.filter((step) => {
+      if (step.step === 4 && !isBoardProgram) return false;
+      if (step.step === 14 && !hasPathAdditionalQuestions) return false;
+      return true;
+    });
+    const currentStep = visibleWizardSteps.find((step) => step.step === wizardStep) || visibleWizardSteps[0];
+    const currentStepIndex = Math.max(
+      0,
+      visibleWizardSteps.findIndex((step) => step.step === currentStep.step)
+    );
+    const totalWizardSteps = visibleWizardSteps.length;
     const competencyStepConfig = COMPETENCY_STEP_CONFIGS[wizardStep];
     const selectedHardSkills = selectedCompetencies.HARD_SKILL;
     const selectedSoftSkills = selectedCompetencies.SOFT_SKILL;
@@ -1746,11 +1860,11 @@ export default function AlumniSurvey() {
           <div>
             <h1 className="text-3xl font-display font-bold text-primary">Employability Assessment</h1>
             <p className="text-muted-foreground">
-              Step {wizardStep} of {totalWizardSteps}: {currentStep.label}
+              Step {currentStepIndex + 1} of {totalWizardSteps}: {currentStep.label}
             </p>
           </div>
           <div className="flex gap-2">
-            {WIZARD_STEPS.map((step) => (
+            {visibleWizardSteps.map((step) => (
               <div
                 key={step.step}
                 className={`h-2 w-12 rounded-full transition-colors ${
@@ -1773,7 +1887,7 @@ export default function AlumniSurvey() {
           key={wizardStep}
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="glass-card p-8 min-h-[500px] flex flex-col"
+          className="glass-card p-8"
         >
           {wizardStep === 1 && (
             <div className="space-y-6 flex-1">
@@ -1972,8 +2086,8 @@ export default function AlumniSurvey() {
                 </p>
               </div>
               <div className="space-y-6 pt-2 max-w-3xl mx-auto">
-                {getRequiredSkillsForProgram(surveyStatus?.programCode).length > 0 ? (
-                  getRequiredSkillsForProgram(surveyStatus?.programCode).map((skill) => (
+                {getRequiredSkillsForProgram(surveyStatus?.programCode, programRequiredSkillsMap).length > 0 ? (
+                  getRequiredSkillsForProgram(surveyStatus?.programCode, programRequiredSkillsMap).map((skill) => (
                     <div key={skill} className="space-y-3">
                       <div className="flex justify-between">
                         <Label className="text-base font-medium">{skill}</Label>
@@ -1995,6 +2109,83 @@ export default function AlumniSurvey() {
                     <p className="text-muted-foreground">
                       No crucial skills configured for your program. You can continue.
                     </p>
+                  </div>
+                )}
+                {getAdditionalQuestionsForProgram(surveyStatus?.programCode, programAdditionalQuestionsMap).length > 0 && (
+                  <div className="space-y-4 rounded-lg border p-4 bg-muted/20">
+                    <h4 className="font-semibold">Program Additional Questions</h4>
+                    {getAdditionalQuestionsForProgram(surveyStatus?.programCode, programAdditionalQuestionsMap).map((question) => (
+                      <div key={question.question} className="space-y-2">
+                        <Label>{question.question}</Label>
+                        {question.type === 'TEXTAREA' ? (
+                          <textarea
+                            className="w-full min-h-[90px] rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            value={String(programAdditionalAnswers[question.question] || '')}
+                            onChange={(e) =>
+                              setProgramAdditionalAnswers((prev) => ({ ...prev, [question.question]: e.target.value }))
+                            }
+                            placeholder="Type your answer"
+                          />
+                        ) : question.type === 'NUMBER' ? (
+                          <Input
+                            type="number"
+                            value={String(programAdditionalAnswers[question.question] || '')}
+                            onChange={(e) =>
+                              setProgramAdditionalAnswers((prev) => ({ ...prev, [question.question]: e.target.value }))
+                            }
+                            placeholder="Enter a number"
+                          />
+                        ) : question.type === 'SINGLE_SELECT' ? (
+                          <Select
+                            value={String(programAdditionalAnswers[question.question] || '')}
+                            onValueChange={(value) =>
+                              setProgramAdditionalAnswers((prev) => ({ ...prev, [question.question]: value }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select one option" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(question.options || []).map((opt) => (
+                                <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : question.type === 'MULTI_SELECT' ? (
+                          <div className="space-y-2">
+                            {(question.options || []).map((opt) => {
+                              const selected = Array.isArray(programAdditionalAnswers[question.question])
+                                ? (programAdditionalAnswers[question.question] as string[])
+                                : [];
+                              const checked = selected.includes(opt);
+                              return (
+                                <label key={opt} className="flex items-center gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => {
+                                      const next = e.target.checked
+                                        ? [...selected, opt]
+                                        : selected.filter((item) => item !== opt);
+                                      setProgramAdditionalAnswers((prev) => ({ ...prev, [question.question]: next }));
+                                    }}
+                                  />
+                                  {opt}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <Input
+                            value={String(programAdditionalAnswers[question.question] || '')}
+                            onChange={(e) =>
+                              setProgramAdditionalAnswers((prev) => ({ ...prev, [question.question]: e.target.value }))
+                            }
+                            placeholder="Type your answer"
+                          />
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -2068,31 +2259,35 @@ export default function AlumniSurvey() {
             </div>
           )}
 
-          <div className="mt-auto border-t pt-8 flex justify-between">
+          <div className="mt-6 border-t pt-8 flex justify-between">
             <Button
               variant="outline"
               size="lg"
               onClick={() => {
-                if (wizardStep === 1) {
+                if (currentStepIndex === 0) {
                   navigate('/app/alumni/dashboard');
                   return;
                 }
-
-                setWizardStep((prev) => prev - 1);
+                const previousStep = visibleWizardSteps[currentStepIndex - 1];
+                if (previousStep) {
+                  setWizardStep(previousStep.step);
+                }
               }}
             >
-              <ArrowLeft className="mr-2 h-4 w-4" /> {wizardStep === 1 ? 'Dashboard' : 'Back'}
+              <ArrowLeft className="mr-2 h-4 w-4" /> {currentStepIndex === 0 ? 'Dashboard' : 'Back'}
             </Button>
 
-            {wizardStep < totalWizardSteps ? (
+            {currentStepIndex < totalWizardSteps - 1 ? (
               <Button
                 size="lg"
                 onClick={() => {
                   if (!validateWizardStep()) {
                     return;
                   }
-
-                  setWizardStep((prev) => prev + 1);
+                  const nextStep = visibleWizardSteps[currentStepIndex + 1];
+                  if (nextStep) {
+                    setWizardStep(nextStep.step);
+                  }
                 }}
               >
                 Next Step <ArrowRight className="ml-2 h-4 w-4" />

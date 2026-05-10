@@ -9,9 +9,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_LOGO_URL, resolveLogoUrl } from '@/lib/systemBranding';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const DEFAULT_REPORT_LOGOS = ['/seal_logo.png', '/pasig_logo.png', '/plp_logo.png'] as const;
 
 type BrandingSettings = {
   logoUrl: string;
+  reportLogo1: string;
+  reportLogo2: string;
+  reportLogo3: string;
 };
 
 type RetentionSettings = {
@@ -25,9 +29,14 @@ export default function SuperAdminSettings() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingLogoKey, setUploadingLogoKey] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [branding, setBranding] = useState<BrandingSettings>({ logoUrl: DEFAULT_LOGO_URL });
+  const [branding, setBranding] = useState<BrandingSettings>({
+    logoUrl: DEFAULT_LOGO_URL,
+    reportLogo1: DEFAULT_REPORT_LOGOS[0],
+    reportLogo2: DEFAULT_REPORT_LOGOS[1],
+    reportLogo3: DEFAULT_REPORT_LOGOS[2]
+  });
   const [retention, setRetention] = useState<RetentionSettings>({
     auditLogDays: 365,
     backupRetentionDays: 30,
@@ -35,6 +44,10 @@ export default function SuperAdminSettings() {
   });
 
   const logoPreview = useMemo(() => resolveLogoUrl(branding.logoUrl), [branding.logoUrl]);
+  const reportLogoPreviews = useMemo(
+    () => [branding.reportLogo1, branding.reportLogo2, branding.reportLogo3].map((url) => resolveLogoUrl(url)),
+    [branding.reportLogo1, branding.reportLogo2, branding.reportLogo3]
+  );
 
   const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
 
@@ -85,9 +98,12 @@ export default function SuperAdminSettings() {
           loadSetting('retention_rules')
         ]);
 
-        if (brandingValue?.logoUrl) {
-          setBranding({ logoUrl: String(brandingValue.logoUrl) });
-        }
+        setBranding({
+          logoUrl: String(brandingValue?.logoUrl || DEFAULT_LOGO_URL),
+          reportLogo1: String(brandingValue?.reportLogo1 || DEFAULT_REPORT_LOGOS[0]),
+          reportLogo2: String(brandingValue?.reportLogo2 || DEFAULT_REPORT_LOGOS[1]),
+          reportLogo3: String(brandingValue?.reportLogo3 || DEFAULT_REPORT_LOGOS[2]),
+        });
 
         if (retentionValue) {
           setRetention({
@@ -109,7 +125,7 @@ export default function SuperAdminSettings() {
     run();
   }, [user?.role]);
 
-  const handleImageFile = async (file?: File | null) => {
+  const handleImageFile = async (file?: File | null, targetKey: keyof BrandingSettings = 'logoUrl') => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       toast({ title: 'Invalid file', description: 'Please upload an image file.', variant: 'warning' });
@@ -121,7 +137,7 @@ export default function SuperAdminSettings() {
       return;
     }
 
-    setUploadingLogo(true);
+    setUploadingLogoKey(targetKey);
     try {
       const formData = new FormData();
       formData.append('logo', file);
@@ -141,7 +157,7 @@ export default function SuperAdminSettings() {
 
       const logoUrl = String(data?.logoUrl || '');
       if (!logoUrl) throw new Error('Upload did not return logo URL');
-      setBranding(prev => ({ ...prev, logoUrl }));
+      setBranding(prev => ({ ...prev, [targetKey]: logoUrl }));
       toast({ title: 'Logo uploaded', description: 'Logo uploaded successfully. Click Save to apply.', variant: 'success' });
     } catch (error) {
       toast({
@@ -150,7 +166,7 @@ export default function SuperAdminSettings() {
         variant: 'error'
       });
     } finally {
-      setUploadingLogo(false);
+      setUploadingLogoKey(null);
     }
   };
 
@@ -235,7 +251,7 @@ export default function SuperAdminSettings() {
                     onDrop={(e) => {
                       e.preventDefault();
                       setDragOver(false);
-                      handleImageFile(e.dataTransfer.files?.[0]);
+                      handleImageFile(e.dataTransfer.files?.[0], 'logoUrl');
                     }}
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -247,17 +263,55 @@ export default function SuperAdminSettings() {
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          disabled={uploadingLogo}
-                          onChange={(e) => handleImageFile(e.target.files?.[0])}
+                          disabled={Boolean(uploadingLogoKey)}
+                          onChange={(e) => handleImageFile(e.target.files?.[0], 'logoUrl')}
                         />
                         <span className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted/40">
-                          {uploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                          {uploadingLogo ? 'Uploading...' : 'Upload'}
+                          {uploadingLogoKey === 'logoUrl' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                          {uploadingLogoKey === 'logoUrl' ? 'Uploading...' : 'Upload'}
                         </span>
                       </label>
                     </div>
                   </div>
                 </div>
+              </div>
+              <div className="space-y-3 pt-2 border-t border-border/60">
+                <Label>Reports Header Logos (Left, Center, Right)</Label>
+                {[1, 2, 3].map((slot, idx) => {
+                  const key = (`reportLogo${slot}` as keyof BrandingSettings);
+                  return (
+                    <div key={slot} className="grid grid-cols-1 md:grid-cols-[96px_1fr_auto] gap-3 items-center">
+                      <div className="h-16 w-20 rounded-lg border flex items-center justify-center overflow-hidden bg-muted/20">
+                        {reportLogoPreviews[idx] ? (
+                          <img src={reportLogoPreviews[idx]} alt={`Report logo ${slot} preview`} className="h-full w-full object-contain" />
+                        ) : (
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      <Input
+                        placeholder={`Report logo ${slot} URL`}
+                        value={branding[key] as string}
+                        onChange={(e) => setBranding(prev => ({ ...prev, [key]: e.target.value }))}
+                      />
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={Boolean(uploadingLogoKey)}
+                          onChange={(e) => handleImageFile(e.target.files?.[0], key)}
+                        />
+                        <span className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted/40">
+                          {uploadingLogoKey === key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                          {uploadingLogoKey === key ? 'Uploading...' : 'Upload'}
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })}
+                <p className="text-xs text-muted-foreground">
+                  Empty or invalid report logo links automatically fall back to the current default logos.
+                </p>
               </div>
             </CardContent>
           </Card>

@@ -62,13 +62,11 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 border-b border-sidebar-border group-data-[collapsible=icon]:px-2">
         <NavLink to="/" className="flex items-center gap-3 rounded-md p-1 transition-colors hover:bg-sidebar-accent/40 group-data-[collapsible=icon]:justify-center">
-          <div className="p-2 rounded-xl bg-sidebar-primary/20 dark:bg-sidebar-primary/0 shrink-0">
             <img
               src={logoUrl}
               alt="PLP Logo"
-              className="h-5 w-5 object-contain"
+              className="h-8 w-8 object-contain"
             />
-          </div>
           {!collapsed && <span className="font-display font-bold text-sm text-sidebar-foreground">Alumni Tracer</span>}
         </NavLink>
       </SidebarHeader>

@@ -54,6 +54,9 @@ const requireRefactorPrisma = () => {
 };
 
 const CONTENT_SETTINGS_KEY = 'site_content_settings_v1';
+const COLLEGE_BRANDING_SETTINGS_KEY = 'college_branding_v1';
+const PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY = 'program_crucial_skills_v1';
+const PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY = 'program_additional_questions_v1';
 
 const getContentSettings = async (req, res) => {
   try {
@@ -123,6 +126,8 @@ const parseOptionalInt = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const isValidStudentIdFormat = (value) => /^\d{2}-\d{5}$/.test(String(value || '').trim());
+
 const mapLifecycleStatusToLegacy = (lifecycleStatus) => {
   switch (String(lifecycleStatus || '').toUpperCase()) {
     case 'ACTIVE':
@@ -171,6 +176,189 @@ const mapEmploymentStatusFilter = (status) => {
       return 'OTHER';
     default:
       return null;
+  }
+};
+
+const getCollegeBrandingSettings = async (req, res) => {
+  try {
+    const refactorPrisma = requireRefactorPrisma();
+    const row = await refactorPrisma.systemSetting.findUnique({
+      where: { key: COLLEGE_BRANDING_SETTINGS_KEY }
+    });
+
+    if (!row) {
+      return res.json({ value: {} });
+    }
+
+    let parsedValue = {};
+    try {
+      parsedValue =
+        typeof row.value === 'string' ? JSON.parse(row.value || '{}') : row.value || {};
+    } catch {
+      parsedValue = {};
+    }
+
+    return res.json({ value: parsedValue });
+  } catch (error) {
+    console.error('Get college branding settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to load college branding settings' });
+  }
+};
+
+const saveCollegeBrandingSettings = async (req, res) => {
+  try {
+    const value = req.body?.value;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return res.status(400).json({ error: 'value must be an object' });
+    }
+
+    const serializedValue = JSON.stringify(value);
+    const refactorPrisma = requireRefactorPrisma();
+
+    await refactorPrisma.systemSetting.upsert({
+      where: { key: COLLEGE_BRANDING_SETTINGS_KEY },
+      update: { value: serializedValue, updated_by: req.user?.id || null },
+      create: { key: COLLEGE_BRANDING_SETTINGS_KEY, value: serializedValue, updated_by: req.user?.id || null }
+    });
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'upsert_setting',
+      entityType: 'system_setting',
+      entityId: null,
+      metadata: { key: COLLEGE_BRANDING_SETTINGS_KEY }
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Save college branding settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to save college branding settings' });
+  }
+};
+
+const getProgramCrucialSkillsSettings = async (req, res) => {
+  try {
+    const refactorPrisma = requireRefactorPrisma();
+    const row = await refactorPrisma.systemSetting.findUnique({
+      where: { key: PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY }
+    });
+
+    if (!row) {
+      return res.json({ value: {} });
+    }
+
+    let parsedValue = {};
+    try {
+      parsedValue =
+        typeof row.value === 'string' ? JSON.parse(row.value || '{}') : row.value || {};
+    } catch {
+      parsedValue = {};
+    }
+
+    return res.json({ value: parsedValue });
+  } catch (error) {
+    console.error('Get program crucial skills settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to load program crucial skills settings' });
+  }
+};
+
+const saveProgramCrucialSkillsSettings = async (req, res) => {
+  try {
+    const value = req.body?.value;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return res.status(400).json({ error: 'value must be an object' });
+    }
+
+    const serializedValue = JSON.stringify(value);
+    const refactorPrisma = requireRefactorPrisma();
+
+    await refactorPrisma.systemSetting.upsert({
+      where: { key: PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY },
+      update: { value: serializedValue, updated_by: req.user?.id || null },
+      create: { key: PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY, value: serializedValue, updated_by: req.user?.id || null }
+    });
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'upsert_setting',
+      entityType: 'system_setting',
+      entityId: null,
+      metadata: { key: PROGRAM_CRUCIAL_SKILLS_SETTINGS_KEY }
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Save program crucial skills settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to save program crucial skills settings' });
+  }
+};
+
+const getProgramAdditionalQuestionsSettings = async (req, res) => {
+  try {
+    const refactorPrisma = requireRefactorPrisma();
+    const row = await refactorPrisma.systemSetting.findUnique({
+      where: { key: PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY }
+    });
+
+    if (!row) {
+      return res.json({ value: {} });
+    }
+
+    let parsedValue = {};
+    try {
+      parsedValue =
+        typeof row.value === 'string' ? JSON.parse(row.value || '{}') : row.value || {};
+    } catch {
+      parsedValue = {};
+    }
+
+    return res.json({ value: parsedValue });
+  } catch (error) {
+    console.error('Get program additional questions settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to load program additional questions settings' });
+  }
+};
+
+const saveProgramAdditionalQuestionsSettings = async (req, res) => {
+  try {
+    const value = req.body?.value;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return res.status(400).json({ error: 'value must be an object' });
+    }
+
+    const serializedValue = JSON.stringify(value);
+    const refactorPrisma = requireRefactorPrisma();
+
+    await refactorPrisma.systemSetting.upsert({
+      where: { key: PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY },
+      update: { value: serializedValue, updated_by: req.user?.id || null },
+      create: { key: PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY, value: serializedValue, updated_by: req.user?.id || null }
+    });
+
+    await writeAuditLogWithReq(refactorPrisma, req, {
+      userId: req.user?.id,
+      action: 'upsert_setting',
+      entityType: 'system_setting',
+      entityId: null,
+      metadata: { key: PROGRAM_ADDITIONAL_QUESTIONS_SETTINGS_KEY }
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Save program additional questions settings error:', error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ error: error.message || 'Failed to save program additional questions settings' });
   }
 };
 
@@ -582,8 +770,7 @@ const mapAlumniRecord = (profile) => ({
 
 const syncAcademicData = async (tx, profileId, programId, data) => {
   const {
-    gender, age, yearGraduated, cgpa, profGrade, elecGrade, ojtGrade,
-    leaderPos, actMemberPos, softSkillsAve, hardSkillsAve, isEmployable
+    gender, age, yearGraduated, cgpa, profGrade, elecGrade, ojtGrade
   } = data;
 
   // 1. Upsert AcademicSnapshot
@@ -600,52 +787,24 @@ const syncAcademicData = async (tx, profileId, programId, data) => {
       program_id: programId || undefined,
       gender, age, year_graduated: yearGraduated || 2020,
       cgpa, prof_grade: profGrade, elec_grade: elecGrade, ojt_grade: ojtGrade,
-      leader_pos: leaderPos, act_member_pos: actMemberPos,
-      soft_skills_ave: softSkillsAve, hard_skills_ave: hardSkillsAve,
-      is_employable: isEmployable
+      leader_pos: null, act_member_pos: null,
+      soft_skills_ave: null, hard_skills_ave: null,
+      is_employable: null
     },
     create: {
       alumni_profile_id: profileId,
       program_id: programId || 1, // Fallback to first program if null
       gender, age, year_graduated: yearGraduated || 2020,
       cgpa, prof_grade: profGrade, elec_grade: elecGrade, ojt_grade: ojtGrade,
-      leader_pos: leaderPos, act_member_pos: actMemberPos,
-      soft_skills_ave: softSkillsAve, hard_skills_ave: hardSkillsAve,
-      is_employable: isEmployable
+      leader_pos: null, act_member_pos: null,
+      soft_skills_ave: null, hard_skills_ave: null,
+      is_employable: null
     }
   });
 
   // 2. If historical employability is provided, create a historical submission and outcome
   // This is crucial for training the AI (ARIMA and Employability models)
-  if (isEmployable !== undefined && isEmployable !== null) {
-    const historicalTemplate = await tx.surveyTemplate.findUnique({
-      where: { template_key: 'historical_import' }
-    });
-
-    if (historicalTemplate) {
-      // Create a completed submission for this historical data
-      const submission = await tx.surveySubmission.create({
-        data: {
-          alumni_profile_id: profileId,
-          academic_snapshot_id: snapshot.id,
-          template_id: historicalTemplate.id,
-          branch_path: 'FOLLOWUP',
-          status: 'COMPLETED',
-          submitted_at: new Date(`${yearGraduated || 2020}-01-01`)
-        }
-      });
-
-      // Create employment outcome
-      await tx.employmentOutcome.create({
-        data: {
-          alumni_profile_id: profileId,
-          submission_id: submission.id,
-          employment_status: isEmployable ? 'EMPLOYED' : 'UNEMPLOYED',
-          outcome_date: new Date(`${yearGraduated || 2020}-01-01`)
-        }
-      });
-    }
-  }
+  // Historical employability outcomes are intentionally not created from the new import format.
 };
 
 const createImportHistoryRecord = async (tx, { filename, uploadedBy, totalRecords }) => {
@@ -686,8 +845,9 @@ const processImportRow = async ({
   const suffix = normalizeString(row.suffix) || null;
   const email = normalizeEmail(row.email);
   const batchYear = parseOptionalInt(row.batch_year);
+  const programName = normalizeString(row.program);
 
-  // New academic fields for AI training
+  // Academic snapshot fields
   const gender = normalizeString(row.gender);
   const age = parseOptionalInt(row.age);
   const yearGraduated = parseOptionalInt(row.year_graduated) || batchYear;
@@ -695,16 +855,12 @@ const processImportRow = async ({
   const profGrade = row.prof_grade ? parseFloat(row.prof_grade) : null;
   const elecGrade = row.elec_grade ? parseFloat(row.elec_grade) : null;
   const ojtGrade = row.ojt_grade ? parseFloat(row.ojt_grade) : null;
-  const leaderPos = String(row.leader_pos || '').toLowerCase() === 'yes' || row.leader_pos === true;
-  const actMemberPos = String(row.act_member_pos || '').toLowerCase() === 'yes' || row.act_member_pos === true;
-  const softSkillsAve = row.soft_skills_ave ? parseFloat(row.soft_skills_ave) : null;
-  const hardSkillsAve = row.hard_skills_ave ? parseFloat(row.hard_skills_ave) : null;
-  const isEmployable = String(row.is_employable || '').toLowerCase() === 'yes' || 
-                      String(row.is_employable || '').toLowerCase() === 'employable' || 
-                      row.is_employable === true;
 
   if (!studentId) {
     throw new Error('student_id is required');
+  }
+  if (!isValidStudentIdFormat(studentId)) {
+    throw new Error('student_id must be in YY-00000 format (example: 25-00000)');
   }
 
   if (!firstName || !lastName) {
@@ -713,6 +869,26 @@ const processImportRow = async ({
 
   if (!batchYear) {
     throw new Error('batch_year is required');
+  }
+
+  if (!programName) {
+    throw new Error('program is required');
+  }
+
+  if (!gender) {
+    throw new Error('gender is required');
+  }
+
+  if (age === null) {
+    throw new Error('age is required');
+  }
+
+  if (!yearGraduated) {
+    throw new Error('year_graduated is required');
+  }
+
+  if (cgpa === null || profGrade === null || elecGrade === null || ojtGrade === null) {
+    throw new Error('cgpa, prof_grade, elec_grade, and ojt_grade are required');
   }
 
   const existingProfile = await tx.alumniProfile.findUnique({
@@ -736,7 +912,6 @@ const processImportRow = async ({
   }
 
   let currentProgramId = null;
-  const programName = normalizeString(row.program);
 
   if (programName) {
     const programCacheKey = programName.toLowerCase();
@@ -868,8 +1043,7 @@ const processImportRow = async ({
       }
     });
     await syncAcademicData(tx, profile.id, currentProgramId, {
-      gender, age, yearGraduated, cgpa, profGrade, elecGrade, ojtGrade,
-      leaderPos, actMemberPos, softSkillsAve, hardSkillsAve, isEmployable
+      gender, age, yearGraduated, cgpa, profGrade, elecGrade, ojtGrade
     });
   } else {
     const profile = await tx.alumniProfile.create({
@@ -882,8 +1056,7 @@ const processImportRow = async ({
       }
     });
     await syncAcademicData(tx, profile.id, currentProgramId, {
-      gender, age, yearGraduated, cgpa, profGrade, elecGrade, ojtGrade,
-      leaderPos, actMemberPos, softSkillsAve, hardSkillsAve, isEmployable
+      gender, age, yearGraduated, cgpa, profGrade, elecGrade, ojtGrade
     });
   }
 
@@ -1383,6 +1556,29 @@ const importAlumni = async (req, res) => {
         row.batch_year ||
         row.Year ||
         row.year ||
+        null,
+      gender: normalizeString(row.Gender || row.gender || row.Sex || row.sex),
+      age: row.Age || row.age || null,
+      year_graduated:
+        row['Year Graduated'] ||
+        row.year_graduated ||
+        row.grad_year ||
+        null,
+      cgpa: row.CGPA || row.cgpa || row.GPA || row.gpa || null,
+      prof_grade:
+        row['Prof Grade'] ||
+        row.prof_grade ||
+        row['Professional Grade'] ||
+        null,
+      elec_grade:
+        row['Elec Grade'] ||
+        row.elec_grade ||
+        row['Elective Grade'] ||
+        null,
+      ojt_grade:
+        row['OJT Grade'] ||
+        row.ojt_grade ||
+        row['Internship Grade'] ||
         null,
       status: normalizeString(row.Status || row.status)
     }));
@@ -2035,7 +2231,13 @@ module.exports = {
   getAnalytics,
   getReports,
   getContentSettings,
-  saveContentSettings
+  saveContentSettings,
+  getCollegeBrandingSettings,
+  saveCollegeBrandingSettings,
+  getProgramCrucialSkillsSettings,
+  saveProgramCrucialSkillsSettings,
+  getProgramAdditionalQuestionsSettings,
+  saveProgramAdditionalQuestionsSettings
 };
       const toInverseFiveScaleScore = (value) => {
         if (!Number.isFinite(value) || value <= 0) return 0;

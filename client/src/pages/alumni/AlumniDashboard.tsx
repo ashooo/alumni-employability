@@ -17,6 +17,7 @@ interface AlumniData {
   middleName?: string;
   suffix?: string;
   program: string;
+  collegeCode?: string;
   batchYear: number;
   surveyCompleted: boolean;
   employmentStatus: string;
@@ -46,6 +47,59 @@ interface SurveyResponse {
 interface LatestPrediction {
   probability: number;
 }
+
+interface CollegeBranding {
+  logoUrl?: string;
+  primaryColor?: string;
+  accentColor?: string;
+}
+
+type CollegeCode = 'CBA' | 'CAS' | 'CIHM' | 'CCS' | 'COE' | 'CON' | 'COED' | 'CEAS';
+
+const COLLEGE_LOGO_BY_CODE: Record<CollegeCode, string> = {
+  CBA: '/college_logos/accountancy.png',
+  CAS: '/college_logos/artsandscience.png',
+  CIHM: '/college_logos/cihm.png',
+  CCS: '/college_logos/compsci.png',
+  COE: '/college_logos/engineering.png',
+  CON: '/college_logos/nursing.png',
+  COED: '/college_logos/education.png',
+  CEAS: '/college_logos/education.png'
+};
+
+const parseHexToRgb = (value?: string | null): { r: number; g: number; b: number } | null => {
+  const input = String(value || '').trim();
+  const hex = input.startsWith('#') ? input.slice(1) : input;
+
+  if (!/^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(hex)) {
+    return null;
+  }
+
+  const normalized = hex.length === 3
+    ? hex.split('').map((ch) => `${ch}${ch}`).join('')
+    : hex;
+
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16)
+  };
+};
+
+const getContrastingBannerText = (backgroundColor?: string | null) => {
+  const rgb = parseHexToRgb(backgroundColor);
+
+  if (!rgb) {
+    return { heading: '#111827', body: 'rgba(17, 24, 39, 0.82)' };
+  }
+
+  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+  if (luminance > 0.62) {
+    return { heading: '#111827', body: 'rgba(17, 24, 39, 0.82)' };
+  }
+
+  return { heading: '#f9fafb', body: 'rgba(249, 250, 251, 0.9)' };
+};
 
 const formatEmploymentStatus = (status?: string | null) => {
   if (!status) {
@@ -142,67 +196,54 @@ const getSurveyActionLabel = (surveyState: SurveyFlowStatus | null) => {
   }
 };
 
-const getProgramGradientClass = (program: string) => {
-  const normalized = String(program || '').toUpperCase();
+const normalizeProgram = (program: string) =>
+  String(program || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
 
-  if (normalized.includes('ACCOUNTANCY') || normalized.includes('BSA')) {
-    return 'bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-100 border-yellow-400/80 dark:from-yellow-500/45 dark:via-amber-400/30 dark:to-slate-950';
-  }
-  if (normalized.includes('ELECTRONICS') || normalized.includes('BSECE')) {
-    return 'bg-gradient-to-r from-orange-300 via-orange-200 to-amber-100 border-orange-400/80 dark:from-orange-500/45 dark:via-orange-400/30 dark:to-slate-950';
-  }
-  if (normalized.includes('FILIPINO') || normalized.includes('ENGLISH') || normalized.includes('BSED')) {
-    return 'bg-gradient-to-r from-blue-300 via-sky-200 to-blue-100 border-blue-400/80 dark:from-blue-500/45 dark:via-sky-400/30 dark:to-slate-950';
-  }
-  if (normalized.includes('NURSING') || normalized.includes('BSN')) {
-    return 'bg-gradient-to-r from-pink-300 via-rose-200 to-pink-100 border-pink-400/80 dark:from-pink-500/45 dark:via-rose-400/30 dark:to-slate-950';
-  }
-  if (
-    normalized.includes('ENTREPRENEURSHIP') ||
-    normalized.includes('MARKETING') ||
-    normalized.includes('BSBA')
-  ) {
-    return 'bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-100 border-yellow-400/80 dark:from-yellow-500/45 dark:via-amber-400/30 dark:to-slate-950';
-  }
-  if (normalized.includes('COMPUTER SCIENCE') || normalized.includes('INFORMATION TECHNOLOGY') || normalized.includes('BSCS') || normalized.includes('BSIT')) {
-    return 'bg-gradient-to-r from-slate-300 via-slate-200 to-slate-100 border-slate-500/70 dark:from-slate-500/45 dark:via-slate-400/30 dark:to-slate-950';
-  }
+const getCollegeCodeFromProgram = (program: string): CollegeCode | null => {
+  const normalized = normalizeProgram(program);
 
-  return 'bg-gradient-to-r from-muted/60 via-muted/30 to-background dark:from-muted/30 dark:via-muted/15 dark:to-background';
+  if (/^BSA\b/.test(normalized) || /^BSBA\b/.test(normalized) || normalized.includes('ACCOUNTANCY') || normalized.includes('BUSINESS ADMINISTRATION')) return 'CBA';
+  if (/^BAP\b/.test(normalized) || normalized.includes('PSYCHOLOGY')) return 'CAS';
+  if (/^BSHM\b/.test(normalized) || normalized.includes('HOSPITALITY')) return 'CIHM';
+  if (/^BSCS\b/.test(normalized) || /^BSIT\b/.test(normalized) || normalized.includes('COMPUTER SCIENCE') || normalized.includes('INFORMATION TECHNOLOGY')) return 'CCS';
+  if (/^BSEE\b/.test(normalized) || /^BSECE\b/.test(normalized) || normalized.includes('ELECTRONICS ENGINEERING') || normalized.includes('ENGINEERING')) return 'COE';
+  if (/^BSN\b/.test(normalized) || normalized.includes('NURSING')) return 'CON';
+  if (/^BSED\b/.test(normalized) || normalized.includes('SECONDARY EDUCATION') || normalized.includes('EDUCATION')) return 'COED';
+
+  return null;
 };
 
-const getProgramLogoPath = (program: string) => {
-  const normalized = String(program || '').toUpperCase();
+const resolveCollegeCode = (program: string, collegeCode?: string): CollegeCode | null => {
+  const inferred = getCollegeCodeFromProgram(program);
+  if (inferred) return inferred;
+  const normalizedCode = String(collegeCode || '').trim().toUpperCase() as CollegeCode;
+  return COLLEGE_LOGO_BY_CODE[normalizedCode] ? normalizedCode : null;
+};
 
-  if (normalized.includes('ACCOUNTANCY') || normalized.includes('BSA')) {
-    return '/college_logos/accountancy.png';
+const getProgramBrandingFallback = (program: string, collegeCode?: string): Required<CollegeBranding> => {
+  const resolvedCode = resolveCollegeCode(program, collegeCode);
+  switch (resolvedCode) {
+    case 'CBA':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CBA, primaryColor: '#fef3c7', accentColor: '#f59e0b' };
+    case 'CAS':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CAS, primaryColor: '#e5e7eb', accentColor: '#6b7280' };
+    case 'CIHM':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CIHM, primaryColor: '#fde68a', accentColor: '#d97706' };
+    case 'CCS':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CCS, primaryColor: '#e2e8f0', accentColor: '#475569' };
+    case 'COE':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.COE, primaryColor: '#ffedd5', accentColor: '#f97316' };
+    case 'CON':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.CON, primaryColor: '#fce7f3', accentColor: '#ec4899' };
+    case 'COED':
+    case 'CEAS':
+      return { logoUrl: COLLEGE_LOGO_BY_CODE.COED, primaryColor: '#dbeafe', accentColor: '#3b82f6' };
+    default:
+      return { logoUrl: '/college_logos/artsandscience.png', primaryColor: '#e5e7eb', accentColor: '#6b7280' };
   }
-  if (normalized.includes('ELECTRONICS') || normalized.includes('BSECE')) {
-    return '/college_logos/engineering.png';
-  }
-  if (normalized.includes('FILIPINO') || normalized.includes('ENGLISH') || normalized.includes('BSED')) {
-    return '/college_logos/education.png';
-  }
-  if (normalized.includes('NURSING') || normalized.includes('BSN')) {
-    return '/college_logos/nursing.png';
-  }
-  if (
-    normalized.includes('ENTREPRENEURSHIP') ||
-    normalized.includes('MARKETING') ||
-    normalized.includes('BSBA')
-  ) {
-    return '/college_logos/cihm.png';
-  }
-  if (
-    normalized.includes('COMPUTER SCIENCE') ||
-    normalized.includes('INFORMATION TECHNOLOGY') ||
-    normalized.includes('BSCS') ||
-    normalized.includes('BSIT')
-  ) {
-    return '/college_logos/compsci.png';
-  }
-
-  return '/college_logos/artsandscience.png';
 };
 
 export default function AlumniDashboard() {
@@ -210,10 +251,12 @@ export default function AlumniDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  const [collegeBranding, setCollegeBranding] = useState<CollegeBranding | null>(null);
   const [alumniData, setAlumniData] = useState<AlumniData>({
     firstName: '',
     lastName: '',
     program: '',
+    collegeCode: '',
     batchYear: new Date().getFullYear(),
     surveyCompleted: false,
     employmentStatus: '-',
@@ -305,6 +348,7 @@ export default function AlumniDashboard() {
           middleName: profileData.middle_name,
           suffix: profileData.suffix,
           program: profileData.program_name || profileData.program || '',
+          collegeCode: profileData.college_code || '',
           batchYear: profileData.batch_year || new Date().getFullYear(),
           surveyCompleted: Boolean(surveyState.completed),
           employmentStatus,
@@ -316,6 +360,19 @@ export default function AlumniDashboard() {
           latestSubmission,
           surveyState
         });
+
+        const collegeCode = String(profileData.college_code || '').toUpperCase();
+        if (collegeCode) {
+          const brandingResponse = await fetch(`${API_URL}/admin/college-branding`, { headers });
+          if (brandingResponse.ok) {
+            const brandingPayload = await brandingResponse.json();
+            const brandingMap = brandingPayload?.value && typeof brandingPayload.value === 'object'
+              ? brandingPayload.value
+              : {};
+            const collegeBrand = brandingMap[collegeCode] || null;
+            setCollegeBranding(collegeBrand);
+          }
+        }
       } catch (error) {
         console.error('Error fetching alumni data:', error);
         toast({
@@ -339,7 +396,18 @@ export default function AlumniDashboard() {
   };
 
   const bannerIsComplete = alumniData.surveyCompleted && alumniData.resultsReady;
-  const programLogoPath = getProgramLogoPath(alumniData.program);
+  const resolvedCollegeCode = resolveCollegeCode(alumniData.program, alumniData.collegeCode);
+  const fallbackBranding = getProgramBrandingFallback(alumniData.program, alumniData.collegeCode);
+  const programLogoPath =
+    (collegeBranding?.logoUrl && String(collegeBranding.logoUrl).trim()) ||
+    (resolvedCollegeCode ? COLLEGE_LOGO_BY_CODE[resolvedCollegeCode] : '') ||
+    fallbackBranding.logoUrl;
+  const bannerPrimaryColor = (collegeBranding?.primaryColor && String(collegeBranding.primaryColor).trim()) || fallbackBranding.primaryColor;
+  const bannerTextColors = getContrastingBannerText(bannerPrimaryColor);
+  const bannerStyle = {
+    backgroundImage: `linear-gradient(to right, ${bannerPrimaryColor}, #ffffff)`,
+    borderColor: (collegeBranding?.accentColor && String(collegeBranding.accentColor).trim()) || fallbackBranding.accentColor
+  };
 
   if (loading) {
     return <LoadingScreen fullScreen={false} message="Loading your dashboard..." />;
@@ -350,16 +418,17 @@ export default function AlumniDashboard() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl border p-6 shadow-sm ${getProgramGradientClass(alumniData.program)}`}
+        className="rounded-2xl border p-6 shadow-sm"
+        style={bannerStyle}
       >
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-2xl font-display font-bold mb-1">
+            <h1 className="text-2xl font-display font-bold mb-1" style={{ color: bannerTextColors.heading }}>
               Welcome back, {getDisplayName()}!
             </h1>
-            <p className="text-muted-foreground">
+            <p style={{ color: bannerTextColors.body }}>
               {alumniData.program
-                ? `Batch ${alumniData.batchYear} � ${alumniData.program}`
+                ? `Batch ${alumniData.batchYear} | ${alumniData.program}`
                 : 'Alumni Tracer Dashboard'}
             </p>
           </div>
@@ -367,7 +436,7 @@ export default function AlumniDashboard() {
             <img
               src={programLogoPath}
               alt="College logo"
-              className="h-12 w-12 md:h-16 md:w-16 object-contain"
+              className="h-20 w-20 md:h-24 md:w-24 object-contain shrink-0"
             />
           </div>
         </div>
@@ -512,5 +581,6 @@ export default function AlumniDashboard() {
     </div>
   );
 }
+
 
 

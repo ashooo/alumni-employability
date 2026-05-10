@@ -128,7 +128,7 @@ pip install -U -r ml/requirements.txt
 
 Download the model files from this Drive folder:
 
-- [ML Model Artifacts](https://drive.google.com/drive/folders/1G9uYoR3lEuuvVWOJjFwNGvaCwAAkwOFy?usp=sharing)
+- [ML Model Artifacts](https://drive.google.com/drive/folders/1e9B9uIlyVua4wyuWkf-llKeh8iWEDEsC?usp=sharing)
 
 Then place the downloaded artifacts into `ml/models/` (preserve filenames).
 
@@ -146,3 +146,45 @@ Expected files include:
 | Superadmin | System settings, manage admins, audit logs |
 | Admin | Users, surveys, programs, analytics, reports |
 | Alumni | Dashboard, surveys, profile, results |
+
+## College and Program Mapping (Canonical)
+
+Use this as the reference mapping for existing programs:
+
+- `CBA` (College of Business and Accountancy)
+- `BSBA_ENTREP` - Bachelor of Science in Business Administration major in Entrepreneurship
+- `BSBA_MARKETING` - Bachelor of Science in Business Administration major in Marketing Management
+- `BSBA_FINANCE` - Bachelor of Science in Business Administration major in Financial Management
+- `BSA` - Bachelor of Science in Accountancy
+- `CAS` (College of Arts and Sciences)
+- `BAP` - Bachelor of Arts in Psychology
+- `CIHM` (College of International Hospitality Management)
+- `BSHM` - Bachelor of Science in Hospitality Management
+- `CCS` (College of Computer Studies)
+- `BSCS` - Bachelor of Science in Computer Science
+- `BSIT` - Bachelor of Science in Information Technology
+- `COE` (College of Engineering)
+- `BSECE` - Bachelor of Science in Electronics Engineering
+- `CON` (College of Nursing)
+- `BSN` - Bachelor of Science in Nursing
+- `COED` (College of Education)
+- `BSED_FILIPINO` - Bachelor of Secondary Education major in Filipino
+- `BSED_ENGLISH` - Bachelor of Secondary Education major in English
+
+Notes:
+
+- `BSECE` is the active program code used in the system for Electronics Engineering.
+- Legacy college code `CEAS` may still exist in older records, but active education programs should be under `COED`.
+
+## Updating DB Mapping Without Reseed
+
+If your DB already contains production-sized alumni data, do not run full reseed just to realign colleges/programs.
+
+Recommended approach:
+
+1. Upsert missing colleges (`CAS`, `CIHM`, `COE`, `COED`) without deleting existing colleges.
+2. Reassign existing program `college_id` to the correct college code.
+3. Keep existing program IDs and codes to preserve foreign-key links (for example alumni profiles and submissions).
+4. Normalize program names only if needed.
+
+This avoids touching large alumni datasets and keeps all existing relations intact.

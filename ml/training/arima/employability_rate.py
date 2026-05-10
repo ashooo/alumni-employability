@@ -150,8 +150,23 @@ def evaluate_and_forecast(model_fit, ts_series, forecast_steps=3):
     actual = ts_series
     predicted = pred_hist_df['mean']
     
-    mae = mean_absolute_error(actual, predicted)
-    rmse = np.sqrt(mean_squared_error(actual, predicted))
+    hist_predictions = []
+    for idx, val in predicted.items():
+        hist_predictions.append({
+            'year': int(idx.year),
+            'predicted': round(val, 2)
+        })
+    
+    # Exclude the first year (burn-in period) from accuracy metrics
+    if len(actual) > 1:
+        eval_actual = actual.iloc[1:]
+        eval_predicted = predicted.iloc[1:]
+    else:
+        eval_actual = actual
+        eval_predicted = predicted
+        
+    mae = mean_absolute_error(eval_actual, eval_predicted)
+    rmse = np.sqrt(mean_squared_error(eval_actual, eval_predicted))
     
     print(f"In-Sample Accuracy:")
     print(f"  Mean Absolute Error: {mae:.2f}%")
@@ -176,9 +191,129 @@ def evaluate_and_forecast(model_fit, ts_series, forecast_steps=3):
             'ci_upper': ci_upper
         })
         
-    return mae, rmse, forecast_results
+    return mae, rmse, forecast_results, hist_predictions, actual, predicted
 
-def save_artifacts(model_fit, order, mae, rmse, forecast_results, dataset_size):
+def generate_insights(actual_series, predicted_series, mae, rmse, forecast_results):
+    """Generates dynamic text insights based on model performance and trend data."""
+    # Behavior Insights
+    behavior_insight = "The model balances its predictions well, with no significant bias towards over-predicting or under-predicting."
+    over_predicts = 0
+    under_predicts = 0
+    total_predictions = 0
+    
+    # Exclude burn-in year (first year)
+    if len(predicted_series) > 1:
+        for idx in predicted_series.index[1:]:
+            if idx in actual_series.index:
+                diff = predicted_series[idx] - actual_series[idx]
+                if diff > 0.5: over_predicts += 1
+                elif diff < -0.5: under_predicts += 1
+                total_predictions += 1
+                
+        if total_predictions > 0:
+            if over_predicts > under_predicts and over_predicts > total_predictions / 2:
+                behavior_insight = "The model shows a tendency to slightly over-predict employment rates compared to actual outcomes. It might be overly optimistic."
+            elif under_predicts > over_predicts and under_predicts > total_predictions / 2:
+                behavior_insight = "The model shows a tendency to slightly under-predict employment rates. It leans towards being conservative."
+
+    # Error Insights
+    if mae < 4.9:
+        error_takeaway = f"With a low MAE of {mae:.2f}, the model performs exceptionally well. It tracks the actual employment trends very closely with minimal deviation."
+    elif mae <= 9.99:
+        error_takeaway = f"The model performs adequately, with a moderate average error of {mae:.2f}%. It captures general trends but may miss sudden spikes or drops."
+    else:
+        error_takeaway = f"The model struggles with accuracy, showing a high average error of {mae:.2f}%. It performs poorly possibly due to high variance or lack of stable historical patterns."
+
+    if (rmse - mae) > 2:
+        rmse_takeaway = f"The RMSE ({rmse:.2f}) is notably higher than the MAE, indicating that while average errors are acceptable, the model occasionally makes large mispredictions (likely during volatile years)."
+    else:
+        rmse_takeaway = f"The RMSE ({rmse:.2f}) is close to the MAE, meaning the model's errors are consistent and it rarely makes extreme miscalculations."
+
+    verdict = "High Accuracy"
+    verdict_color = "text-green-500"
+    
+    if mae > 9.99:
+        verdict = "Low Accuracy"
+        verdict_color = "text-red-500"
+    elif mae >= 4.9:
+        verdict = "Moderate Accuracy"
+        verdict_color = "text-yellow-500"
+
+    # Trend Insights
+    hist_values = actual_series.values
+    avg_rate = sum(hist_values) / len(hist_values) if len(hist_values) > 0 else 0
+    std_dev = np.std(hist_values) if len(hist_values) > 1 else 0
+    stability = "highly consistent" if std_dev < 2 else "relatively stable" if std_dev < 5 else "showing significant fluctuations"
+    
+    trend_direction = "Stable"
+    growth_explanation = f"The employment rate has been {stability} with an average of {avg_rate:.1f}% and is projected to maintain this stability."
+    
+    if len(forecast_results) > 0 and len(hist_values) > 0:
+        last_actual = hist_values[-1]
+        f_start = forecast_results[0]['forecast']
+        f_end = forecast_results[-1]['forecast']
+        f_end_year = forecast_results[-1]['year']
+        
+        overall_diff = f_end - last_actual
+        forecast_internal_diff = f_end - f_start
+        threshold = 0.2
+        
+        if overall_diff > threshold or forecast_internal_diff > threshold:
+            trend_direction = "Upward"
+            action = "grow"
+            growth_explanation = f"Following a {stability} historical period, the employment rate shows upward momentum and is projected to {action} to approximately {f_end:.1f}% by {f_end_year}."
+        elif overall_diff < -threshold or forecast_internal_diff < -threshold:
+            trend_direction = "Downward"
+            action = "decline"
+            growth_explanation = f"The model detects a {action} in employment rates, with the forecast projecting a trend towards {f_end:.1f}% by {f_end_year}, continuing the recent patterns."
+        else:
+            trend_direction = "Stable"
+            growth_explanation = f"The employment rate is projected to remain {stability} around {f_end:.1f}%, showing no significant upward or downward shifts in the near future."
+
+    biggest_change_text = "The historical data remains too consistent to identify major shifts."
+    all_points = [{"year": int(idx.year), "value": val} for idx, val in actual_series.items()] + [{"year": r['year'], "value": r['forecast']} for r in forecast_results]
+    all_points_sorted = sorted(all_points, key=lambda x: x["year"])
+    
+    if len(all_points_sorted) >= 2:
+        max_diff = 0
+        change_info = None
+        for i in range(1, len(all_points_sorted)):
+            prev = all_points_sorted[i-1]
+            curr = all_points_sorted[i]
+            diff = curr["value"] - prev["value"]
+            if abs(diff) > abs(max_diff):
+                max_diff = diff
+                change_info = (prev["year"], curr["year"], "surge" if diff > 2 else "increase" if diff > 0 else "drop" if diff < -2 else "decrease")
+        if change_info and abs(max_diff) > 0.1:
+            biggest_change_text = f"The most notable shift was a {abs(max_diff):.1f}% {change_info[2]} observed between {change_info[0]} and {change_info[1]}."
+
+    recent_trend_text = "Insufficient historical data to establish a recent trend pattern."
+    if len(actual_series) >= 2:
+        recent = actual_series[-3:] if len(actual_series) >= 3 else actual_series
+        start_val = recent.iloc[0]
+        start_year = recent.index[0].year
+        end_val = recent.iloc[-1]
+        end_year = recent.index[-1].year
+        diff = end_val - start_val
+        if abs(diff) < 0.5:
+            recent_trend_text = f"In the recent period ({start_year}-{end_year}), the employment rate has plateaued, holding steady at approximately {end_val:.1f}%."
+        else:
+            direction = "upward momentum" if diff > 0 else "downward slide"
+            recent_trend_text = f"The data shows a clear {direction} in the most recent years ({start_year}-{end_year}), moving from {start_val:.1f}% to {end_val:.1f}%."
+
+    return {
+        "behavior": behavior_insight,
+        "error_takeaway": error_takeaway,
+        "rmse_takeaway": rmse_takeaway,
+        "verdict": verdict,
+        "verdict_color": verdict_color,
+        "trend_direction": trend_direction,
+        "growth_explanation": growth_explanation,
+        "biggest_change_text": biggest_change_text,
+        "recent_trend_text": recent_trend_text
+    }
+
+def save_artifacts(model_fit, order, mae, rmse, forecast_results, dataset_size, hist_predictions, insights):
     """Saves the model and report to disk."""
     joblib.dump(model_fit, MODEL_DIR / "model.pkl")
     
@@ -192,7 +327,9 @@ def save_artifacts(model_fit, order, mae, rmse, forecast_results, dataset_size):
             'rmse': round(rmse, 4),
             'aic': round(model_fit.aic, 4)
         },
-        'forecast': forecast_results
+        'forecast': forecast_results,
+        'historical_predictions': hist_predictions,
+        'insights': insights
     }
     
     with open(MODEL_DIR / "training_report.json", 'w') as f:
@@ -231,10 +368,13 @@ def main():
     best_order, final_model = find_best_arima(ts_data['employment_rate'])
     
     # 4. Evaluate & Forecast
-    mae, rmse, forecast_results = evaluate_and_forecast(final_model, ts_data['employment_rate'], forecast_steps=3)
+    mae, rmse, forecast_results, hist_predictions, actual_series, predicted_series = evaluate_and_forecast(final_model, ts_data['employment_rate'], forecast_steps=3)
+    
+    # 4.5 Generate Insights
+    insights = generate_insights(actual_series, predicted_series, mae, rmse, forecast_results)
     
     # 5. Save Artifacts
-    save_artifacts(final_model, best_order, mae, rmse, forecast_results, len(ts_data))
+    save_artifacts(final_model, best_order, mae, rmse, forecast_results, len(ts_data), hist_predictions, insights)
 
     print(f"\nCompleted: {datetime.now().isoformat()}")
 

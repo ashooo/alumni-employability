@@ -5,6 +5,7 @@ const path = require('path');
 
 const ARIMA_MODEL_PATH = path.resolve(__dirname, '../../ml/models/arima/model.pkl');
 const ARIMA_REPORT_PATH = path.resolve(__dirname, '../../ml/models/arima/training_report.json');
+const ARIMA_DASHBOARD_DATA_PATH = path.resolve(__dirname, '../../ml/models/arima/arima_dashboard_data.json');
 const EMPLOYABILITY_TRAINING_REPORT_PATH = path.resolve(
   __dirname,
   '../../ml/models/employability/training_report.json'
@@ -105,13 +106,27 @@ const buildArimaResponse = ({ historicalData, report }) => {
     }))
     : [];
 
+  const predictionsMap = new Map();
+  if (Array.isArray(report?.historical_predictions)) {
+    for (const p of report.historical_predictions) {
+      predictionsMap.set(String(p.year), p.predicted);
+    }
+  }
+
+  const mappedHistorical = historicalData.map(item => ({
+    year: String(item.year),
+    value: item.value,
+    predicted: predictionsMap.get(String(item.year)) || null
+  }));
+
   return {
-    historical: historicalData,
+    historical: mappedHistorical,
     forecast,
     metrics: {
       mae: Number(report?.metrics?.mae ?? 0),
       rmse: Number(report?.metrics?.rmse ?? 0)
     },
+    insights: report?.insights || null,
     metadata: {
       trainedAt: report?.trained_at || null,
       bestOrder: report?.best_order || null,
@@ -149,6 +164,17 @@ const runArimaTraining = async ({ timeoutMs = 300000 } = {}) => {
     }
 
     arimaTrainingState.lastCompletedAt = new Date().toISOString();
+
+    try {
+      const report = loadArimaTrainingReport();
+      const historicalData = await loadHistoricalEmploymentRates();
+      if (report && historicalData.length > 0) {
+        const dashboardData = buildArimaResponse({ historicalData, report });
+        fs.writeFileSync(ARIMA_DASHBOARD_DATA_PATH, JSON.stringify(dashboardData));
+      }
+    } catch (e) {
+      console.error('Failed to generate dashboard data after ARIMA training:', e);
+    }
 
     return {
       started: true,
@@ -193,12 +219,9 @@ const initializeArimaOnStartup = async () => {
 
 const getArimaPrediction = async (req, res) => {
   try {
-    const hasModel = fs.existsSync(ARIMA_MODEL_PATH);
-    const report = loadArimaTrainingReport();
-
-    if (!hasModel || !report) {
-      return res.status(503).json({
-        error: 'ARIMA model artifacts are not available yet. Training may still be running or has not completed.',
+    if (!fs.existsSync(ARIMA_DASHBOARD_DATA_PATH)) {
+      return res.status(404).json({
+        error: 'No available prediction data yet. Please click Predict on ARIMA tab in Prediction Models.',
         metadata: {
           isTraining: arimaTrainingState.isRunning,
           lastStartedAt: arimaTrainingState.lastStartedAt,
@@ -208,13 +231,8 @@ const getArimaPrediction = async (req, res) => {
       });
     }
 
-    const historicalData = await loadHistoricalEmploymentRates();
-
-    if (historicalData.length === 0) {
-      return res.status(404).json({ error: 'No employment data found to generate historical trend.' });
-    }
-
-    return res.json(buildArimaResponse({ historicalData, report }));
+    const data = JSON.parse(fs.readFileSync(ARIMA_DASHBOARD_DATA_PATH, 'utf8'));
+    return res.json(data);
   } catch (error) {
     console.error('Get ARIMA prediction error:', error);
     return res.status(error.statusCode || 500).json({
